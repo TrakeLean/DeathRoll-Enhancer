@@ -1,0 +1,8 @@
+## Interface: 11500
+## Title: |cFFFF0000Death|rRoll Enhancer
+## Version: 1.0.0
+## Author: EgyptianSheikh
+## Notes: Enhance your DeathRoll experience in WoW! Challenge your target, roll the dice, and let fate decide your destiny!
+## DefaultState: enabled
+
+DeathRollEnhancer.lua

@@ -1,6 +1,11 @@
 # DeathRoll Enhancer
 
+![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
+[![CurseForge Downloads](https://img.shields.io/badge/dynamic/json?color=blue&label=downloads&query=%24.downloads&suffix=+total&url=https%3A%2F%2Fexample.com%2Fapi%2Fcurseforge%2Fdeathroll-enhancer%2Fdownloads.json)](https://www.curseforge.com/wow/addons/deathroll-enhancer)
+
 Transform your DeathRoll experience in World of Warcraft with DeathRoll Enhancer. This addon adds a sleek UI for DeathRoll games, making it easy to initiate games, track rolls, and add an extra layer of excitement with emote reactions.
+
+Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
 
 ## Features
 
@@ -20,8 +25,9 @@ Transform your DeathRoll experience in World of Warcraft with DeathRoll Enhancer
 - **Winning:** Choose from a list of happy emotes.
 - **Losing:** Express yourself with a variety of sad emotes.
 
- 
-
 ## Credits
 
 DeathRoll Enhancer is developed by EgyptianSheikh.
+```
+
+Remember, for the downloads badge to work dynamically, you would need an API endpoint that provides the current download count in JSON format. Replace the `https://example.com/api/curseforge/deathroll-enhancer/downloads.json` with the actual URL that returns the downloads count.

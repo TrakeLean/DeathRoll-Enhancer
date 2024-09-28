@@ -1,5 +1,8 @@
 -- DeathRollAddon.lua
 
+-- Table to store win/loss records
+DeathRollHistoryDB = DeathRollHistoryDB or {} -- SavedVariables to persist between sessions
+
 function CusRound(num, numDecimalPlaces)
     local mult = 10^(numDecimalPlaces or 0)
     return math.floor(num * mult + 0.5) / mult
@@ -96,32 +99,63 @@ function DeathRollFrame:OnRollButtonClick()
     end
 end
 
+-- Function to update win/loss history in the database
+local function UpdateDeathRollHistory(targetName, initialRoll, won)
+    -- If this is the first time playing against this player, initialize their record
+    if not DeathRollHistoryDB[targetName] then
+        DeathRollHistoryDB[targetName] = {wins = 0, losses = 0, initialRoll = initialRoll}
+    end
+    
+    -- Update win/loss count
+    if won then
+        DeathRollHistoryDB[targetName].wins = DeathRollHistoryDB[targetName].wins + 1
+    else
+        DeathRollHistoryDB[targetName].losses = DeathRollHistoryDB[targetName].losses + 1
+    end
+
+    -- Update the initial roll in case you want to track it
+    DeathRollHistoryDB[targetName].initialRoll = initialRoll
+
+    print("DeathRoll history updated for " .. targetName .. ": " .. DeathRollHistoryDB[targetName].wins .. " wins, " .. DeathRollHistoryDB[targetName].losses .. " losses.")
+end
+
 -- Event handler for CHAT_MSG_SYSTEM to capture the target's roll
 function DeathRollFrame:OnChatMsgSystem(event, msg)
     local playerName, rollResult, targetRollString = msg:match("^(.+) rolls (%d+) %((%d+)%-(%d+)%)")
 
     if playerName and targetName and targetRollString then
-        -- Check if the player has already rolled
-        if (playerName ~= UnitName("player")) or (UnitName("player") == UnitName("target")) then
-            print(targetName .. " has a " .. CusRound((1 / (tonumber(rollResult) + 1)) * 100, 3) .. "% chance of losing on the next roll.")
-            self.rollButton:SetText("Roll!")
-            self.rollButton:Enable()
-            self.inputBox:SetText(tostring(rollResult)) -- Set the next max roll
-        else
-            print("You have a " .. CusRound((1 / (tonumber(rollResult) + 1)) * 100, 3) .. "% chance of losing on the next roll.")
-        end
-
-        if tonumber(rollResult) == 0 then
-            self.rollButton:Disable()
-            if playerName ~= UnitName("player") then
-                self.rollButton:SetText("You won!!!")
-                DoEmote(GetRandomHappyEmote())
+        -- Check if the roll is from the player you're dueling with
+        if playerName == targetName then
+            -- Check if the player has already rolled
+            if (playerName ~= UnitName("player")) or (UnitName("player") == UnitName("target")) then
+                print(targetName .. " has a " .. CusRound((1 / (tonumber(rollResult) + 1)) * 100, 3) .. "% chance of losing on the next roll.")
+                self.rollButton:SetText("Roll!")
+                self.rollButton:Enable()
+                self.inputBox:SetText(tostring(rollResult)) -- Set the next max roll
             else
-                self.rollButton:SetText("You lost...")
-                DoEmote(GetRandomSadEmote())
+                print("You have a " .. CusRound((1 / (tonumber(rollResult) + 1)) * 100, 3) .. "% chance of losing on the next roll.")
             end
 
-            C_Timer.After(3, function() self:HideUI() end)
+            -- Check if the game ended (roll reached 0)
+            if tonumber(rollResult) == 0 then
+                self.rollButton:Disable()
+                local wonGame = playerName ~= UnitName("player") -- If playerName is the opponent, you won
+                if wonGame then
+                    self.rollButton:SetText("You won!!!")
+                    DoEmote(GetRandomHappyEmote())
+                else
+                    self.rollButton:SetText("You lost...")
+                    DoEmote(GetRandomSadEmote())
+                end
+
+                -- Update the deathroll history with the result
+                UpdateDeathRollHistory(targetName, rollNumber, wonGame)
+
+                -- Hide the UI after 3 seconds
+                C_Timer.After(3, function() self:HideUI() end)
+            end
+        else
+            print(playerName .. " rolled, but they are not your duel target (" .. targetName .. "). Ignoring roll.")
         end
     end
 end
@@ -150,6 +184,16 @@ function DeathRollFrame:ResetUI()
     self.rollButton:Enable()
 end
 
+-- Function to show deathroll history for a specific target
+local function ShowDeathRollHistory(target)
+    if DeathRollHistoryDB[target] then
+        local record = DeathRollHistoryDB[target]
+        print(target .. " DeathRoll History: " .. record.wins .. " wins, " .. record.losses .. " losses. Initial Roll: " .. record.initialRoll)
+    else
+        print("No DeathRoll history found for " .. target .. ".")
+    end
+end
+
 -- Register events
 DeathRollFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 DeathRollFrame:SetScript("OnEvent", DeathRollFrame.OnChatMsgSystem)
@@ -158,4 +202,18 @@ DeathRollFrame:SetScript("OnEvent", DeathRollFrame.OnChatMsgSystem)
 SLASH_DEATHROLL1 = "/deathroll"
 SlashCmdList["DEATHROLL"] = function(msg)
     DeathRollFrame:ShowUI()
+end
+
+-- Slash command to show deathroll history
+SLASH_DEATHROLLHISTORY1 = "/deathrollhistory"
+SlashCmdList["DEATHROLLHISTORY"] = function(msg)
+    local target = msg:trim()
+    if target == "" then
+        target = UnitName("target")
+    end
+    if target then
+        ShowDeathRollHistory(target)
+    else
+        print("Please provide a target name or select a target.")
+    end
 end

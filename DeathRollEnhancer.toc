@@ -1,11 +1,14 @@
 ## Interface: 11500
 ## Title: |cFFFF0000Death|r|cffffffffRoll|r Enhancer
-## Version: 1.5.2
+## Version: 1.5.3
 ## Author: EgyptianSheikh
-## Notes: Enhance your DeathRoll experience in WoW! Challenge your target, roll the dice, and let fate decide your destiny!
+## Notes: Elevate your DeathRoll experience! Challenge your target, track your stats, and let fate decide! |n|n|cffffffffFeatures:|r|n- User-friendly UI to easily start DeathRoll games.|n- Track wins, losses, streaks, and gold wagered with each player.|n- Fun emote reactions on win/loss! |n- Minimap icon for quick access.|n- Detailed stats saved between sessions.|n|n|cffffffffCommands:|r|n- |cffffff00/DeathRoll or /dr:|r Open the DeathRoll UI.|n- |cff00ff00/DeathRollHistory [player] or /drh [player]:|r View your win/loss history with a specific player.|n- |cff82c5ff/DeathRollMinimap show|r: Show the minimap icon.|n- |cff82c5ff/DeathRollMinimap hide|r: Hide the minimap icon.|n|n|cffbbbbbbBy EgyptianSheikh|r
 ## DefaultState: enabled
-## IconTexture: Interface\DeathRoll-Enhancer\Media\Logo.tga
-## OptionalDeps: LibDBIcon-1.0
-## SavedVariables: DeathRollHistoryDB, DeathRollSettings
+## IconTexture: Interface\Addons\DeathRollEnhancer\Media\Logo.tga
+
+# Embedded libraries
+Libs\LibStub\LibStub.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
 DeathRollEnhancer.lua

@@ -1,7 +1,8 @@
--- DeathRoll-Enhancer.lua
-
+-- DeathRollEnhancer.lua
 -- Table to store win/loss records
 DeathRollHistoryDB = DeathRollHistoryDB or {} -- SavedVariables to persist between sessions
+-- Table to store the addon settings (including minimap icon position)
+DeathRollSettings = DeathRollSettings or {}
 
 local LibDBIcon = LibStub("LibDBIcon-1.0")
 
@@ -35,6 +36,7 @@ end
 local function UpdateDeathRollHistory(targetName, won, gold)
     -- If this is the first time playing against this player, initialize their record
     if not DeathRollHistoryDB[targetName] then
+        -- Initialize if entry doesn't exist
         DeathRollHistoryDB[targetName] = {
             wins = 0,
             losses = 0,
@@ -44,16 +46,29 @@ local function UpdateDeathRollHistory(targetName, won, gold)
             goldWon = 0,
             goldLoss = 0
         }
+    else
+        -- If entry exists, check and initialize any missing fields
+        DeathRollHistoryDB[targetName].wins = DeathRollHistoryDB[targetName].wins or 0
+        DeathRollHistoryDB[targetName].losses = DeathRollHistoryDB[targetName].losses or 0
+        DeathRollHistoryDB[targetName].currentStreak = DeathRollHistoryDB[targetName].currentStreak or 0
+        DeathRollHistoryDB[targetName].longestWinStreak = DeathRollHistoryDB[targetName].longestWinStreak or 0
+        DeathRollHistoryDB[targetName].longestLossStreak = DeathRollHistoryDB[targetName].longestLossStreak or 0
+        DeathRollHistoryDB[targetName].goldWon = DeathRollHistoryDB[targetName].goldWon or 0
+        DeathRollHistoryDB[targetName].goldLoss = DeathRollHistoryDB[targetName].goldLoss or 0
     end
 
     -- Update win/loss count and current streak
     if won then
+        -- Handle win case
         DeathRollHistoryDB[targetName].wins = DeathRollHistoryDB[targetName].wins + 1
-        DeathRollHistoryDB[targetName].currentStreak = (DeathRollHistoryDB[targetName].currentStreak >= 0) and DeathRollHistoryDB[targetName].currentStreak + 1 or 1
+        -- If the current streak is positive, continue the streak, otherwise reset to 1
+        DeathRollHistoryDB[targetName].currentStreak = (DeathRollHistoryDB[targetName].currentStreak >= 0) and (DeathRollHistoryDB[targetName].currentStreak + 1) or 1
         DeathRollHistoryDB[targetName].goldWon = DeathRollHistoryDB[targetName].goldWon + (gold or 0)
     else
+        -- Handle loss case
         DeathRollHistoryDB[targetName].losses = DeathRollHistoryDB[targetName].losses + 1
-        DeathRollHistoryDB[targetName].currentStreak = (DeathRollHistoryDB[targetName].currentStreak <= 0) and DeathRollHistoryDB[targetName].currentStreak - 1 or -1
+        -- If the current streak is negative, continue the streak, otherwise reset to -1
+        DeathRollHistoryDB[targetName].currentStreak = (DeathRollHistoryDB[targetName].currentStreak <= 0) and (DeathRollHistoryDB[targetName].currentStreak - 1) or -1
         DeathRollHistoryDB[targetName].goldLoss = DeathRollHistoryDB[targetName].goldLoss + (gold or 0)
     end
 
@@ -98,32 +113,58 @@ local function ShowDeathRollHistory(target)
         local positiveGoldColor = "|cffffff00"  -- Gold color for positive gold (hex for yellow)
         local negativeGoldColor = "|cffff0000"  -- Red color for negative gold
 
-        -- Determine gold status (positive or negative)
-        local netGold = (record.goldWon or 0) - (record.goldLoss or 0)
+        -- Ensure that goldWon and goldLoss are initialized properly
+        local goldWon = record.goldWon or 0
+        local goldLoss = record.goldLoss or 0
+
+        -- Determine net gold and its color
+        local netGold = goldWon - goldLoss
         local goldColor = netGold >= 0 and positiveGoldColor or negativeGoldColor
         local goldStatus = netGold >= 0 and "Profit" or "Loss"
-        
-        -- Form the history message with colors
-        local message = string.format("%s DeathRoll History: %s%d|r wins, %s%d|r losses.", 
-                        target, winColor, record.wins, lossColor, record.losses)
-        
-        -- Add current streak
-        if record.currentStreak > 0 then
-            message = message .. " " .. winColor .. "Current win streak: " .. record.currentStreak .. "|r."
-        elseif record.currentStreak < 0 then
-            message = message .. " " .. lossColor .. "Current loss streak: " .. math.abs(record.currentStreak) .. "|r."
+
+        -- Calculate winrate
+        local totalGames = (record.wins or 0) + (record.losses or 0)
+        local winrate = totalGames > 0 and ((record.wins / totalGames) * 100) or 0
+
+        -- Determine the color for the winrate
+        local winrateColor
+        if winrate > 50 then
+            winrateColor = winColor
+        elseif winrate < 50 then
+            winrateColor = lossColor
         else
-            message = message .. " " .. neutralColor .. "No current streak.|r"
+            winrateColor = neutralColor
         end
 
-        -- Add gold won/lost and net gold status
-        message = message .. string.format(" Gold won: %s%d|r, Gold lost: %s%d|r. %sNet gold: %s%d (%s)|r.",
-                        positiveGoldColor, record.goldWon or 0,
-                        negativeGoldColor, record.goldLoss or 0,
-                        goldColor, netGold, goldStatus)
+        -- Print target name's DeathRoll History
+        print("DeathRoll history with " .. target .. ":")
 
-        -- Print the final message
-        print(message)
+        -- Print wins and losses
+        local winsLossesMessage = string.format("wins: %s%d|r, losses: %s%d|r", 
+            winColor, record.wins or 0, lossColor, record.losses or 0)
+        print(winsLossesMessage)
+
+        -- Print winrate (formatted to two decimal places, with color coding)
+        local winrateMessage = totalGames > 0 and string.format("Winrate: %s%.2f%%|r", winrateColor, winrate) or "Winrate: N/A"
+        print(winrateMessage)
+
+        -- Print current streak
+        local streakMessage
+        if record.currentStreak > 0 then
+            streakMessage = "Current win streak: " .. winColor .. record.currentStreak .. "|r."
+        elseif record.currentStreak < 0 then
+            streakMessage = "Current loss streak: " .. lossColor .. math.abs(record.currentStreak) .. "|r"
+        else
+            streakMessage = neutralColor .. "No current streak|r"
+        end
+        print(streakMessage)
+
+        -- Print gold stats
+        local goldMessage = string.format("Gold won: %s%d|r, Gold lost: %s%d|r. Net gold: %s%d|r (%s)",
+            positiveGoldColor, goldWon,
+            negativeGoldColor, goldLoss,
+            goldColor, netGold, goldStatus)
+        print(goldMessage)
     else
         print("No DeathRoll history found for " .. target .. ".")
     end
@@ -275,40 +316,62 @@ function DeathRollFrame:OnRollButtonClick()
     if isSubmittingGold then
         -- This block is executed when we are submitting the gold wager
         local goldInput = self.inputBox:GetText()
-        local gold = tonumber(goldInput) or 0 -- Default to 0 if invalid
+
+        -- Check if the input is empty
+        if goldInput == "" then
+            UpdateInfoFrame("Please enter a value.")
+            return
+        end
+
+        local gold = tonumber(goldInput)
+        -- Check if the input is not a valid number
+        if not gold then
+            UpdateInfoFrame("Please enter a valid number.")
+            return
+        end
 
         -- Update the deathroll history with the result
-        UpdateDeathRollHistory(targetName, self.wonGame, gold) -- Use self.wonGame here
+        UpdateDeathRollHistory(targetName, self.wonGame, gold)
 
         -- Reset the UI and return the button to roll mode
-        self.rollButton:SetText("Roll!")
         isSubmittingGold = false
         self.inputBox:ClearFocus()
-        self.rollButton:Disable() -- Disable the button until the user clicks it again to start a new roll
+        self.rollButton:Disable() -- Disable the button so the user cannot add multiple entries
+
         C_Timer.After(5, function() self:ResetUI(true) end)
+
     else
         -- This block is executed when the user clicks to start a roll
-        local rollNumber = tonumber(self.inputBox:GetText())
+        local rollInput = self.inputBox:GetText()
 
-        if rollNumber then
-            -- Store the target player when rolling
-            if not targetName then
-                targetName = UnitName("target")
-            end
-            if rollNumber <= 1 then
-                UpdateInfoFrame("Please enter a number greater than 1.")
-                return
-            end
-            if targetName then
-                RandomRoll(1, rollNumber)
-                UpdateInfoFrame("Waiting for " .. targetName .. " to roll...")
-                self.rollButton:SetText("Waiting...")
-                self.rollButton:Disable()
-            else
-                UpdateInfoFrame("Target a player before rolling.")
-            end
+        -- Check if the input is empty
+        if rollInput == "" then
+            UpdateInfoFrame("Please enter a value.")
+            return
+        end
+
+        local rollNumber = tonumber(rollInput)
+        -- Check if the input is not a valid number
+        if not rollNumber then
+            UpdateInfoFrame("Please enter a valid number.")
+            return
+        end
+
+        -- Store the target player when rolling
+        if not targetName then
+            targetName = UnitName("target")
+        end
+        if rollNumber <= 1 then
+            UpdateInfoFrame("Please enter a number greater than 1.")
+            return
+        end
+        if targetName then
+            RandomRoll(1, rollNumber)
+            UpdateInfoFrame("Waiting for " .. targetName .. " to roll...")
+            self.rollButton:SetText("Waiting...")
+            self.rollButton:Disable()
         else
-            UpdateInfoFrame("Please enter a number.")
+            UpdateInfoFrame("Target a player before rolling.")
         end
         self.inputBox:ClearFocus()
     end
@@ -439,17 +502,18 @@ SlashCmdList["DEATHROLLHISTORY"] = function(msg)
     end
 end
 
------------------------------------------------------------------------------------------------------------------------
-
--- Table to store the addon settings (including minimap icon position)
-DeathRollSettings = DeathRollSettings or {}
+--------------------------------------------------
+-- Minimap Icon for DeathRoll Enhancer
+--------------------------------------------------
+local LibDBIcon = LibStub("LibDBIcon-1.0")
 
 -- Default minimap button position if not saved
 local defaultMinimapButtonPosition = {
     minimapPos = 225, -- Default angle position around the minimap (45 degrees as an example)
+    hide = false,     -- Minimap icon visibility
 }
 
--- Create the minimap button using LibDBIcon
+-- Create the minimap button using LibDataBroker
 local miniButton = LibStub("LibDataBroker-1.1"):NewDataObject("DeathRollEnhancer", {
     type = "data source",
     text = "DeathRoll Enhancer",
@@ -463,7 +527,7 @@ local miniButton = LibStub("LibDataBroker-1.1"):NewDataObject("DeathRollEnhancer
     end,
     OnTooltipShow = function(tooltip)
         if not tooltip or not tooltip.AddLine then return end
-        -- Tooltip for Death Roll Enhancer
+        -- Tooltip for DeathRoll Enhancer
         tooltip:AddLine("|cFFFF0000Death|r|cFFFF0000Roll|r Enhancer")
         tooltip:AddLine("|cff808080Left Click:|r Toggle UI")
         tooltip:AddLine("|cff808080Right-click the UI to hide it.")
@@ -471,40 +535,40 @@ local miniButton = LibStub("LibDataBroker-1.1"):NewDataObject("DeathRollEnhancer
     end,
 })
 
-local icon = LibStub("LibDBIcon-1.0")
-
 -- Function to save the minimap icon position
 local function SaveMinimapButtonPosition()
-    -- Save the current position to SavedVariables
-    DeathRollSettings.minimapPos = DeathRollSettings.minimapPos or defaultMinimapButtonPosition.minimapPos
+    -- Save the current position to DeathRollSettings
+    DeathRollSettings.minimapPos = LibDBIcon:GetMinimapButtonPosition("DeathRollEnhancer") -- Store minimap position
+    DeathRollSettings.hide = DeathRollSettings.hide or false -- Store visibility state
 end
 
 -- Function to restore the minimap icon position
 local function RestoreMinimapButtonPosition()
-    -- Use saved position or default if none
+    -- Use saved position or default if none exists
     local pos = DeathRollSettings.minimapPos or defaultMinimapButtonPosition.minimapPos
-    icon:Register("DeathRollEnhancer", miniButton, {
-        minimapPos = pos,
-        hide = false,
+    local hide = DeathRollSettings.hide or defaultMinimapButtonPosition.hide
+    LibDBIcon:Register("DeathRollEnhancer", miniButton, {
+        minimapPos = pos,  -- Set position from saved variables
+        hide = hide,       -- Icon visibility
         lock = false
     })
 end
 
--- Hook the addon loading to restore position
+-- Register callback to save the position when the icon is moved
+LibDBIcon:RegisterCallback("LibDBIcon_IconMoved", function(name, position)
+    -- Save the position whenever the icon is moved
+    DeathRollSettings.minimapPos = position
+    SaveMinimapButtonPosition()
+end)
+
+-- Restore the minimap icon position on addon load
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:SetScript("OnEvent", function(self, event, addon)
     if addon == "DeathRollEnhancer" then
-        -- Restore minimap button position when the addon is loaded
+        -- Restore the minimap button position when the addon is loaded
         RestoreMinimapButtonPosition()
     end
-end)
-
--- Register callback to save the position when the icon is moved
-icon:RegisterCallback("LibDBIcon_IconMoved", function(name, position)
-    -- Save the position using the function
-    DeathRollSettings.minimapPos = position
-    SaveMinimapButtonPosition()
 end)
 
 -- Slash commands to hide or show the minimap icon
@@ -512,10 +576,10 @@ SLASH_MINIMAP1 = "/deathrollminimap"
 SLASH_MINIMAP2 = "/drm"
 SlashCmdList["MINIMAP"] = function(msg)
     if msg == "hide" then
-        icon:Hide("DeathRollEnhancer")
+        LibDBIcon:Hide("DeathRollEnhancer")
         DeathRollSettings.hide = true
     elseif msg == "show" then
-        icon:Show("DeathRollEnhancer")
+        LibDBIcon:Show("DeathRollEnhancer")
         DeathRollSettings.hide = false
     else
         print("Use '/deathrollminimap show' or '/deathrollminimap hide'.")

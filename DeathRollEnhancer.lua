@@ -31,21 +31,102 @@ function GetRandomSadEmote()
     return sadEmotes[randomIndex]
 end
 
--- Function to update win/loss history in the database
-local function UpdateDeathRollHistory(targetName, won)
+-- Function to update win/loss history in the database, including gold won/loss
+local function UpdateDeathRollHistory(targetName, won, gold)
     -- If this is the first time playing against this player, initialize their record
     if not DeathRollHistoryDB[targetName] then
-        DeathRollHistoryDB[targetName] = {wins = 0, losses = 0}
+        DeathRollHistoryDB[targetName] = {
+            wins = 0,
+            losses = 0,
+            currentStreak = 0,
+            longestWinStreak = 0,
+            longestLossStreak = 0,
+            goldWon = 0,
+            goldLoss = 0
+        }
     end
 
-    -- Update win/loss count
+    -- Update win/loss count and current streak
     if won then
         DeathRollHistoryDB[targetName].wins = DeathRollHistoryDB[targetName].wins + 1
+        DeathRollHistoryDB[targetName].currentStreak = (DeathRollHistoryDB[targetName].currentStreak >= 0) and DeathRollHistoryDB[targetName].currentStreak + 1 or 1
+        DeathRollHistoryDB[targetName].goldWon = DeathRollHistoryDB[targetName].goldWon + (gold or 0)
     else
         DeathRollHistoryDB[targetName].losses = DeathRollHistoryDB[targetName].losses + 1
+        DeathRollHistoryDB[targetName].currentStreak = (DeathRollHistoryDB[targetName].currentStreak <= 0) and DeathRollHistoryDB[targetName].currentStreak - 1 or -1
+        DeathRollHistoryDB[targetName].goldLoss = DeathRollHistoryDB[targetName].goldLoss + (gold or 0)
     end
 
-    print("DeathRoll history updated for " .. targetName .. ": " .. DeathRollHistoryDB[targetName].wins .. " wins, " .. DeathRollHistoryDB[targetName].losses .. " losses.")
+    -- Keep track of longest win streak
+    if DeathRollHistoryDB[targetName].currentStreak > DeathRollHistoryDB[targetName].longestWinStreak then
+        DeathRollHistoryDB[targetName].longestWinStreak = DeathRollHistoryDB[targetName].currentStreak
+    end
+
+    -- Keep track of longest loss streak (using absolute values for losses)
+    if DeathRollHistoryDB[targetName].currentStreak < 0 and math.abs(DeathRollHistoryDB[targetName].currentStreak) > DeathRollHistoryDB[targetName].longestLossStreak then
+        DeathRollHistoryDB[targetName].longestLossStreak = math.abs(DeathRollHistoryDB[targetName].currentStreak)
+    end
+
+    -- Print updated stats with conditional message based on win/loss streak
+    local streakMessage
+    if DeathRollHistoryDB[targetName].currentStreak > 0 then
+        streakMessage = "Current win streak: " .. DeathRollHistoryDB[targetName].currentStreak
+    elseif DeathRollHistoryDB[targetName].currentStreak < 0 then
+        streakMessage = "Current loss streak: " .. math.abs(DeathRollHistoryDB[targetName].currentStreak)
+    else
+        streakMessage = "No current streak"
+    end
+
+    -- Print statement including gold stats
+    print("DeathRoll history updated for " .. targetName .. ": " ..
+          DeathRollHistoryDB[targetName].wins .. " wins, " ..
+          DeathRollHistoryDB[targetName].losses .. " losses, " ..
+          "Gold won: " .. DeathRollHistoryDB[targetName].goldWon .. ", " ..
+          "Gold lost: " .. DeathRollHistoryDB[targetName].goldLoss .. ". " ..
+          streakMessage .. ".")
+end
+
+-- Function to show deathroll history for a specific target, with color coding and additional details
+local function ShowDeathRollHistory(target)
+    if DeathRollHistoryDB[target] then
+        local record = DeathRollHistoryDB[target]
+
+        -- Color codes
+        local winColor = "|cff00ff00"  -- Green for wins
+        local lossColor = "|cffff0000"  -- Red for losses
+        local neutralColor = "|cffffffff"  -- White/neutral color for neutral info
+        local positiveGoldColor = "|cffffff00"  -- Gold color for positive gold (hex for yellow)
+        local negativeGoldColor = "|cffff0000"  -- Red color for negative gold
+
+        -- Determine gold status (positive or negative)
+        local netGold = (record.goldWon or 0) - (record.goldLoss or 0)
+        local goldColor = netGold >= 0 and positiveGoldColor or negativeGoldColor
+        local goldStatus = netGold >= 0 and "Profit" or "Loss"
+        
+        -- Form the history message with colors
+        local message = string.format("%s DeathRoll History: %s%d|r wins, %s%d|r losses.", 
+                        target, winColor, record.wins, lossColor, record.losses)
+        
+        -- Add current streak
+        if record.currentStreak > 0 then
+            message = message .. " " .. winColor .. "Current win streak: " .. record.currentStreak .. "|r."
+        elseif record.currentStreak < 0 then
+            message = message .. " " .. lossColor .. "Current loss streak: " .. math.abs(record.currentStreak) .. "|r."
+        else
+            message = message .. " " .. neutralColor .. "No current streak.|r"
+        end
+
+        -- Add gold won/lost and net gold status
+        message = message .. string.format(" Gold won: %s%d|r, Gold lost: %s%d|r. %sNet gold: %s%d (%s)|r.",
+                        positiveGoldColor, record.goldWon or 0,
+                        negativeGoldColor, record.goldLoss or 0,
+                        goldColor, netGold, goldStatus)
+
+        -- Print the final message
+        print(message)
+    else
+        print("No DeathRoll history found for " .. target .. ".")
+    end
 end
 
 local WindowX = 150
@@ -238,19 +319,33 @@ function DeathRollFrame:OnChatMsgSystem(event, msg)
                 local wonGame = playerName ~= UnitName("player") -- If playerName is the opponent, you won
                 UpdateInfoFrame(playerName .. " has won the death roll!")
                 if wonGame then
-                    self.rollButton:SetText("You won!!!")
                     scrollingMessageFrame:AddMessage("You won!!!")
                     DoEmote(GetRandomHappyEmote())
                 else
-                    self.rollButton:SetText("You lost...")
                     scrollingMessageFrame:AddMessage("You lost...")
                     DoEmote(GetRandomSadEmote())
                 end
 
-                -- Update the deathroll history with the result
-                UpdateDeathRollHistory(targetName, wonGame)
+                -- Ask how much gold was wagered
+                DeathRollFrame.titleFrame.title:SetText("Wagered Gold?")
+                self.inputBox:SetText("")
+                self.rollButton:SetText("Submit")
+                self.rollButton:Enable()
+                
+                -- Define the submit button handler for the wager input
+                self.rollButton:SetScript("OnClick", function()
+                    -- Fetch gold amount from input box
+                    local goldInput = self.inputBox:GetText()
+                    local gold = tonumber(goldInput) or 0 -- Default to 0 if invalid
+                    
+                    -- Update the deathroll history with the result
+                    UpdateDeathRollHistory(targetName, wonGame, gold)
 
-                C_Timer.After(5, function() self:ResetUI(true) end)
+                    -- Reset the UI and disable the submit button again
+                    self.rollButton:Disable()
+                    self.rollButton:SetScript("OnClick", nil) -- Remove the submit handler after the action
+                    C_Timer.After(5, function() self:ResetUI(true) end)
+                end)
             end
         else
             print(playerName .. " rolled, but they are not your duel target (" .. targetName .. "). Ignoring roll.")
@@ -298,6 +393,7 @@ function DeathRollFrame:ResetUI(endOfRoll)
     if not endOfRoll then
         scrollingMessageFrame:Clear()
     end
+    DeathRollFrame.titleFrame.title:SetText("DeathRoll Enhancer!")
     self.rollButton:SetText("Roll!")
     self.rollButton:Enable()
     UIOpened = false
@@ -315,16 +411,6 @@ DeathRollFrame:SetScript("OnEvent", function(self, event, msg, ...)
     end
 end)
 
--- Function to show deathroll history for a specific target
-local function ShowDeathRollHistory(target)
-    if DeathRollHistoryDB[target] then
-        local record = DeathRollHistoryDB[target]
-        print(target .. " DeathRoll History: " .. record.wins .. " wins, " .. record.losses .. " losses. Initial Roll: " .. record.initialRoll)
-    else
-        print("No DeathRoll history found for " .. target .. ".")
-    end
-end
-
 -- Slash command to open the DeathRoll UI
 SLASH_DEATHROLL1 = "/deathroll"
 SLASH_DEATHROLL2 = "/dr"
@@ -334,6 +420,7 @@ end
 
 -- Slash command to show deathroll history
 SLASH_DEATHROLLHISTORY1 = "/deathrollhistory"
+SLASH_DEATHROLLHISTORY2 = "/drh"
 SlashCmdList["DEATHROLLHISTORY"] = function(msg)
     local target = msg:trim()
     if target == "" then
@@ -353,7 +440,7 @@ DeathRollSettings = DeathRollSettings or {}
 
 -- Default minimap button position if not saved
 local defaultMinimapButtonPosition = {
-    minimapPos = 45, -- Default angle position around the minimap (45 degrees as an example)
+    minimapPos = 225, -- Default angle position around the minimap (45 degrees as an example)
 }
 
 -- Create the minimap button using LibDBIcon
@@ -392,7 +479,8 @@ local function RestoreMinimapButtonPosition()
     local pos = DeathRollSettings.minimapPos or defaultMinimapButtonPosition.minimapPos
     icon:Register("DeathRollEnhancer", miniButton, {
         minimapPos = pos,
-        hide = false, -- Change this to `true` if you want the icon to be hidden initially
+        hide = false,
+        lock = false
     })
 end
 
@@ -415,6 +503,7 @@ end)
 
 -- Slash commands to hide or show the minimap icon
 SLASH_MINIMAP1 = "/deathrollminimap"
+SLASH_MINIMAP2 = "/drm"
 SlashCmdList["MINIMAP"] = function(msg)
     if msg == "hide" then
         icon:Hide("DeathRollEnhancer")

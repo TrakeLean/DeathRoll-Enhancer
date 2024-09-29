@@ -1,11 +1,11 @@
 ## Interface: 11500
 ## Title: |cFFFF0000Death|r|cffffffffRoll|r Enhancer
-## Version: 1.5.1
+## Version: 1.5.2
 ## Author: EgyptianSheikh
 ## Notes: Enhance your DeathRoll experience in WoW! Challenge your target, roll the dice, and let fate decide your destiny!
 ## DefaultState: enabled
-## IconTexture: Interface\DeathRoll-Enhancer\Media\Logo.jpg
+## IconTexture: Interface\DeathRoll-Enhancer\Media\Logo.tga
 ## OptionalDeps: LibDBIcon-1.0
 ## SavedVariables: DeathRollHistoryDB, DeathRollSettings
 
-DeathRoll-Enhancer.lua
+DeathRollEnhancer.lua

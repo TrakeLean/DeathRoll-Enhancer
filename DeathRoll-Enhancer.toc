@@ -4,8 +4,8 @@
 ## Author: EgyptianSheikh
 ## Notes: Enhance your DeathRoll experience in WoW! Challenge your target, roll the dice, and let fate decide your destiny!
 ## DefaultState: enabled
-## IconTexture: Interface\DeathRoll-Enhancer\Logo.jpg
+## IconTexture: Interface\DeathRoll-Enhancer\Media\Logo.jpg
 ## OptionalDeps: LibDBIcon-1.0
 ## SavedVariables: DeathRollHistoryDB, DeathRollSettings
 
-DeathRollEnhancer.lua
+DeathRoll-Enhancer.lua

@@ -1,4 +1,4 @@
--- DeathRollAddon.lua
+-- DeathRoll-Enhancer.lua
 
 -- Table to store win/loss records
 DeathRollHistoryDB = DeathRollHistoryDB or {} -- SavedVariables to persist between sessions

@@ -381,8 +381,8 @@ end
 function DeathRollFrame:OnChatMsgSystem(event, msg)
     local playerName, rollResult, targetRollString = msg:match("^(.+) rolls (%d+) %((%d+)%-(%d+)%)")
     if playerName and targetName and targetRollString then
-        -- Check if the roll is from the player you're dueling with
-        if playerName == targetName then
+        -- Check if the roll is from the player you're dueling with or from the player themselves
+        if playerName == targetName or playerName == UnitName("player") then
             -- Check if the player has already rolled
             if (playerName ~= UnitName("player")) or (UnitName("player") == targetName) then
                 self.rollButton:SetText("Roll!")
@@ -501,6 +501,8 @@ SlashCmdList["DEATHROLLHISTORY"] = function(msg)
         print("Please provide a target name or select a target.")
     end
 end
+
+-- BUG HVOR TAPER IKKE FÅR OPP SUBMIT AMOUNT ELLER TEKST FORDI SELV IKKE ER TARGET + 
 
 --------------------------------------------------
 -- Minimap Icon for DeathRoll Enhancer

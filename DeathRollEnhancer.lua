@@ -267,31 +267,51 @@ scrollingMessageFrame:EnableMouseWheel(false)
 -- Adjust the size of the ScrollingMessageFrame to fit the content
 scrollingMessageFrame:SetSize(200, scrollingMessageFrame:GetHeight())
 
--- Function to handle the Roll button click
-function DeathRollFrame:OnRollButtonClick()
-    rollNumber = tonumber(self.inputBox:GetText())
+-- Create a flag to determine if the button is in 'submit' mode or 'roll' mode
+local isSubmittingGold = false
 
-    if rollNumber then
-        -- Store the target player when rolling
-        if not targetName then
-            targetName = UnitName("target")
-        end
-        if rollNumber <= 1 then
-            UpdateInfoFrame("Please enter a number greater than 1.")
-            return
-        end
-        if targetName then
-            RandomRoll(1, rollNumber)
-            UpdateInfoFrame("Waiting for " .. targetName .. " to roll...")
-            self.rollButton:SetText("Waiting...")
-            self.rollButton:Disable()
-        else
-            UpdateInfoFrame("Target a player before rolling.")
-        end
+-- Function to handle the Roll button click and the Submit button click
+function DeathRollFrame:OnRollButtonClick()
+    if isSubmittingGold then
+        -- This block is executed when we are submitting the gold wager
+        local goldInput = self.inputBox:GetText()
+        local gold = tonumber(goldInput) or 0 -- Default to 0 if invalid
+
+        -- Update the deathroll history with the result
+        UpdateDeathRollHistory(targetName, self.wonGame, gold) -- Use self.wonGame here
+
+        -- Reset the UI and return the button to roll mode
+        self.rollButton:SetText("Roll!")
+        isSubmittingGold = false
+        self.inputBox:ClearFocus()
+        self.rollButton:Disable() -- Disable the button until the user clicks it again to start a new roll
+        C_Timer.After(5, function() self:ResetUI(true) end)
     else
-        UpdateInfoFrame("Please enter a number.")
+        -- This block is executed when the user clicks to start a roll
+        local rollNumber = tonumber(self.inputBox:GetText())
+
+        if rollNumber then
+            -- Store the target player when rolling
+            if not targetName then
+                targetName = UnitName("target")
+            end
+            if rollNumber <= 1 then
+                UpdateInfoFrame("Please enter a number greater than 1.")
+                return
+            end
+            if targetName then
+                RandomRoll(1, rollNumber)
+                UpdateInfoFrame("Waiting for " .. targetName .. " to roll...")
+                self.rollButton:SetText("Waiting...")
+                self.rollButton:Disable()
+            else
+                UpdateInfoFrame("Target a player before rolling.")
+            end
+        else
+            UpdateInfoFrame("Please enter a number.")
+        end
+        self.inputBox:ClearFocus()
     end
-    self.inputBox:ClearFocus()
 end
 
 -- Event handler for CHAT_MSG_SYSTEM to capture the target's roll
@@ -302,8 +322,6 @@ function DeathRollFrame:OnChatMsgSystem(event, msg)
         if playerName == targetName then
             -- Check if the player has already rolled
             if (playerName ~= UnitName("player")) or (UnitName("player") == targetName) then
-                -- scrollingMessageFrame:AddMessage(msg, 0,0.4667,1)
-                -- scrollingMessageFrame:AddMessage(msg, 1,0.5333,0)
                 self.rollButton:SetText("Roll!")
                 self.rollButton:Enable()
                 self.inputBox:SetText(tostring(rollResult)) -- Set the next max roll
@@ -316,9 +334,9 @@ function DeathRollFrame:OnChatMsgSystem(event, msg)
 
             if tonumber(rollResult) == 1 then
                 self.rollButton:Disable()
-                local wonGame = playerName ~= UnitName("player") -- If playerName is the opponent, you won
+                self.wonGame = playerName ~= UnitName("player") -- Store the result in self.wonGame
                 UpdateInfoFrame(playerName .. " has won the death roll!")
-                if wonGame then
+                if self.wonGame then
                     scrollingMessageFrame:AddMessage("You won!!!")
                     DoEmote(GetRandomHappyEmote())
                 else
@@ -332,20 +350,8 @@ function DeathRollFrame:OnChatMsgSystem(event, msg)
                 self.rollButton:SetText("Submit")
                 self.rollButton:Enable()
                 
-                -- Define the submit button handler for the wager input
-                self.rollButton:SetScript("OnClick", function()
-                    -- Fetch gold amount from input box
-                    local goldInput = self.inputBox:GetText()
-                    local gold = tonumber(goldInput) or 0 -- Default to 0 if invalid
-                    
-                    -- Update the deathroll history with the result
-                    UpdateDeathRollHistory(targetName, wonGame, gold)
-
-                    -- Reset the UI and disable the submit button again
-                    self.rollButton:Disable()
-                    self.rollButton:SetScript("OnClick", nil) -- Remove the submit handler after the action
-                    C_Timer.After(5, function() self:ResetUI(true) end)
-                end)
+                -- Set the flag for submitting gold
+                isSubmittingGold = true
             end
         else
             print(playerName .. " rolled, but they are not your duel target (" .. targetName .. "). Ignoring roll.")

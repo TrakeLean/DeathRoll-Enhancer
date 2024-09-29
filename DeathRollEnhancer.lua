@@ -32,10 +32,10 @@ function GetRandomSadEmote()
 end
 
 -- Function to update win/loss history in the database
-local function UpdateDeathRollHistory(targetName, initialRoll, won)
+local function UpdateDeathRollHistory(targetName, won)
     -- If this is the first time playing against this player, initialize their record
     if not DeathRollHistoryDB[targetName] then
-        DeathRollHistoryDB[targetName] = {wins = 0, losses = 0, initialRoll = initialRoll}
+        DeathRollHistoryDB[targetName] = {wins = 0, losses = 0}
     end
 
     -- Update win/loss count
@@ -44,9 +44,6 @@ local function UpdateDeathRollHistory(targetName, initialRoll, won)
     else
         DeathRollHistoryDB[targetName].losses = DeathRollHistoryDB[targetName].losses + 1
     end
-
-    -- Update the initial roll in case you want to track it
-    DeathRollHistoryDB[targetName].initialRoll = initialRoll
 
     print("DeathRoll history updated for " .. targetName .. ": " .. DeathRollHistoryDB[targetName].wins .. " wins, " .. DeathRollHistoryDB[targetName].losses .. " losses.")
 end
@@ -238,7 +235,9 @@ function DeathRollFrame:OnChatMsgSystem(event, msg)
 
             if tonumber(rollResult) == 1 then
                 self.rollButton:Disable()
-                if playerName ~= UnitName("player") then
+                local wonGame = playerName ~= UnitName("player") -- If playerName is the opponent, you won
+                UpdateInfoFrame(playerName .. " has won the death roll!")
+                if wonGame then
                     self.rollButton:SetText("You won!!!")
                     scrollingMessageFrame:AddMessage("You won!!!")
                     DoEmote(GetRandomHappyEmote())
@@ -249,7 +248,7 @@ function DeathRollFrame:OnChatMsgSystem(event, msg)
                 end
 
                 -- Update the deathroll history with the result
-                UpdateDeathRollHistory(targetName, rollNumber, wonGame)
+                UpdateDeathRollHistory(targetName, wonGame)
 
                 C_Timer.After(5, function() self:ResetUI(true) end)
             end

@@ -527,13 +527,13 @@ function DRE:StartDeathRoll(target, initialRoll, wagerAmount)
     UI.gameState = "ROLLING"
     wagerAmount = wagerAmount or 0
     
-    -- Create challenge message with wager information
+    -- Create natural challenge message
     local message
     if wagerAmount > 0 then
         local wagerText = self:FormatGold(wagerAmount)
-        message = string.format("DEATHROLL_CHALLENGE:%d:%d:%s", initialRoll, wagerAmount, "I challenge you to a DeathRoll! Starting at " .. initialRoll .. " for " .. wagerText .. "!")
+        message = "I challenge you to a DeathRoll! Starting at " .. initialRoll .. " for " .. wagerText .. "!"
     else
-        message = string.format("DEATHROLL_CHALLENGE:%d:0:%s", initialRoll, "I challenge you to a DeathRoll! Starting at " .. initialRoll .. " (no wager)")
+        message = "I challenge you to a DeathRoll! Starting at " .. initialRoll .. " (no wager)"
     end
     
     -- Send challenge message as whisper

@@ -22,7 +22,8 @@ local gameState = {
 -- Chat message patterns
 local PATTERNS = {
     ROLL_PATTERN = "^(.+) rolls (%d+) %(1%-(%d+)%)$",
-    DEATHROLL_CHALLENGE = "challenges? you to a [Dd]eathRoll",
+    DEATHROLL_CHALLENGE = "[Cc]hallenge.* you to a [Dd]eathRoll",
+    DEATHROLL_CHALLENGE_ALT = "I challenge you to a DeathRoll",
     DEATHROLL_ACCEPT = "accepts? your [Dd]eathRoll challenge",
     GOLD_WAGER = "(%d+)g",
     SILVER_WAGER = "(%d+)s",
@@ -42,6 +43,13 @@ function DRE:CHAT_MSG_SYSTEM(event, message, sender)
     
     -- Handle other system messages
     self:HandleSystemMessage(message)
+end
+
+-- Handle whisper messages (primary channel for challenges)
+function DRE:CHAT_MSG_WHISPER(event, message, sender)
+    if not message or not sender then return end
+    
+    self:HandleChatMessage(message, sender, "WHISPER")
 end
 
 -- Handle chat messages for challenges and wagers
@@ -104,7 +112,7 @@ function DRE:HandleChatMessage(message, sender, channel)
     local lowerMessage = message:lower()
     
     -- Check for DeathRoll challenge
-    if lowerMessage:find(PATTERNS.DEATHROLL_CHALLENGE) then
+    if lowerMessage:find(PATTERNS.DEATHROLL_CHALLENGE) or lowerMessage:find(PATTERNS.DEATHROLL_CHALLENGE_ALT) then
         self:HandleDeathRollChallenge(sender, message, channel)
     end
     
@@ -141,15 +149,19 @@ function DRE:HandleDeathRollChallenge(sender, message, channel)
         initialRoll = tonumber(initialRoll)
     end
     
-    self:Print(string.format("%s has challenged you to a DeathRoll!", sender))
+    self:Print(string.format("%s has challenged you to a DeathRoll via whisper!", sender))
     
     if initialRoll then
         self:Print(string.format("Starting roll: %d", initialRoll))
         
-        -- Auto-accept if we have UI open and target matches
-        if DRE.UI and DRE.UI.mainWindow and DRE.UI.currentTarget == sender then
-            self:StartGame(sender, initialRoll)
-        end
+        -- Send whisper acknowledgment
+        SendChatMessage("I accept your DeathRoll challenge! Let's roll!", "WHISPER", nil, sender)
+        
+        -- Auto-start the game
+        self:StartGame(sender, initialRoll)
+    else
+        -- Ask for clarification via whisper
+        SendChatMessage("I'd love to DeathRoll! What's the starting number?", "WHISPER", nil, sender)
     end
 end
 
@@ -298,6 +310,7 @@ end
 
 -- Register additional events when needed
 function DRE:RegisterGameEvents()
+    self:RegisterEvent("CHAT_MSG_WHISPER")
     self:RegisterEvent("CHAT_MSG_SAY")
     self:RegisterEvent("CHAT_MSG_YELL")
     self:RegisterEvent("CHAT_MSG_PARTY")
@@ -306,6 +319,7 @@ end
 
 -- Unregister game events
 function DRE:UnregisterGameEvents()
+    self:UnregisterEvent("CHAT_MSG_WHISPER")
     self:UnregisterEvent("CHAT_MSG_SAY")
     self:UnregisterEvent("CHAT_MSG_YELL")
     self:UnregisterEvent("CHAT_MSG_PARTY")

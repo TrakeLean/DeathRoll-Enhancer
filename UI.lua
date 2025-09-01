@@ -221,9 +221,9 @@ function DRE:StartDeathRoll(target, initialRoll)
     UI.isGameActive = true
     UI.gameState = "ROLLING"
     
-    -- Send challenge message
-    local message = string.format("challenges you to a DeathRoll! Starting at %d. Type /roll %d to accept!", initialRoll)
-    SendChatMessage(target .. " " .. message, "SAY")
+    -- Send challenge message as whisper
+    local message = string.format("I challenge you to a DeathRoll! Starting at %d. Type /roll %d to accept!", initialRoll, initialRoll)
+    SendChatMessage(message, "WHISPER", nil, target)
     
     if UI.statusLabel then
         UI.statusLabel:SetText("Challenging " .. target .. " to DeathRoll starting at " .. initialRoll)

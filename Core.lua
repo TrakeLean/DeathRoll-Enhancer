@@ -12,6 +12,10 @@ end
 -- Initialize addon with Ace3
 local DRE = LibStub("AceAddon-3.0"):NewAddon("DeathRollEnhancer", "AceConsole-3.0", "AceEvent-3.0")
 
+-- Debug chat buffer to track messages
+DRE.debugChatBuffer = {}
+DRE.maxDebugMessages = 40
+
 -- Addon information
 DRE.version = "2.0.0"
 DRE.author = "EgyptianSheikh"
@@ -416,6 +420,8 @@ function DRE:SlashCommand(input)
         self:ShowMainWindow()
     elseif input == "config" or input == "options" then
         self:OpenOptions()
+    elseif input == "debug" then
+        self:DumpDebugBuffer()
     elseif input == "accept" then
         self:Print("No pending challenge to accept")
     elseif input == "decline" then
@@ -423,6 +429,7 @@ function DRE:SlashCommand(input)
     else
         self:Print("Usage: /dr or /deathroll - Opens the main window")
         self:Print("       /dr config - Opens configuration")
+        self:Print("       /dr debug - Show debug chat buffer")
         self:Print("       /dr accept - Accept pending challenge")
         self:Print("       /dr decline - Decline pending challenge")
     end
@@ -830,6 +837,9 @@ end
 
 -- Event handlers - handle both fallback and active game system messages  
 function DRE:CHAT_MSG_SYSTEM(event, message)
+    -- Add to debug buffer
+    self:AddToDebugBuffer("CHAT_MSG_SYSTEM", message)
+    
     -- Debug: Show all system messages to help identify roll format
     self:DebugPrint("CHAT_MSG_SYSTEM triggered with message: '" .. (message or "nil") .. "'")
     
@@ -845,11 +855,13 @@ end
 
 -- Additional event handlers to catch rolls
 function DRE:CHAT_MSG_TEXT_EMOTE(event, message, sender)
+    self:AddToDebugBuffer("CHAT_MSG_TEXT_EMOTE", (sender or "unknown") .. ": " .. (message or "nil"))
     self:DebugPrint("CHAT_MSG_TEXT_EMOTE: '" .. (message or "nil") .. "' from " .. (sender or "unknown"))
     self:ProcessPotentialRoll(message, sender, "TEXT_EMOTE")
 end
 
 function DRE:CHAT_MSG_EMOTE(event, message, sender)
+    self:AddToDebugBuffer("CHAT_MSG_EMOTE", (sender or "unknown") .. ": " .. (message or "nil"))
     self:DebugPrint("CHAT_MSG_EMOTE: '" .. (message or "nil") .. "' from " .. (sender or "unknown"))  
     self:ProcessPotentialRoll(message, sender, "EMOTE")
 end
@@ -1140,9 +1152,34 @@ function DRE:ChatPrint(message)
     end
 end
 
+-- Add message to debug chat buffer
+function DRE:AddToDebugBuffer(source, message)
+    local timestamp = date("%H:%M:%S")
+    local entry = string.format("[%s] %s: %s", timestamp, source, message or "nil")
+    
+    table.insert(self.debugChatBuffer, entry)
+    
+    -- Keep only last N messages
+    if #self.debugChatBuffer > self.maxDebugMessages then
+        table.remove(self.debugChatBuffer, 1)
+    end
+end
+
+-- Dump debug buffer to chat
+function DRE:DumpDebugBuffer()
+    self:Print("=== DEBUG CHAT BUFFER (Last " .. #self.debugChatBuffer .. " messages) ===")
+    for i, entry in ipairs(self.debugChatBuffer) do
+        self:Print(entry)
+    end
+    self:Print("=== END DEBUG BUFFER ===")
+end
+
 -- Conditional print that respects debug messages setting
 function DRE:DebugPrint(message)
-    -- Temporarily force debug messages for roll detection troubleshooting
+    -- Add to buffer regardless of settings
+    self:AddToDebugBuffer("DEBUG", message)
+    
+    -- Print to chat if enabled
     if true or (self.db and self.db.profile.gameplay.debugMessages) then
         self:Print("[DEBUG] " .. message)
     end

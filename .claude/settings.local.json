@@ -3,7 +3,9 @@
     "allow": [
       "Bash(copy \"DeathRollEnhancer.lua\" \"DeathRollEnhancer_backup.lua\")",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(luac:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []

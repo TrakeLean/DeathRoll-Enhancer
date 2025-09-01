@@ -45,8 +45,8 @@ function DRE:ShowMainWindow()
         widget:Hide()
     end)
     frame:SetLayout("Fill")
-    frame:SetWidth(450)
-    frame:SetHeight(550)
+    frame:SetWidth(350)
+    frame:SetHeight(290)
     
     -- Apply scaling from settings
     if self.db and self.db.profile.ui.scale then
@@ -65,7 +65,8 @@ function DRE:ShowMainWindow()
     tabGroup:SetTabs({
         {text="DeathRoll", value="deathroll"},
         {text="Statistics", value="statistics"}, 
-        {text="History", value="history"}
+        {text="History", value="history"},
+        {text="Spicy Duel", value="spicy"}
     })
     tabGroup:SetCallback("OnGroupSelected", function(container, event, group)
         container:ReleaseChildren()
@@ -75,6 +76,8 @@ function DRE:ShowMainWindow()
             self:CreateStatsSection(container)
         elseif group == "history" then
             self:CreateHistorySection(container)
+        elseif group == "spicy" then
+            self:CreateSpicyDuelSection(container)
         end
     end)
     tabGroup:SelectTab("deathroll") -- Default to DeathRoll tab
@@ -427,7 +430,7 @@ function DRE:CreateFunStatsSection(container)
     
     -- Add settings hint
     local settingsHint = AceGUI:Create("Label")
-    settingsHint:SetText("\nTip: Use /dr config → Fun Statistics to customize which stats are shown!")
+    settingsHint:SetText("\nTip: Use /dr config -> Fun Statistics to customize which stats are shown!")
     settingsHint:SetFullWidth(true)
     settingsHint:SetColor(0.7, 0.7, 0.7)
     funStatsGroup:AddChild(settingsHint)
@@ -516,41 +519,8 @@ function DRE:CreateHistorySection(container)
     self:UpdateHistoryDisplay(playerNames[1])
 end
 
--- Start a DeathRoll game
-function DRE:StartDeathRoll(target, initialRoll, wagerAmount)
-    if not target or target == "" then
-        self:Print("Invalid target!")
-        return
-    end
-    
-    UI.isGameActive = true
-    UI.gameState = "ROLLING"
-    wagerAmount = wagerAmount or 0
-    
-    -- Create natural challenge message
-    local message
-    if wagerAmount > 0 then
-        local wagerText = self:FormatGold(wagerAmount)
-        message = "I challenge you to a DeathRoll! Starting at " .. initialRoll .. " for " .. wagerText .. "!"
-    else
-        message = "I challenge you to a DeathRoll! Starting at " .. initialRoll .. " (no wager)"
-    end
-    
-    -- Send challenge message as whisper
-    SendChatMessage(message, "WHISPER", nil, target)
-    
-    if UI.statusLabel then
-        local statusText = wagerAmount > 0 and 
-            string.format("Challenging %s: %d starting roll, %s wager", target, initialRoll, self:FormatGold(wagerAmount)) or
-            string.format("Challenging %s: %d starting roll, no wager", target, initialRoll)
-        UI.statusLabel:SetText(statusText)
-    end
-    
-    local printText = wagerAmount > 0 and
-        string.format("Challenged %s to DeathRoll starting at %d for %s", target, initialRoll, self:FormatGold(wagerAmount)) or
-        string.format("Challenged %s to DeathRoll starting at %d (no wager)", target, initialRoll)
-    self:Print(printText)
-end
+-- UI StartDeathRoll function removed - using Core.lua version instead
+-- This function just updates the UI state when the game starts
 
 -- Update UI scale
 function DRE:UpdateUIScale()
@@ -779,6 +749,190 @@ function DRE:UpdateHistoryDisplay(playerName)
     end
     
     UI.historyBox:SetText(text)
+end
+
+-- Show challenge dialog for addon users
+function DRE:ShowChallengeDialog(sender, roll, wager, challengeText)
+    if not AceGUI then
+        return
+    end
+    
+    -- Create challenge dialog
+    local dialog = AceGUI:Create("Frame")
+    dialog:SetTitle("DeathRoll Challenge")
+    dialog:SetStatusText("Challenge from " .. sender)
+    dialog:SetLayout("Flow")
+    dialog:SetWidth(400)
+    dialog:SetHeight(200)
+    
+    -- Apply scaling
+    if self.db and self.db.profile.ui.scale then
+        dialog.frame:SetScale(self.db.profile.ui.scale)
+    end
+    
+    -- Challenge info
+    local infoText = string.format("%s challenges you to a DeathRoll!\n\nStarting Roll: %d", sender, roll)
+    if wager > 0 then
+        infoText = infoText .. "\nWager: " .. self:FormatGold(wager)
+    else
+        infoText = infoText .. "\nWager: None"
+    end
+    
+    local infoLabel = AceGUI:Create("Label")
+    infoLabel:SetText(infoText)
+    infoLabel:SetFullWidth(true)
+    infoLabel:SetColor(1, 1, 0.8) -- Light yellow text
+    dialog:AddChild(infoLabel)
+    
+    -- Button group
+    local buttonGroup = AceGUI:Create("SimpleGroup")
+    buttonGroup:SetFullWidth(true)
+    buttonGroup:SetLayout("Flow")
+    dialog:AddChild(buttonGroup)
+    
+    -- Accept button
+    local acceptButton = AceGUI:Create("Button")
+    acceptButton:SetText("Accept Challenge")
+    acceptButton:SetWidth(150)
+    acceptButton:SetCallback("OnClick", function()
+        self:SendAddonMessage("ACCEPT", roll .. ":" .. wager, sender)
+        self:ChatPrint("Accepted DeathRoll challenge from " .. sender .. "!")
+        dialog:Hide()
+        -- TODO: Start game logic
+    end)
+    buttonGroup:AddChild(acceptButton)
+    
+    -- Decline button
+    local declineButton = AceGUI:Create("Button")
+    declineButton:SetText("Decline")
+    declineButton:SetWidth(100)
+    declineButton:SetCallback("OnClick", function()
+        self:SendAddonMessage("DECLINE", "", sender)
+        self:ChatPrint("Declined DeathRoll challenge from " .. sender)
+        dialog:Hide()
+    end)
+    buttonGroup:AddChild(declineButton)
+    
+    -- Auto-decline on close
+    dialog:SetCallback("OnClose", function()
+        self:SendAddonMessage("DECLINE", "", sender)
+        self:ChatPrint("Declined DeathRoll challenge from " .. sender)
+    end)
+    
+    -- Play sound notification
+    if self.db and self.db.profile.gameplay.soundEnabled then
+        PlaySound(8959) -- UI alert sound
+    end
+    
+    dialog:Show()
+    
+    self:ChatPrint("Challenge received from " .. sender .. " - Accept or Decline?")
+end
+
+-- Create Spicy Duel RPS section
+function DRE:CreateSpicyDuelSection(container)
+    local spicyGroup = AceGUI:Create("ScrollFrame")
+    spicyGroup:SetFullWidth(true)
+    spicyGroup:SetFullHeight(true)
+    spicyGroup:SetLayout("Flow")
+    container:AddChild(spicyGroup)
+    
+    -- Header
+    local header = AceGUI:Create("Heading")
+    header:SetText("Spicy DeathRoll — RPS Dice Duel")
+    header:SetFullWidth(true)
+    spicyGroup:AddChild(header)
+    
+    -- Description
+    local descLabel = AceGUI:Create("Label")
+    descLabel:SetText("A best-of-rounds duel where each player secretly chooses a stance (Attack/Defend/Gamble), rolls d50, and resolves outcomes via RPS-style matchups!\n\nStarting HP: 150 each | Win condition: reduce opponent to 0 HP")
+    descLabel:SetFullWidth(true)
+    descLabel:SetColor(0.9, 0.9, 0.7)
+    spicyGroup:AddChild(descLabel)
+    
+    -- Game state display
+    local gameStateGroup = AceGUI:Create("InlineGroup")
+    gameStateGroup:SetTitle("Game Status")
+    gameStateGroup:SetFullWidth(true)
+    gameStateGroup:SetLayout("Flow")
+    spicyGroup:AddChild(gameStateGroup)
+    
+    local gameStateLabel = AceGUI:Create("Label")
+    gameStateLabel:SetText("Ready to start a new Spicy Duel!")
+    gameStateLabel:SetFullWidth(true)
+    gameStateGroup:AddChild(gameStateLabel)
+    
+    -- Stance selection
+    local stanceGroup = AceGUI:Create("InlineGroup")
+    stanceGroup:SetTitle("Choose Your Stance")
+    stanceGroup:SetFullWidth(true)
+    stanceGroup:SetLayout("Flow")
+    spicyGroup:AddChild(stanceGroup)
+    
+    local stanceDropdown = AceGUI:Create("Dropdown")
+    stanceDropdown:SetList({
+        ["attack"] = "Attack (Straightforward strike)",
+        ["defend"] = "Defend (Shield and parry)",
+        ["gamble"] = "Gamble (Wild lunge - high risk/reward)"
+    })
+    stanceDropdown:SetValue("attack")
+    stanceDropdown:SetWidth(200)
+    stanceGroup:AddChild(stanceDropdown)
+    
+    local rollButton = AceGUI:Create("Button")
+    rollButton:SetText("Roll & Reveal!")
+    rollButton:SetWidth(120)
+    rollButton:SetCallback("OnClick", function()
+        self:HandleSpicyRoll(stanceDropdown:GetValue())
+    end)
+    stanceGroup:AddChild(rollButton)
+    
+    -- Challenge section
+    local challengeGroup = AceGUI:Create("InlineGroup")
+    challengeGroup:SetTitle("Challenge Someone")
+    challengeGroup:SetFullWidth(true)
+    challengeGroup:SetLayout("Flow")
+    spicyGroup:AddChild(challengeGroup)
+    
+    local challengeButton = AceGUI:Create("Button")
+    challengeButton:SetText("Challenge Target to Spicy Duel")
+    challengeButton:SetFullWidth(true)
+    challengeButton:SetCallback("OnClick", function()
+        local target = UnitName("target")
+        if not target or target == "" then
+            self:Print("Please target a player first!")
+            return
+        end
+        self:StartSpicyDuel(target)
+    end)
+    challengeGroup:AddChild(challengeButton)
+    
+    -- Rules section
+    local rulesGroup = AceGUI:Create("InlineGroup")
+    rulesGroup:SetTitle("Quick Rules")
+    rulesGroup:SetFullWidth(true)
+    rulesGroup:SetLayout("Fill")
+    spicyGroup:AddChild(rulesGroup)
+    
+    local rulesText = AceGUI:Create("MultiLineEditBox")
+    rulesText:SetText([[Attack vs Attack: Higher roll deals difference damage
+Attack vs Defend: Defend blocks if D≥A, else A deals (A-D)
+Attack vs Gamble: Glass Cannon - if A≥G then A deals full A, else G deals full G
+Defend vs Defend: No damage (stalemate)
+Defend vs Gamble: If G>D then G deals full G, else recoil (D-G)/2 to Gambler
+Gamble vs Gamble: Higher deals double difference, tie = both take 10
+
+Attack = consistent pressure | Defend = blocks & counters | Gamble = swingy chaos]])
+    rulesText:SetNumLines(8)
+    rulesText:DisableButton(true)
+    rulesText:SetFullWidth(true)
+    rulesText:SetFullHeight(true)
+    rulesGroup:AddChild(rulesText)
+    
+    -- Store references
+    UI.spicyGameState = gameStateLabel
+    UI.spicyStance = stanceDropdown
+    UI.spicyRollButton = rollButton
 end
 
 -- Clean up UI

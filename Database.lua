@@ -40,10 +40,10 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll)
     -- Update game counts
     playerData.gamesPlayed = (playerData.gamesPlayed or 0) + 1
     
-    if result == "WIN" then
+    if result == "Won" or result == "WIN" then
         playerData.wins = (playerData.wins or 0) + 1
         playerData.goldWon = (playerData.goldWon or 0) + (goldAmount or 0)
-    elseif result == "LOSS" then
+    elseif result == "Lost" or result == "LOSS" then
         playerData.losses = (playerData.losses or 0) + 1
         playerData.goldLost = (playerData.goldLost or 0) + (goldAmount or 0)
     end
@@ -78,7 +78,7 @@ function DRE:UpdateGoldTracking(result, goldAmount)
     local tracking = self.db.profile.goldTracking
     goldAmount = goldAmount or 0
     
-    if result == "WIN" then
+    if result == "Won" or result == "WIN" then
         tracking.totalWon = (tracking.totalWon or 0) + goldAmount
         
         if tracking.currentStreak >= 0 then
@@ -91,7 +91,7 @@ function DRE:UpdateGoldTracking(result, goldAmount)
             tracking.bestWinStreak = tracking.currentStreak
         end
         
-    elseif result == "LOSS" then
+    elseif result == "Lost" or result == "LOSS" then
         tracking.totalLost = (tracking.totalLost or 0) + goldAmount
         
         if tracking.currentStreak <= 0 then

@@ -55,6 +55,8 @@ local defaults = {
             soundEnabled = true,
             trackGold = true,
             autoRollFromMoney = false,
+            chatMessages = false,
+            debugMessages = false,
         },
         history = {},
         goldTracking = {
@@ -94,6 +96,9 @@ function DRE:OnInitialize()
     -- Initialize database
     self.db = AceDB:New("DeathRollEnhancerDB", defaults, true)
     
+    -- Register addon message prefix for inter-addon communication
+    C_ChatInfo.RegisterAddonMessagePrefix("DeathRollEnh")
+    
     -- Register options
     self:SetupOptions()
     
@@ -110,9 +115,10 @@ function DRE:OnEnable()
     -- Register core events
     self:RegisterEvent("CHAT_MSG_SYSTEM")
     self:RegisterEvent("ADDON_LOADED")
+    self:RegisterEvent("CHAT_MSG_ADDON")
     
-    -- Register game-related events
-    self:RegisterGameEvents()
+    -- Register game-related events (CHAT_MSG_WHISPER for spicy duels)
+    self:RegisterEvent("CHAT_MSG_WHISPER")
     
     -- Initialize modules
     self:InitializeUI()
@@ -482,6 +488,22 @@ function DRE:SetupOptions()
                         end,
                         order = 5,
                     },
+                    chatMessages = {
+                        name = "Chat Messages",
+                        desc = "Show informational messages in chat (challenge status, responses, timeouts, etc.)",
+                        type = "toggle",
+                        get = function() return self.db.profile.gameplay.chatMessages end,
+                        set = function(_, val) self.db.profile.gameplay.chatMessages = val end,
+                        order = 5.5,
+                    },
+                    debugMessages = {
+                        name = "Debug Messages",
+                        desc = "Show technical debug messages (addon detection, message parsing, etc.). Turn this off for a cleaner experience.",
+                        type = "toggle",
+                        get = function() return self.db.profile.gameplay.debugMessages end,
+                        set = function(_, val) self.db.profile.gameplay.debugMessages = val end,
+                        order = 5.7,
+                    },
                     interfaceHeader = {
                         name = "Interface Settings",
                         type = "header",
@@ -773,14 +795,15 @@ function DRE:ResetWindowPosition()
     self:Print("Window position reset to center")
 end
 
-function DRE:ToggleMinimapIcon()
-end
-
--- Module initialization methods
+-- Module initialization methods (actual implementations are in separate files)
 function DRE:InitializeUI()
+    -- UI module is initialized when ShowMainWindow is called
+    -- All UI functions are implemented in UI.lua
 end
 
 function DRE:InitializeMinimap()
+    -- Minimap initialization is implemented in Minimap.lua
+    -- This method is defined there and will be called
 end
 
 function DRE:InitializeSharedMedia()
@@ -795,14 +818,355 @@ function DRE:InitializeSharedMedia()
     end
 end
 
--- Event handlers
+-- Event handlers - handle both fallback and active game system messages  
 function DRE:CHAT_MSG_SYSTEM(event, message)
+    -- Handle fallback mode (watching for challenge acceptance)
+    if self.fallbackChallenge then
+        local playerName, maxRoll, rollResult = message:match("(%S+) rolls 1%-(%d+) %((%d+)%)")
+        
+        if playerName and rollResult and maxRoll then
+            if playerName == self.fallbackChallenge.target then
+                local currentRoll = tonumber(rollResult)
+                local expectedRoll = self.fallbackChallenge.roll
+                
+                if tonumber(maxRoll) == expectedRoll then
+                    self:ChatPrint(playerName .. " accepted! They rolled " .. currentRoll .. " (1-" .. expectedRoll .. ")")
+                    
+                    if currentRoll == 1 then
+                        self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
+                        self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
+                    else
+                        self:ChatPrint("Challenge accepted! Now you roll 1-" .. (currentRoll - 1))
+                        self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, currentRoll - 1)
+                    end
+                    self:StopFallbackMode()
+                    return
+                end
+            end
+        end
+    end
+    
+    -- Handle active game rolls
+    if self.gameState and self.gameState.isActive then
+        local playerName, maxRoll, rollResult = message:match("(%S+) rolls 1%-(%d+) %((%d+)%)")
+        
+        if playerName and rollResult and maxRoll then
+            local roll = tonumber(rollResult)
+            local maxRollNum = tonumber(maxRoll)
+            
+            -- Check if this roll is relevant to our game
+            if (playerName == UnitName("player") or playerName == self.gameState.target) and
+               maxRollNum <= self.gameState.currentRoll + 1 then -- Allow some tolerance
+                self:HandleGameRoll(playerName, roll, maxRollNum)
+            end
+        end
+    end
 end
 
 function DRE:ADDON_LOADED(event, addonName)
     if addonName == "DeathRollEnhancer" then
         self:UnregisterEvent("ADDON_LOADED")
     end
+end
+
+-- Handle whisper messages for spicy duels and fallback challenges
+function DRE:CHAT_MSG_WHISPER(event, message, playerName, languageName, channelName, playerName2, specialFlags, zoneChannelID, channelIndex, channelBaseName, unused, lineID, guid, bnSenderID, isMobile, isSubtitle, hideSenderInLetterbox, supressRaidIcons)
+    -- Handle Spicy Duel acceptance
+    if message:lower():find("accept spicy") and self.spicyDuel and self.spicyDuel.target == playerName then
+        self:ChatPrint(playerName .. " accepted your Spicy Duel challenge!")
+        self:UpdateSpicyGameState("Challenge accepted! Round 1: Choose your stance! (HP: You 150, " .. playerName .. " 150)")
+        
+        -- Send confirmation
+        SendChatMessage("Challenge accepted! Let the Spicy Duel begin! Choose your stance and roll!", "WHISPER", nil, playerName)
+        return
+    end
+    
+    -- Handle manual Spicy Duel stance reporting (fallback for non-addon users)
+    local stance, roll = message:lower():match("my stance: (%w+) %(roll: (%d+)%)")
+    if stance and roll and self.spicyDuel and self.spicyDuel.target == playerName then
+        self.spicyDuel.opponentStance = stance
+        self.spicyDuel.opponentRoll = tonumber(roll)
+        
+        -- Check if we're ready to resolve
+        if self.spicyDuel.myStance and self.spicyDuel.myRoll then
+            self:ResolveSpicyRound()
+        end
+        return
+    end
+end
+
+-- Handle addon messages for inter-addon communication
+function DRE:CHAT_MSG_ADDON(event, prefix, message, channel, sender)
+    if prefix ~= "DeathRollEnh" then
+        return
+    end
+    
+    -- Parse addon message
+    local msgType, data = message:match("^([^:]+):(.*)$")
+    if not msgType then
+        return
+    end
+    
+    if msgType == "CHALLENGE" then
+        self:HandleAddonChallenge(sender, data, channel)
+    elseif msgType == "PING" then
+        self:HandleAddonPing(sender, data, channel)
+    elseif msgType == "PONG" then
+        self:HandleAddonPong(sender, data, channel)
+    elseif msgType == "ACCEPT" then
+        self:HandleAddonAccept(sender, data, channel)
+    elseif msgType == "DECLINE" then
+        self:HandleAddonDecline(sender, data, channel)
+    elseif msgType == "SPICYDUEL" then
+        self:HandleSpicyDuelMessage(sender, data)
+    end
+end
+
+-- Send addon message to a player
+function DRE:SendAddonMessage(msgType, data, target)
+    local message = msgType .. ":" .. (data or "")
+    local success = C_ChatInfo.SendAddonMessage("DeathRollEnh", message, "WHISPER", target)
+    return success
+end
+
+-- Handle addon challenge received
+function DRE:HandleAddonChallenge(sender, data, channel)
+    local roll, wager, challengeText = data:match("^(%d+):(%d+):(.*)$")
+    if roll and wager and challengeText then
+        self:ShowChallengeDialog(sender, tonumber(roll), tonumber(wager), challengeText)
+    end
+end
+
+-- Handle addon ping (for detection)
+function DRE:HandleAddonPing(sender, data, channel)
+    -- Respond with pong to confirm we have the addon
+    self:SendAddonMessage("PONG", self.version, sender)
+end
+
+-- Handle addon pong (confirms they have addon)
+function DRE:HandleAddonPong(sender, version, channel)
+    -- Mark player as having addon
+    if self.UI and self.UI.pendingChallenge and self.UI.pendingChallenge.target == sender then
+        self.UI.pendingChallenge.hasAddon = true
+        self:DebugPrint(sender .. " has DeathRoll Enhancer (v" .. version .. ") - sending enhanced challenge...")
+        
+        -- Send addon challenge message with structured data
+        local challenge = self.UI.pendingChallenge
+        local challengeText = challenge.wager > 0 and
+            ("DeathRoll challenge: " .. challenge.roll .. " starting roll for " .. self:FormatGold(challenge.wager)) or
+            ("DeathRoll challenge: " .. challenge.roll .. " starting roll (no wager)")
+            
+        self:SendAddonMessage("CHALLENGE", 
+            challenge.roll .. ":" .. challenge.wager .. ":" .. challengeText, 
+            sender)
+    end
+end
+
+-- Check if addon response received, otherwise assume no addon
+function DRE:CheckAddonResponse(target)
+    if not self.UI or not self.UI.pendingChallenge or self.UI.pendingChallenge.target ~= target then
+        return
+    end
+    
+    local challenge = self.UI.pendingChallenge
+    
+    if challenge.hasAddon then
+        -- They have the addon, enhanced challenge already sent
+        self:ChatPrint("Waiting for " .. target .. "'s response to enhanced challenge...")
+    else
+        -- No addon detected, send natural challenge and watch for rolls
+        self:DebugPrint(target .. " doesn't have the addon - sending natural challenge...")
+        
+        -- Send natural challenge message
+        local message
+        if challenge.wager > 0 then
+            local wagerText = self:FormatGold(challenge.wager)
+            message = "I challenge you to a DeathRoll! Starting at " .. challenge.roll .. " for " .. wagerText .. "!"
+        else
+            message = "I challenge you to a DeathRoll! Starting at " .. challenge.roll .. " (no wager)"
+        end
+        
+        SendChatMessage(message, "WHISPER", nil, target)
+        self:StartFallbackMode(challenge)
+    end
+end
+
+-- Start fallback mode for non-addon users  
+function DRE:StartFallbackMode(challenge)
+    self:DebugPrint("Fallback mode: Watching " .. challenge.target .. " for /roll " .. challenge.roll)
+    
+    -- Store the fallback challenge for monitoring
+    self.fallbackChallenge = challenge
+    self.fallbackChallenge.startTime = GetTime()
+    self.fallbackChallenge.timeout = 60 -- 60 second timeout
+    
+    -- NOTE: Natural whisper message is already sent by CheckAddonResponse, no need to send again
+    
+    -- Register for system messages to watch for rolls
+    if not self.watchingFallbackRolls then
+        self:RegisterEvent("CHAT_MSG_SYSTEM")
+        self.watchingFallbackRolls = true
+    end
+    
+    -- Start timeout timer
+    C_Timer.After(self.fallbackChallenge.timeout, function()
+        if self.fallbackChallenge and self.fallbackChallenge.target == challenge.target then
+            self:ChatPrint("Challenge to " .. challenge.target .. " timed out (no response)")
+            self:StopFallbackMode()
+        end
+    end)
+end
+
+-- Stop fallback mode
+function DRE:StopFallbackMode()
+    self.fallbackChallenge = nil
+    if self.watchingFallbackRolls then
+        self:UnregisterEvent("CHAT_MSG_SYSTEM")
+        self.watchingFallbackRolls = false
+    end
+end
+
+-- Handle system messages for fallback roll watching
+function DRE:CHAT_MSG_SYSTEM(event, message)
+    if not self.fallbackChallenge then
+        return
+    end
+    
+    -- Look for roll patterns: "PlayerName rolls 1-100 (42)"
+    local playerName, maxRoll, rollResult = message:match("(%S+) rolls 1%-(%d+) %((%d+)%)")
+    
+    if playerName and rollResult and maxRoll then
+        -- Check if this is from our challenged player
+        if playerName == self.fallbackChallenge.target then
+            local currentRoll = tonumber(rollResult)
+            local expectedRoll = self.fallbackChallenge.roll
+            
+            -- Check if they rolled the expected starting number
+            if tonumber(maxRoll) == expectedRoll then
+                -- They rolled within the expected range, challenge accepted
+                self:ChatPrint(playerName .. " accepted! They rolled " .. currentRoll .. " (1-" .. expectedRoll .. ")")
+                
+                if currentRoll == 1 then
+                    self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
+                    -- Handle win
+                    self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
+                else
+                    self:ChatPrint("Challenge accepted! Now you roll 1-" .. (currentRoll - 1))
+                    -- Start actual game
+                    self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, currentRoll)
+                end
+                self:StopFallbackMode()
+            end
+        end
+    end
+end
+
+-- Handle addon accept response
+function DRE:HandleAddonAccept(sender, data, channel)
+    local roll, wager = data:match("^(%d+):(%d+)$")
+    if roll and wager then
+        roll = tonumber(roll)
+        wager = tonumber(wager)
+        self:ChatPrint(sender .. " accepted your DeathRoll challenge!")
+        
+        -- Start the actual game
+        self:StartActualGame(sender, roll, wager)
+    end
+end
+
+-- Handle addon decline response  
+function DRE:HandleAddonDecline(sender, data, channel)
+    self:ChatPrint(sender .. " declined your DeathRoll challenge.")
+    
+    -- Clear challenge state
+    if self.UI and self.UI.pendingChallenge then
+        self.UI.pendingChallenge = nil
+    end
+    
+    if self.UI and self.UI.statusLabel then
+        self.UI.statusLabel:SetText("Ready to roll!")
+    end
+end
+
+-- Conditional print that respects chat messages setting
+function DRE:ChatPrint(message)
+    if self.db and self.db.profile.gameplay.chatMessages then
+        self:Print(message)
+    end
+end
+
+-- Conditional print that respects debug messages setting
+function DRE:DebugPrint(message)
+    if self.db and self.db.profile.gameplay.debugMessages then
+        self:Print("DeathRollEnhancer: " .. message)
+    end
+end
+
+-- Main function to start a DeathRoll challenge (called from UI)
+function DRE:StartDeathRoll(target, roll, wager)
+    -- Validate inputs
+    if not target or target == "" then
+        self:Print("Invalid target player!")
+        return
+    end
+    
+    if not roll or roll < 2 then
+        self:Print("Roll must be at least 2!")
+        return
+    end
+    
+    if not wager or wager < 0 then
+        self:Print("Invalid wager amount!")
+        return
+    end
+    
+    -- Create challenge object
+    local challenge = {
+        target = target,
+        roll = roll,
+        wager = wager,
+        timestamp = time()
+    }
+    
+    -- Update UI state
+    if self.UI then
+        self.UI.isGameActive = true
+        self.UI.gameState = "ROLLING"
+        if self.UI.statusLabel then
+            local statusText = wager > 0 and 
+                string.format("Challenging %s: %d starting roll, %s wager", target, roll, self:FormatGold(wager)) or
+                string.format("Challenging %s: %d starting roll, no wager", target, roll)
+            self.UI.statusLabel:SetText(statusText)
+        end
+    end
+    
+    self:ChatPrint("Challenging " .. target .. " to a DeathRoll...")
+    
+    -- Start the hybrid challenge process (addon detection + challenge)
+    self:SendChallenge(challenge)
+end
+
+-- Send challenge using hybrid detection system
+function DRE:SendChallenge(challenge)
+    -- Store challenge data for timeout handling
+    if self.UI then
+        self.UI.pendingChallenge = {
+            target = challenge.target,
+            roll = challenge.roll,
+            wager = challenge.wager,
+            timestamp = GetTime(),
+            hasAddon = false
+        }
+    end
+    
+    -- First, try to detect if target has addon by sending ping
+    self:SendAddonMessage("PING", self.version, challenge.target)
+    self:DebugPrint("Checking if " .. challenge.target .. " has DeathRoll Enhancer addon...")
+    
+    -- Set up 3-second timeout to check if they have addon
+    C_Timer.After(3, function()
+        self:CheckAddonResponse(challenge.target)
+    end)
 end
 
 -- Create reset confirmation popup
@@ -820,6 +1184,365 @@ StaticPopupDialogs["DEATHROLL_RESET_CONFIRM"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+-- Start the actual DeathRoll game
+function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
+    -- Initialize game state
+    self.gameState = {
+        isActive = true,
+        target = target,
+        initialRoll = initialRoll,
+        currentRoll = currentRoll or initialRoll,
+        wager = wager or 0,
+        playerTurn = true
+    }
+    
+    -- Clear fallback challenge since we're starting the actual game
+    self.fallbackChallenge = nil
+    
+    -- Clear pending challenge
+    if self.UI and self.UI.pendingChallenge then
+        self.UI.pendingChallenge = nil
+    end
+    
+    self:ChatPrint("DeathRoll game started with " .. target .. "!")
+    
+    -- If currentRoll is different from initialRoll, it means opponent already rolled
+    if currentRoll and currentRoll ~= initialRoll then
+        self:ChatPrint("Current roll range: 1-" .. self.gameState.currentRoll)
+        self:ChatPrint("Your turn! Roll 1-" .. self.gameState.currentRoll)
+    else
+        self:ChatPrint("Starting roll range: 1-" .. self.gameState.currentRoll)  
+        self:ChatPrint("You go first! Roll 1-" .. self.gameState.currentRoll)
+    end
+    
+    if self.UI and self.UI.statusLabel then
+        self.UI.statusLabel:SetText("Your turn! Roll 1-" .. self.gameState.currentRoll)
+    end
+    
+    -- Ensure system messages are registered to track rolls
+    if not self.watchingFallbackRolls then
+        self:RegisterEvent("CHAT_MSG_SYSTEM")
+        self.watchingFallbackRolls = true
+    end
+end
+
+-- Handle game end
+function DRE:HandleGameEnd(loser, result, wager, initialRoll)
+    local playerName = UnitName("player")
+    local won = (result == "WIN")
+    
+    if won then
+        self:Print("🎉 You WON the DeathRoll!")
+        if self.db and self.db.profile.gameplay.autoEmote then
+            DoEmote(self:GetRandomHappyEmote())
+        end
+    else
+        self:Print("💀 You LOST the DeathRoll!")
+        if self.db and self.db.profile.gameplay.autoEmote then
+            DoEmote(self:GetRandomSadEmote())
+        end
+    end
+    
+    -- Record the game result
+    if loser and loser ~= playerName then
+        -- We won against the loser
+        self:AddGameToHistory(loser, "Won", wager or 0, initialRoll or 0)
+    elseif loser == playerName then
+        -- We lost to the target
+        local target = self.gameState and self.gameState.target or "Unknown"
+        self:AddGameToHistory(target, "Lost", wager or 0, initialRoll or 0)
+    end
+    
+    -- Clean up game state
+    self.gameState = nil
+    self.fallbackChallenge = nil
+    
+    -- Clean up event watching
+    if self.watchingFallbackRolls then
+        self:UnregisterEvent("CHAT_MSG_SYSTEM") 
+        self.watchingFallbackRolls = false
+    end
+    
+    if self.UI then
+        self.UI.pendingChallenge = nil
+        self.UI.isGameActive = false
+        self.UI.gameState = "WAITING"
+        if self.UI.statusLabel then
+            self.UI.statusLabel:SetText("Ready to roll!")
+        end
+    end
+    
+    -- Update stats display
+    if self.UpdateStatsDisplay then
+        self:UpdateStatsDisplay()
+    end
+end
+
+-- Handle ongoing game rolls
+function DRE:HandleGameRoll(playerName, roll, maxRoll)
+    if not self.gameState or not self.gameState.isActive then
+        return
+    end
+    
+    local myName = UnitName("player")
+    
+    if playerName == myName then
+        -- Our roll
+        self:ChatPrint("You rolled " .. roll .. " (1-" .. maxRoll .. ")")
+        
+        if roll == 1 then
+            -- We lost
+            self:HandleGameEnd(myName, "LOSS", self.gameState.wager, self.gameState.initialRoll)
+        else
+            -- Continue game, opponent's turn
+            self.gameState.currentRoll = roll - 1
+            self.gameState.playerTurn = false
+            self:ChatPrint(self.gameState.target .. "'s turn! They need to roll 1-" .. self.gameState.currentRoll)
+            
+            if self.UI and self.UI.statusLabel then
+                self.UI.statusLabel:SetText(self.gameState.target .. "'s turn! Roll 1-" .. self.gameState.currentRoll)
+            end
+        end
+        
+    elseif playerName == self.gameState.target then
+        -- Opponent's roll
+        self:ChatPrint(playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
+        
+        if roll == 1 then
+            -- They lost, we won
+            self:HandleGameEnd(playerName, "WIN", self.gameState.wager, self.gameState.initialRoll)
+        else
+            -- Continue game, our turn
+            self.gameState.currentRoll = roll - 1
+            self.gameState.playerTurn = true
+            self:ChatPrint("Your turn! Roll 1-" .. self.gameState.currentRoll)
+            
+            if self.UI and self.UI.statusLabel then
+                self.UI.statusLabel:SetText("Your turn! Roll 1-" .. self.gameState.currentRoll)
+            end
+        end
+    end
+end
+
+-- Duplicate CHAT_MSG_SYSTEM function removed - using the one at the top of file
+
+-- Spicy Duel Game Logic
+function DRE:StartSpicyDuel(target)
+    if not target or target == "" then
+        self:Print("Invalid target for Spicy Duel!")
+        return
+    end
+    
+    -- Initialize Spicy Duel state
+    self.spicyDuel = {
+        isActive = true,
+        target = target,
+        myHP = 150,
+        opponentHP = 150,
+        round = 1,
+        myStance = nil,
+        myRoll = nil,
+        opponentStance = nil,
+        opponentRoll = nil,
+        waitingForOpponent = false
+    }
+    
+    -- Send challenge via whisper
+    local message = "I challenge you to a Spicy DeathRoll RPS Dice Duel! Each player chooses Attack/Defend/Gamble, rolls d50, then we resolve damage. 150 HP each, first to 0 loses! Type 'accept spicy' if you're ready!"
+    SendChatMessage(message, "WHISPER", nil, target)
+    
+    self:ChatPrint("Challenged " .. target .. " to a Spicy Duel!")
+    self:UpdateSpicyGameState("Waiting for " .. target .. " to accept the challenge...")
+    
+    -- Register for whisper messages to catch responses
+    self:RegisterEvent("CHAT_MSG_WHISPER")
+end
+
+function DRE:HandleSpicyRoll(stance)
+    if not self.spicyDuel or not self.spicyDuel.isActive then
+        self:Print("No active Spicy Duel! Challenge someone first.")
+        return
+    end
+    
+    if self.spicyDuel.myStance then
+        self:Print("You already chose your stance for this round!")
+        return
+    end
+    
+    -- Roll d50 for the chosen stance
+    local roll = math.random(1, 50)
+    
+    self.spicyDuel.myStance = stance
+    self.spicyDuel.myRoll = roll
+    
+    -- Send stance and roll to opponent via addon message or whisper
+    local message = "SPICY_STANCE:" .. stance .. ":" .. roll
+    if self:SendAddonMessage("SPICYDUEL", message, self.spicyDuel.target) then
+        self:DebugPrint("Sent spicy stance via addon message")
+    else
+        -- Fallback to whisper
+        SendChatMessage("My stance: " .. stance .. " (roll: " .. roll .. ")", "WHISPER", nil, self.spicyDuel.target)
+    end
+    
+    local stanceName = stance == "attack" and "Attack" or stance == "defend" and "Defend" or "Gamble"
+    self:UpdateSpicyGameState("Round " .. self.spicyDuel.round .. ": You chose " .. stanceName .. " and rolled " .. roll .. ". Waiting for opponent...")
+    
+    -- Check if both players have made their moves
+    if self.spicyDuel.opponentStance and self.spicyDuel.opponentRoll then
+        self:ResolveSpicyRound()
+    end
+end
+
+function DRE:ResolveSpicyRound()
+    if not self.spicyDuel then return end
+    
+    local myStance = self.spicyDuel.myStance
+    local myRoll = self.spicyDuel.myRoll
+    local oppStance = self.spicyDuel.opponentStance
+    local oppRoll = self.spicyDuel.opponentRoll
+    
+    local damageToMe = 0
+    local damageToOpp = 0
+    
+    -- Apply the RPS logic from the spec
+    local matchup = myStance .. "_vs_" .. oppStance
+    
+    if matchup == "attack_vs_attack" then
+        if myRoll > oppRoll then
+            damageToOpp = myRoll - oppRoll
+        elseif oppRoll > myRoll then
+            damageToMe = oppRoll - myRoll
+        end
+        -- tie = no damage
+        
+    elseif matchup == "attack_vs_defend" then
+        if myRoll > oppRoll then
+            damageToOpp = myRoll - oppRoll
+        end
+        -- defend blocks if D >= A
+        
+    elseif matchup == "attack_vs_gamble" then
+        -- Glass Cannon
+        if myRoll >= oppRoll then
+            damageToOpp = myRoll
+        else
+            damageToMe = oppRoll
+        end
+        
+    elseif matchup == "defend_vs_attack" then
+        if oppRoll > myRoll then
+            damageToMe = oppRoll - myRoll
+        end
+        -- defend blocks if D >= A
+        
+    elseif matchup == "defend_vs_defend" then
+        -- Stalemate, no damage
+        
+    elseif matchup == "defend_vs_gamble" then
+        if oppRoll > myRoll then
+            damageToMe = oppRoll
+        else
+            damageToOpp = math.ceil((myRoll - oppRoll) / 2) -- recoil
+        end
+        
+    elseif matchup == "gamble_vs_attack" then
+        -- Glass Cannon (reversed)
+        if oppRoll >= myRoll then
+            damageToMe = oppRoll
+        else
+            damageToOpp = myRoll
+        end
+        
+    elseif matchup == "gamble_vs_defend" then
+        if myRoll > oppRoll then
+            damageToOpp = myRoll
+        else
+            damageToMe = math.ceil((oppRoll - myRoll) / 2) -- recoil
+        end
+        
+    elseif matchup == "gamble_vs_gamble" then
+        if myRoll > oppRoll then
+            damageToOpp = 2 * (myRoll - oppRoll)
+        elseif oppRoll > myRoll then
+            damageToMe = 2 * (oppRoll - myRoll)
+        else
+            -- tie = both take 10
+            damageToMe = 10
+            damageToOpp = 10
+        end
+    end
+    
+    -- Apply critical hits and fumbles
+    if myRoll == 50 then damageToOpp = damageToOpp + 10 end
+    if oppRoll == 50 then damageToMe = damageToMe + 10 end
+    if myRoll == 1 and (myStance == "attack" or myStance == "gamble") then damageToMe = damageToMe + 5 end
+    if oppRoll == 1 and (oppStance == "attack" or oppStance == "gamble") then damageToOpp = damageToOpp + 5 end
+    
+    -- Apply damage
+    self.spicyDuel.myHP = self.spicyDuel.myHP - damageToMe
+    self.spicyDuel.opponentHP = self.spicyDuel.opponentHP - damageToOpp
+    
+    -- Report results
+    local myStanceName = myStance == "attack" and "Attack" or myStance == "defend" and "Defend" or "Gamble"
+    local oppStanceName = oppStance == "attack" and "Attack" or oppStance == "defend" and "Defend" or "Gamble"
+    
+    local resultMsg = string.format("Round %d Result:\nYou: %s (%d) vs %s: %s (%d)\nDamage: You took %d, %s took %d\nHP: You %d, %s %d",
+        self.spicyDuel.round, myStanceName, myRoll, self.spicyDuel.target, oppStanceName, oppRoll,
+        damageToMe, self.spicyDuel.target, damageToOpp,
+        math.max(0, self.spicyDuel.myHP), self.spicyDuel.target, math.max(0, self.spicyDuel.opponentHP))
+    
+    self:Print(resultMsg)
+    
+    -- Check for game end
+    if self.spicyDuel.myHP <= 0 and self.spicyDuel.opponentHP <= 0 then
+        self:Print("🤝 Double KO! What an epic battle!")
+        self:EndSpicyDuel()
+    elseif self.spicyDuel.myHP <= 0 then
+        self:Print("💀 You lost the Spicy Duel! " .. self.spicyDuel.target .. " is victorious!")
+        self:EndSpicyDuel()
+    elseif self.spicyDuel.opponentHP <= 0 then
+        self:Print("🎉 You won the Spicy Duel! Excellent strategy!")
+        self:EndSpicyDuel()
+    else
+        -- Continue to next round
+        self.spicyDuel.round = self.spicyDuel.round + 1
+        self.spicyDuel.myStance = nil
+        self.spicyDuel.myRoll = nil
+        self.spicyDuel.opponentStance = nil
+        self.spicyDuel.opponentRoll = nil
+        
+        self:UpdateSpicyGameState(string.format("Round %d: Choose your stance! (HP: You %d, %s %d)", 
+            self.spicyDuel.round, self.spicyDuel.myHP, self.spicyDuel.target, self.spicyDuel.opponentHP))
+    end
+end
+
+function DRE:EndSpicyDuel()
+    self.spicyDuel = nil
+    self:UpdateSpicyGameState("Duel completed! Ready for another challenge.")
+end
+
+function DRE:UpdateSpicyGameState(message)
+    if self.UI and self.UI.spicyGameState then
+        self.UI.spicyGameState:SetText(message)
+    end
+end
+
+-- Handle Spicy Duel addon messages
+function DRE:HandleSpicyDuelMessage(sender, message)
+    if message:find("^SPICY_STANCE:") then
+        local stance, roll = message:match("^SPICY_STANCE:([^:]+):(%d+)$")
+        if stance and roll and self.spicyDuel and self.spicyDuel.target == sender then
+            self.spicyDuel.opponentStance = stance
+            self.spicyDuel.opponentRoll = tonumber(roll)
+            
+            -- Check if we're ready to resolve
+            if self.spicyDuel.myStance and self.spicyDuel.myRoll then
+                self:ResolveSpicyRound()
+            end
+        end
+    end
+end
 
 -- Make the addon globally accessible
 _G.DeathRollEnhancer = DRE

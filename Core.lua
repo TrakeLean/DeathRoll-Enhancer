@@ -124,7 +124,11 @@ function DRE:OnEnable()
     -- Register game-related events (CHAT_MSG_WHISPER for spicy duels)
     self:RegisterEvent("CHAT_MSG_WHISPER")
     
-    self:DebugPrint("Events registered: CHAT_MSG_SYSTEM, ADDON_LOADED, CHAT_MSG_ADDON, CHAT_MSG_WHISPER")
+    -- Register additional events that might carry roll messages
+    self:RegisterEvent("CHAT_MSG_TEXT_EMOTE")
+    self:RegisterEvent("CHAT_MSG_EMOTE")
+    
+    self:DebugPrint("Events registered: CHAT_MSG_SYSTEM, ADDON_LOADED, CHAT_MSG_ADDON, CHAT_MSG_WHISPER, CHAT_MSG_TEXT_EMOTE, CHAT_MSG_EMOTE")
     
     -- Initialize modules
     self:InitializeUI()
@@ -827,8 +831,31 @@ end
 -- Event handlers - handle both fallback and active game system messages  
 function DRE:CHAT_MSG_SYSTEM(event, message)
     -- Debug: Show all system messages to help identify roll format
-    self:DebugPrint("CHAT_MSG_SYSTEM: " .. (message or "nil"))
+    self:DebugPrint("CHAT_MSG_SYSTEM triggered with message: '" .. (message or "nil") .. "'")
     
+    -- Use unified processing function
+    self:ProcessPotentialRoll(message, nil, "SYSTEM")
+end
+
+function DRE:ADDON_LOADED(event, addonName)
+    if addonName == "DeathRollEnhancer" then
+        self:UnregisterEvent("ADDON_LOADED")
+    end
+end
+
+-- Additional event handlers to catch rolls
+function DRE:CHAT_MSG_TEXT_EMOTE(event, message, sender)
+    self:DebugPrint("CHAT_MSG_TEXT_EMOTE: '" .. (message or "nil") .. "' from " .. (sender or "unknown"))
+    self:ProcessPotentialRoll(message, sender, "TEXT_EMOTE")
+end
+
+function DRE:CHAT_MSG_EMOTE(event, message, sender)
+    self:DebugPrint("CHAT_MSG_EMOTE: '" .. (message or "nil") .. "' from " .. (sender or "unknown"))  
+    self:ProcessPotentialRoll(message, sender, "EMOTE")
+end
+
+-- Unified roll processing function
+function DRE:ProcessPotentialRoll(message, sender, eventType)
     if not message then return end
     
     -- Try multiple roll patterns to catch different formats
@@ -840,53 +867,50 @@ function DRE:CHAT_MSG_SYSTEM(event, message)
     if playerName and roll and maxRoll then
         roll = tonumber(roll)
         maxRoll = tonumber(maxRoll)
-        self:DebugPrint("Detected roll: " .. playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
+        self:DebugPrint("Detected roll via " .. eventType .. ": " .. playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
         
-        -- Handle fallback mode (watching for challenge acceptance)
-        if self.fallbackChallenge then
-            if playerName == self.fallbackChallenge.target then
-                local expectedRoll = self.fallbackChallenge.roll
-                
-                if maxRoll == expectedRoll then
-                    self:ChatPrint(playerName .. " accepted! They rolled " .. roll .. " (1-" .. expectedRoll .. ")")
-                    
-                    if roll == 1 then
-                        self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
-                        self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
-                    else
-                        self:ChatPrint("Challenge accepted! Now you roll 1-" .. (roll - 1))
-                        self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, roll - 1)
-                    end
-                    self:StopFallbackMode()
-                    return
-                end
-            end
-        end
-        
-        -- Handle active game rolls
-        if self.gameState and self.gameState.isActive then
-            local myName = UnitName("player")
-            self:DebugPrint("Game active - checking if roll is relevant (player: " .. myName .. ", target: " .. (self.gameState.target or "nil") .. ")")
-            
-            -- Check if this roll is relevant to our game
-            if (playerName == myName or playerName == self.gameState.target) and
-               maxRoll <= self.gameState.currentRoll + 1 then -- Allow some tolerance
-                self:DebugPrint("Roll is relevant - processing via HandleGameRoll")
-                self:HandleGameRoll(playerName, roll, maxRoll)
-            else
-                self:DebugPrint("Roll not relevant - player: " .. playerName .. ", maxRoll: " .. maxRoll .. ", currentRoll: " .. (self.gameState.currentRoll or "nil"))
-            end
-        else
-            self:DebugPrint("No active game state")
-        end
-    else
-        self:DebugPrint("No roll pattern matched in message")
+        self:HandleDetectedRoll(playerName, roll, maxRoll)
     end
 end
 
-function DRE:ADDON_LOADED(event, addonName)
-    if addonName == "DeathRollEnhancer" then
-        self:UnregisterEvent("ADDON_LOADED")
+-- Handle detected roll from any event source
+function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
+    -- Handle fallback mode (watching for challenge acceptance)
+    if self.fallbackChallenge then
+        if playerName == self.fallbackChallenge.target then
+            local expectedRoll = self.fallbackChallenge.roll
+            
+            if maxRoll == expectedRoll then
+                self:ChatPrint(playerName .. " accepted! They rolled " .. roll .. " (1-" .. expectedRoll .. ")")
+                
+                if roll == 1 then
+                    self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
+                    self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
+                else
+                    self:ChatPrint("Challenge accepted! Now you roll 1-" .. (roll - 1))
+                    self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, roll - 1)
+                end
+                self:StopFallbackMode()
+                return
+            end
+        end
+    end
+    
+    -- Handle active game rolls
+    if self.gameState and self.gameState.isActive then
+        local myName = UnitName("player")
+        self:DebugPrint("Game active - checking if roll is relevant (player: " .. myName .. ", target: " .. (self.gameState.target or "nil") .. ")")
+        
+        -- Check if this roll is relevant to our game
+        if (playerName == myName or playerName == self.gameState.target) and
+           maxRoll <= self.gameState.currentRoll + 1 then -- Allow some tolerance
+            self:DebugPrint("Roll is relevant - processing via HandleGameRoll")
+            self:HandleGameRoll(playerName, roll, maxRoll)
+        else
+            self:DebugPrint("Roll not relevant - player: " .. playerName .. ", maxRoll: " .. maxRoll .. ", currentRoll: " .. (self.gameState.currentRoll or "nil"))
+        end
+    else
+        self:DebugPrint("No active game state")
     end
 end
 

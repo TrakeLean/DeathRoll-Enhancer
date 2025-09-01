@@ -155,6 +155,7 @@ function DRE:CreateGameSection(container)
     goldEdit:SetWidth(60)
     goldEdit:SetText("0")
     goldEdit:SetMaxLetters(6) -- Reasonable gold limit
+    goldEdit:DisableButton(true) -- Remove the "Okay" button
     goldEdit:SetCallback("OnTextChanged", function(widget, event, text)
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
@@ -168,6 +169,7 @@ function DRE:CreateGameSection(container)
     silverEdit:SetWidth(60)
     silverEdit:SetText("0")
     silverEdit:SetMaxLetters(2) -- Silver max 99
+    silverEdit:DisableButton(true) -- Remove the "Okay" button
     silverEdit:SetCallback("OnTextChanged", function(widget, event, text)
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
@@ -186,6 +188,7 @@ function DRE:CreateGameSection(container)
     copperEdit:SetWidth(60)
     copperEdit:SetText("0")
     copperEdit:SetMaxLetters(2) -- Copper max 99
+    copperEdit:DisableButton(true) -- Remove the "Okay" button
     copperEdit:SetCallback("OnTextChanged", function(widget, event, text)
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then

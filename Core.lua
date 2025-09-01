@@ -54,6 +54,7 @@ local defaults = {
             autoEmote = true,
             soundEnabled = true,
             trackGold = true,
+            autoRollFromMoney = false,
         },
         history = {},
         goldTracking = {
@@ -116,6 +117,24 @@ end
 function DRE:GetRandomSadEmote()
     local sadEmotes = {"CRY", "SIGH", "SURRENDER", "LAY", "CONGRATULATE"}
     return sadEmotes[math.random(1, #sadEmotes)]
+end
+
+-- Calculate auto-roll number from player's total money
+function DRE:CalculateAutoRoll()
+    local totalMoney = GetMoney() -- Returns total money in copper
+    if totalMoney <= 0 then
+        return 100 -- Default fallback
+    end
+    
+    -- Apply modulo 999999 to stay within roll limits
+    local rollValue = totalMoney % 999999
+    
+    -- Ensure it's at least 2 (minimum roll value)
+    if rollValue < 2 then
+        rollValue = 2
+    end
+    
+    return rollValue
 end
 
 -- Slash command handlers
@@ -189,6 +208,17 @@ function DRE:SetupOptions()
                         get = function() return self.db.profile.gameplay.trackGold end,
                         set = function(_, val) self.db.profile.gameplay.trackGold = val end,
                         order = 3,
+                    },
+                    autoRollFromMoney = {
+                        name = "Auto-Roll from Money",
+                        desc = "Automatically set roll number based on your total money (gold + silver + copper) mod 999,999",
+                        type = "toggle",
+                        get = function() return self.db.profile.gameplay.autoRollFromMoney end,
+                        set = function(_, val) 
+                            self.db.profile.gameplay.autoRollFromMoney = val
+                            self:Print("Auto-roll setting changed. Close and reopen the main window to see the new UI.")
+                        end,
+                        order = 4,
                     },
                 },
             },

@@ -124,7 +124,14 @@ function DRE:CreateGameSection(container)
     local rollEdit = AceGUI:Create("EditBox")
     rollEdit:SetLabel("")
     rollEdit:SetWidth(120)
-    rollEdit:SetText("100")
+    
+    -- Set initial roll value based on auto-roll setting
+    local initialRoll = "100"
+    if self.db and self.db.profile.gameplay.autoRollFromMoney then
+        initialRoll = tostring(self:CalculateAutoRoll())
+    end
+    rollEdit:SetText(initialRoll)
+    
     rollEdit:SetMaxLetters(6) -- Limit to 6 digits
     rollEdit:SetCallback("OnTextChanged", function(widget, event, text)
         -- Only allow numbers
@@ -138,6 +145,33 @@ function DRE:CreateGameSection(container)
         end
     end)
     rollGroup:AddChild(rollEdit)
+    
+    -- Store reference for auto-roll updates
+    UI.rollEdit = rollEdit
+    
+    -- Auto-roll refresh button (only show if setting is enabled)
+    if self.db and self.db.profile.gameplay.autoRollFromMoney then
+        local refreshButton = AceGUI:Create("Button")
+        refreshButton:SetText("↻")
+        refreshButton:SetWidth(30)
+        refreshButton:SetCallback("OnClick", function()
+            local newRoll = self:CalculateAutoRoll()
+            rollEdit:SetText(tostring(newRoll))
+            self:Print(string.format("Roll updated from your money: %d", newRoll))
+        end)
+        rollGroup:AddChild(refreshButton)
+        
+        -- Add tooltip
+        refreshButton.frame:SetScript("OnEnter", function()
+            GameTooltip:SetOwner(refreshButton.frame, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Refresh roll from current money", 1, 1, 1)
+            GameTooltip:AddLine("Updates roll based on your total gold/silver/copper", 0.8, 0.8, 0.8, true)
+            GameTooltip:Show()
+        end)
+        refreshButton.frame:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+    end
     
     -- Wager section
     local wagerGroup = AceGUI:Create("SimpleGroup")

@@ -516,29 +516,6 @@ function DRE:SetupOptions()
                         type = "header",
                         order = 3,
                     },
-                    uiFont = {
-                        name = "UI Font",
-                        desc = "Choose the font for the DeathRoll interface",
-                        type = "select",
-                        values = function()
-                            if LSM then
-                                return LSM:HashTable("font")
-                            else
-                                return {
-                                    ["Friz Quadrata TT"] = "Friz Quadrata TT",
-                                    ["Skurri"] = "Skurri", 
-                                    ["morpheus"] = "Morpheus",
-                                    ["Fonts\\ARIALN.TTF"] = "Arial Narrow",
-                                }
-                            end
-                        end,
-                        get = function() return self.db.profile.ui.font or "Friz Quadrata TT" end,
-                        set = function(_, val) 
-                            self.db.profile.ui.font = val
-                            self:UpdateUIFont()
-                        end,
-                        order = 4,
-                    },
                 },
             },
             minimap = {
@@ -813,58 +790,6 @@ function DRE:UpdateUIScale()
     end
 end
 
-function DRE:UpdateUIFont()
-    -- Update font for UI elements
-    if not self.db or not self.db.profile.ui.font then
-        return
-    end
-    
-    local fontName = self.db.profile.ui.font
-    local fontSize = 12
-    local fontFlags = ""
-    
-    -- Get the actual font path if using LibSharedMedia
-    local fontPath = fontName
-    if LSM and LSM:IsValid("font", fontName) then
-        fontPath = LSM:Fetch("font", fontName)
-    end
-    
-    -- Update main window if it exists
-    if self.UI and self.UI.mainWindow and self.UI.mainWindow.frame then
-        -- Update the main window title font
-        if self.UI.mainWindow.frame.titletext then
-            self.UI.mainWindow.frame.titletext:SetFont(fontPath, 14, fontFlags)
-        end
-        
-        -- Update status text font
-        if self.UI.mainWindow.frame.statustext then
-            self.UI.mainWindow.frame.statustext:SetFont(fontPath, 10, fontFlags)
-        end
-    end
-    
-    -- Update other UI elements if they exist
-    if self.UI and self.UI.statsLabel and self.UI.statsLabel.label then
-        self.UI.statsLabel.label:SetFont(fontPath, fontSize, fontFlags)
-    end
-    
-    if self.UI and self.UI.streakLabel and self.UI.streakLabel.label then
-        self.UI.streakLabel.label:SetFont(fontPath, fontSize, fontFlags)
-    end
-    
-    if self.UI and self.UI.funStatsLabel and self.UI.funStatsLabel.label then
-        self.UI.funStatsLabel.label:SetFont(fontPath, fontSize, fontFlags)
-    end
-    
-    if self.UI and self.UI.historyBox and self.UI.historyBox.editBox then
-        self.UI.historyBox.editBox:SetFont(fontPath, fontSize, fontFlags)
-    end
-    
-    -- Note: Most AceGUI widgets manage their own fonts and would need to be recreated
-    -- to properly apply new fonts. For a complete font change, the user should close
-    -- and reopen the main window.
-    
-    self:Print("Font updated to: " .. fontName .. ". Close and reopen the main window (/dr) to see all changes.")
-end
 
 function DRE:ResetWindowPosition()
     self.db.profile.ui.framePos = {

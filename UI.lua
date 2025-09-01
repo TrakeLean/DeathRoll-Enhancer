@@ -24,30 +24,6 @@ function DRE:InitializeUI()
     self.UI = self.UI or {}
 end
 
--- Apply custom font to a widget if configured
-function DRE:ApplyCustomFont(widget, fontSize)
-    if not widget or not self.db or not self.db.profile.ui.font then
-        return
-    end
-    
-    fontSize = fontSize or 12
-    local fontName = self.db.profile.ui.font
-    local fontPath = fontName
-    
-    -- Get the actual font path if using LibSharedMedia
-    if LSM and LSM:IsValid("font", fontName) then
-        fontPath = LSM:Fetch("font", fontName)
-    end
-    
-    -- Apply font to different widget types
-    if widget.label then
-        widget.label:SetFont(fontPath, fontSize, "")
-    elseif widget.editbox then
-        widget.editbox:SetFont(fontPath, fontSize, "")
-    elseif widget.text then
-        widget.text:SetFont(fontPath, fontSize, "")
-    end
-end
 
 -- Create main DeathRoll window using AceGUI
 function DRE:ShowMainWindow()
@@ -412,7 +388,6 @@ function DRE:CreateStatsSection(container)
     local statsLabel = AceGUI:Create("Label")
     statsLabel:SetText(statsText)
     statsLabel:SetFullWidth(true)
-    self:ApplyCustomFont(statsLabel, 12)
     overallGroup:AddChild(statsLabel)
     
     -- Streak information
@@ -433,7 +408,6 @@ function DRE:CreateStatsSection(container)
     local streakLabel = AceGUI:Create("Label")
     streakLabel:SetText(streakText)
     streakLabel:SetFullWidth(true)
-    self:ApplyCustomFont(streakLabel, 12)
     streakGroup:AddChild(streakLabel)
     
     -- Fun Statistics section
@@ -516,7 +490,6 @@ function DRE:CreateFunStatsSection(container)
     funStatsLabel:SetText(funStatsText)
     funStatsLabel:SetFullWidth(true)
     funStatsLabel:SetColor(0.9, 0.9, 0.5) -- Light yellow color for fun stats
-    self:ApplyCustomFont(funStatsLabel, 11)
     funStatsGroup:AddChild(funStatsLabel)
     
     -- Add settings hint
@@ -524,7 +497,6 @@ function DRE:CreateFunStatsSection(container)
     settingsHint:SetText("\nTip: Use /dr config → Fun Statistics to customize which stats are shown!")
     settingsHint:SetFullWidth(true)
     settingsHint:SetColor(0.7, 0.7, 0.7)
-    self:ApplyCustomFont(settingsHint, 10)
     funStatsGroup:AddChild(settingsHint)
     
     UI.funStatsLabel = funStatsLabel

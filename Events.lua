@@ -1,195 +1,313 @@
 -- Events.lua
--- Event handling and chat message parsing
+-- Event handling using AceEvent
 
-local addonName, DeathRollEnhancer = ...
-local DRE = DeathRollEnhancer
+local addonName, addonTable = ...
+local DRE = _G.DeathRollEnhancer
+if not DRE then return end
 
--- Create Events module
-DRE.Events = {}
-local Events = DRE.Events
+-- Event handling is now integrated into the main addon via AceEvent
+-- This file provides additional event-specific functions
 
--- Event frame
-Events.eventFrame = nil
+-- Game state tracking
+local gameState = {
+    isActive = false,
+    currentTarget = nil,
+    initialRoll = nil,
+    playerRoll = nil,
+    opponentRoll = nil,
+    goldAmount = nil,
+    waitingForRoll = false
+}
 
-function Events:Initialize()
-    self:CreateEventFrame()
-    self:RegisterEvents()
-end
+-- Chat message patterns
+local PATTERNS = {
+    ROLL_PATTERN = "^(.+) rolls (%d+) %(1%-(%d+)%)$",
+    DEATHROLL_CHALLENGE = "challenges? you to a [Dd]eathRoll",
+    DEATHROLL_ACCEPT = "accepts? your [Dd]eathRoll challenge",
+    GOLD_WAGER = "(%d+)g",
+    SILVER_WAGER = "(%d+)s",
+    COPPER_WAGER = "(%d+)c"
+}
 
-function Events:CreateEventFrame()
-    self.eventFrame = CreateFrame("Frame")
-    self.eventFrame:SetScript("OnEvent", function(frame, event, ...)
-        self:HandleEvent(event, ...)
-    end)
-end
-
-function Events:RegisterEvents()
-    if not self.eventFrame then return end
+-- Enhanced chat message handler
+function DRE:CHAT_MSG_SYSTEM(event, message, sender)
+    if not message then return end
     
-    self.eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
-    self.eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-    self.eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    
-    -- Gold tracking events
-    self.eventFrame:RegisterEvent("TRADE_SHOW")
-    self.eventFrame:RegisterEvent("TRADE_PLAYER_ITEM_CHANGED")
-    self.eventFrame:RegisterEvent("TRADE_TARGET_ITEM_CHANGED")
-    self.eventFrame:RegisterEvent("TRADE_MONEY_CHANGED")
-    self.eventFrame:RegisterEvent("TRADE_ACCEPT_UPDATE")
-    self.eventFrame:RegisterEvent("TRADE_CLOSED")
-    self.eventFrame:RegisterEvent("PLAYER_MONEY")
-end
-
-function Events:UnregisterEvents()
-    if not self.eventFrame then return end
-    
-    self.eventFrame:UnregisterEvent("CHAT_MSG_SYSTEM")
-    self.eventFrame:UnregisterEvent("PLAYER_REGEN_DISABLED")
-    self.eventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
-    
-    -- Gold tracking events
-    self.eventFrame:UnregisterEvent("TRADE_SHOW")
-    self.eventFrame:UnregisterEvent("TRADE_PLAYER_ITEM_CHANGED")
-    self.eventFrame:UnregisterEvent("TRADE_TARGET_ITEM_CHANGED")
-    self.eventFrame:UnregisterEvent("TRADE_MONEY_CHANGED")
-    self.eventFrame:UnregisterEvent("TRADE_ACCEPT_UPDATE")
-    self.eventFrame:UnregisterEvent("TRADE_CLOSED")
-    self.eventFrame:UnregisterEvent("PLAYER_MONEY")
-end
-
-function Events:HandleEvent(event, ...)
-    if event == "CHAT_MSG_SYSTEM" then
-        self:OnChatMsgSystem(...)
-    elseif event == "PLAYER_REGEN_DISABLED" then
-        self:OnPlayerRegenDisabled(...)
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        self:OnPlayerRegenEnabled(...)
-    -- Gold tracking events
-    elseif event == "TRADE_SHOW" then
-        self:OnTradeShow(...)
-    elseif event == "TRADE_MONEY_CHANGED" then
-        self:OnTradeMoneyChanged(...)
-    elseif event == "TRADE_ACCEPT_UPDATE" then
-        self:OnTradeAcceptUpdate(...)
-    elseif event == "TRADE_CLOSED" then
-        self:OnTradeClosed(...)
-    elseif event == "PLAYER_MONEY" then
-        self:OnPlayerMoney(...)
-    end
-end
-
--- Handle chat messages for roll detection
-function Events:OnChatMsgSystem(msg)
-    if not DRE.UI then return end
-    
-    -- Parse roll message: "PlayerName rolls X (Y-Z)"
-    local playerName, rollResult, minRoll, maxRoll = msg:match("^(.+) rolls (%d+) %((%d+)%-(%d+)%)")
-    
-    if not (playerName and rollResult and minRoll and maxRoll) then
+    -- Handle roll messages
+    local playerName, roll, maxRoll = message:match(PATTERNS.ROLL_PATTERN)
+    if playerName and roll and maxRoll then
+        self:HandleRollMessage(playerName, tonumber(roll), tonumber(maxRoll))
         return
     end
     
-    local targetName = DRE.UI:GetTargetName()
-    if not targetName then return end
+    -- Handle other system messages
+    self:HandleSystemMessage(message)
+end
+
+-- Handle chat messages for challenges and wagers
+function DRE:CHAT_MSG_SAY(event, message, sender)
+    if not message or not sender then return end
     
-    -- Check if this roll is from the target player or the player themselves
-    local currentPlayer = UnitName("player")
-    local isValidRoll = (playerName == targetName) or (playerName == currentPlayer)
+    self:HandleChatMessage(message, sender, "SAY")
+end
+
+function DRE:CHAT_MSG_YELL(event, message, sender)
+    if not message or not sender then return end
     
-    if isValidRoll then
-        -- Create the target roll string for display
-        local targetRollString = minRoll .. "-" .. maxRoll
-        DRE.UI:OnPlayerRoll(playerName, rollResult, targetRollString)
-    else
-        -- Ignore rolls from other players
-        print(playerName .. " rolled, but they are not your duel target (" .. targetName .. "). Ignoring roll.")
+    self:HandleChatMessage(message, sender, "YELL")
+end
+
+function DRE:CHAT_MSG_PARTY(event, message, sender)
+    if not message or not sender then return end
+    
+    self:HandleChatMessage(message, sender, "PARTY")
+end
+
+function DRE:CHAT_MSG_GUILD(event, message, sender)
+    if not message or not sender then return end
+    
+    self:HandleChatMessage(message, sender, "GUILD")
+end
+
+-- Handle roll messages
+function DRE:HandleRollMessage(playerName, roll, maxRoll)
+    if not gameState.isActive then return end
+    
+    local playerFullName = UnitName("player")
+    
+    -- Check if this is a DeathRoll-related roll
+    if gameState.currentTarget and 
+       (playerName == playerFullName or playerName == gameState.currentTarget) then
+        
+        if playerName == playerFullName then
+            gameState.playerRoll = roll
+            self:Print(string.format("You rolled %d (1-%d)", roll, maxRoll))
+        else
+            gameState.opponentRoll = roll
+            self:Print(string.format("%s rolled %d (1-%d)", playerName, roll, maxRoll))
+        end
+        
+        -- Check for game end conditions
+        if roll == 1 then
+            self:HandleGameEnd(playerName, roll)
+        else
+            -- Continue game with new max roll
+            self:ContinueGame(roll)
+        end
     end
 end
 
--- Handle entering combat
-function Events:OnPlayerRegenDisabled()
-    if DRE.UI then
-        DRE.UI:OnCombatStart()
-    end
-end
-
--- Handle leaving combat
-function Events:OnPlayerRegenEnabled()
-    if DRE.UI then
-        DRE.UI:OnCombatEnd()
-    end
-end
-
--- Utility function to validate roll messages
-function Events:ValidateRollMessage(msg)
-    -- Basic validation for roll message format
-    local pattern = "^.+ rolls %d+ %(%d+%-%d+%)$"
-    return string.match(msg, pattern) ~= nil
-end
-
--- Parse roll data from message
-function Events:ParseRollMessage(msg)
-    local playerName, rollResult, minRoll, maxRoll = msg:match("^(.+) rolls (%d+) %((%d+)%-(%d+)%)")
+-- Handle chat messages for challenges and wagers
+function DRE:HandleChatMessage(message, sender, channel)
+    if not message or not sender then return end
     
-    if not (playerName and rollResult and minRoll and maxRoll) then
-        return nil
+    local lowerMessage = message:lower()
+    
+    -- Check for DeathRoll challenge
+    if lowerMessage:find(PATTERNS.DEATHROLL_CHALLENGE) then
+        self:HandleDeathRollChallenge(sender, message, channel)
     end
     
+    -- Check for challenge acceptance
+    if lowerMessage:find(PATTERNS.DEATHROLL_ACCEPT) then
+        self:HandleChallengeAcceptance(sender, message, channel)
+    end
+    
+    -- Extract gold wager information
+    local goldAmount = self:ExtractGoldAmount(message)
+    if goldAmount > 0 then
+        gameState.goldAmount = goldAmount
+        if self.db and self.db.profile.gameplay.trackGold then
+            self:Print(string.format("Gold wager detected: %s", self:FormatGold(goldAmount)))
+        end
+    end
+end
+
+-- Handle system messages
+function DRE:HandleSystemMessage(message)
+    -- Handle any relevant system messages
+    if message:find("duel") or message:find("challenge") then
+        -- Could be related to our DeathRoll
+    end
+end
+
+-- Handle DeathRoll challenge
+function DRE:HandleDeathRollChallenge(sender, message, channel)
+    if sender == UnitName("player") then return end
+    
+    -- Extract initial roll value from challenge
+    local initialRoll = message:match("starting at (%d+)") or message:match("roll (%d+)")
+    if initialRoll then
+        initialRoll = tonumber(initialRoll)
+    end
+    
+    self:Print(string.format("%s has challenged you to a DeathRoll!", sender))
+    
+    if initialRoll then
+        self:Print(string.format("Starting roll: %d", initialRoll))
+        
+        -- Auto-accept if we have UI open and target matches
+        if DRE.UI and DRE.UI.mainWindow and DRE.UI.currentTarget == sender then
+            self:StartGame(sender, initialRoll)
+        end
+    end
+end
+
+-- Handle challenge acceptance
+function DRE:HandleChallengeAcceptance(sender, message, channel)
+    if sender == UnitName("player") then return end
+    
+    if gameState.currentTarget == sender then
+        self:Print(string.format("%s accepted your DeathRoll challenge!", sender))
+        gameState.waitingForRoll = true
+    end
+end
+
+-- Start a new DeathRoll game
+function DRE:StartGame(target, initialRoll)
+    gameState.isActive = true
+    gameState.currentTarget = target
+    gameState.initialRoll = initialRoll or 100
+    gameState.playerRoll = nil
+    gameState.opponentRoll = nil
+    gameState.goldAmount = 0
+    gameState.waitingForRoll = false
+    
+    self:Print(string.format("DeathRoll game started with %s (starting at %d)", target, gameState.initialRoll))
+    
+    if DRE.UI and DRE.UI.statusLabel then
+        DRE.UI.statusLabel:SetText(string.format("Game active with %s", target))
+    end
+end
+
+-- Continue the game with a new max roll
+function DRE:ContinueGame(newMaxRoll)
+    if newMaxRoll <= 1 then
+        return
+    end
+    
+    -- Update UI status
+    if DRE.UI and DRE.UI.statusLabel then
+        DRE.UI.statusLabel:SetText(string.format("Continue rolling (1-%d)", newMaxRoll))
+    end
+    
+    -- Clear previous rolls
+    gameState.playerRoll = nil
+    gameState.opponentRoll = nil
+end
+
+-- Handle game end
+function DRE:HandleGameEnd(loser, finalRoll)
+    local winner = (loser == UnitName("player")) and gameState.currentTarget or UnitName("player")
+    local playerWon = (winner == UnitName("player"))
+    
+    self:Print(string.format("Game Over! %s rolled %d and loses!", loser, finalRoll))
+    self:Print(string.format("Winner: %s", winner))
+    
+    -- Play emotes if enabled
+    if self.db and self.db.profile.gameplay.autoEmote then
+        if playerWon then
+            local emote = self:GetRandomHappyEmote()
+            DoEmote(emote)
+        else
+            local emote = self:GetRandomSadEmote()
+            DoEmote(emote)
+        end
+    end
+    
+    -- Record the game
+    if gameState.currentTarget then
+        local result = playerWon and "WIN" or "LOSS"
+        self:AddGameToHistory(gameState.currentTarget, result, gameState.goldAmount, gameState.initialRoll)
+    end
+    
+    -- Update UI
+    if DRE.UI and DRE.UI.statusLabel then
+        local statusText = playerWon and 
+            string.format("You won against %s!", gameState.currentTarget) or
+            string.format("You lost to %s", gameState.currentTarget)
+        DRE.UI.statusLabel:SetText(statusText)
+    end
+    
+    -- Reset game state
+    self:ResetGameState()
+end
+
+-- Reset game state
+function DRE:ResetGameState()
+    gameState.isActive = false
+    gameState.currentTarget = nil
+    gameState.initialRoll = nil
+    gameState.playerRoll = nil
+    gameState.opponentRoll = nil
+    gameState.goldAmount = nil
+    gameState.waitingForRoll = false
+end
+
+-- Extract gold amount from message
+function DRE:ExtractGoldAmount(message)
+    if not message then return 0 end
+    
+    local totalCopper = 0
+    
+    -- Extract gold
+    local gold = message:match("(%d+)g")
+    if gold then
+        totalCopper = totalCopper + (tonumber(gold) * 10000)
+    end
+    
+    -- Extract silver
+    local silver = message:match("(%d+)s")
+    if silver then
+        totalCopper = totalCopper + (tonumber(silver) * 100)
+    end
+    
+    -- Extract copper
+    local copper = message:match("(%d+)c")
+    if copper then
+        totalCopper = totalCopper + tonumber(copper)
+    end
+    
+    return totalCopper
+end
+
+-- Get current game state (for UI updates)
+function DRE:GetGameState()
     return {
-        playerName = playerName,
-        rollResult = tonumber(rollResult),
-        minRoll = tonumber(minRoll),
-        maxRoll = tonumber(maxRoll)
+        isActive = gameState.isActive,
+        currentTarget = gameState.currentTarget,
+        initialRoll = gameState.initialRoll,
+        playerRoll = gameState.playerRoll,
+        opponentRoll = gameState.opponentRoll,
+        goldAmount = gameState.goldAmount,
+        waitingForRoll = gameState.waitingForRoll
     }
 end
 
--- Check if a roll is from a valid participant
-function Events:IsValidParticipant(playerName, targetName)
-    if not playerName or not targetName then
-        return false
-    end
-    
-    local currentPlayer = UnitName("player")
-    return (playerName == targetName) or (playerName == currentPlayer)
-end
-
--- Get current target name
-function Events:GetCurrentTarget()
-    return UnitName("target")
-end
-
--- Check if the addon is currently tracking a game
-function Events:IsGameActive()
-    return DRE.UI and DRE.UI:GetTargetName() ~= nil
-end
-
--- Gold tracking event handlers
-function Events:OnTradeShow()
-    if DRE.GoldTracking then
-        DRE.GoldTracking:OnTradeShow()
+-- Force end current game
+function DRE:EndCurrentGame()
+    if gameState.isActive then
+        self:Print("DeathRoll game manually ended")
+        self:ResetGameState()
+        
+        if DRE.UI and DRE.UI.statusLabel then
+            DRE.UI.statusLabel:SetText("Ready to roll!")
+        end
     end
 end
 
-function Events:OnTradeMoneyChanged()
-    if DRE.GoldTracking then
-        DRE.GoldTracking:OnTradeMoneyChanged()
-    end
+-- Register additional events when needed
+function DRE:RegisterGameEvents()
+    self:RegisterEvent("CHAT_MSG_SAY")
+    self:RegisterEvent("CHAT_MSG_YELL")
+    self:RegisterEvent("CHAT_MSG_PARTY")
+    self:RegisterEvent("CHAT_MSG_GUILD")
 end
 
-function Events:OnTradeAcceptUpdate(playerAccepted, targetAccepted)
-    if DRE.GoldTracking and playerAccepted and targetAccepted then
-        DRE.GoldTracking:OnTradeAccepted()
-    end
-end
-
-function Events:OnTradeClosed()
-    if DRE.GoldTracking then
-        DRE.GoldTracking:OnTradeClosed()
-    end
-end
-
-function Events:OnPlayerMoney()
-    if DRE.GoldTracking then
-        DRE.GoldTracking:OnPlayerMoney()
-    end
+-- Unregister game events
+function DRE:UnregisterGameEvents()
+    self:UnregisterEvent("CHAT_MSG_SAY")
+    self:UnregisterEvent("CHAT_MSG_YELL")
+    self:UnregisterEvent("CHAT_MSG_PARTY")
+    self:UnregisterEvent("CHAT_MSG_GUILD")
 end

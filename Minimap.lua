@@ -1,210 +1,164 @@
 -- Minimap.lua
--- Minimap icon functionality
+-- Minimap integration using LibDBIcon
 
-local addonName, DeathRollEnhancer = ...
-local DRE = DeathRollEnhancer
+local addonName, addonTable = ...
+local DRE = _G.DeathRollEnhancer
+if not DRE then return end
 
--- Create Minimap module
-DRE.Minimap = {}
-local Minimap = DRE.Minimap
-
--- LibDBIcon reference
 local LibDBIcon = LibStub("LibDBIcon-1.0")
+local LDB = LibStub("LibDataBroker-1.1")
 
--- Default minimap button position
-local DEFAULT_MINIMAP_POSITION = {
-    minimapPos = 225, -- Default angle position around the minimap
-    hide = false,     -- Minimap icon visibility
-}
+-- Create data broker object
+local minimapLDB = LDB:NewDataObject("DeathRollEnhancer", {
+    type = "data source",
+    text = "DeathRoll",
+    icon = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo",
+    OnClick = function(frame, button)
+        if button == "LeftButton" then
+            DRE:ShowMainWindow()
+        elseif button == "RightButton" then
+            DRE:OpenOptions()
+        end
+    end,
+    OnTooltipShow = function(tooltip)
+        if not tooltip or not tooltip.AddLine then return end
+        
+        tooltip:AddLine("|cFFFF0000Death|r|cFFFFFFFFRoll|r Enhancer v" .. DRE.version)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("|cFFFFFFFFLeft Click:|r Open DeathRoll window")
+        tooltip:AddLine("|cFFFFFFFFRight Click:|r Open options")
+        
+        if DRE.db and DRE.db.profile.goldTracking then
+            local stats = DRE.db.profile.goldTracking
+            tooltip:AddLine(" ")
+            tooltip:AddLine("|cFFFFD700Statistics:|r")
+            
+            if stats.totalWon and stats.totalWon > 0 then
+                tooltip:AddLine("|cFF00FF00Gold Won:|r " .. DRE:FormatGold(stats.totalWon))
+            end
+            
+            if stats.totalLost and stats.totalLost > 0 then
+                tooltip:AddLine("|cFFFF0000Gold Lost:|r " .. DRE:FormatGold(stats.totalLost))
+            end
+            
+            if stats.currentStreak and stats.currentStreak ~= 0 then
+                local streakText = stats.currentStreak > 0 and 
+                    "|cFF00FF00Win Streak: " .. stats.currentStreak .. "|r" or
+                    "|cFFFF0000Loss Streak: " .. math.abs(stats.currentStreak) .. "|r"
+                tooltip:AddLine(streakText)
+            end
+        end
+        
+        tooltip:Show()
+    end,
+})
 
--- Minimap button object
-Minimap.miniButton = nil
-
-function Minimap:Initialize()
+-- Initialize minimap integration
+function DRE:InitializeMinimap()
     if not LibDBIcon then
-        print("|cFFFF0000<< |r|cFFFF0000Death|r|cFFFFFFFFRoll|r Enhancer: |cFFFF0000LibDBIcon-1.0 not found >>")
+        self:Print("LibDBIcon not found - minimap icon disabled")
         return
     end
     
-    self:CreateMinimapButton()
-    self:RestoreButtonPosition()
-    self:RegisterCallbacks()
-end
-
-function Minimap:CreateMinimapButton()
-    -- Create the minimap button using LibDataBroker
-    self.miniButton = LibStub("LibDataBroker-1.1"):NewDataObject("DeathRollEnhancer", {
-        type = "data source",
-        text = "DeathRoll Enhancer",
-        icon = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo",
-        OnClick = function(self, btn)
-            Minimap:OnButtonClick(btn)
-        end,
-        OnTooltipShow = function(tooltip)
-            Minimap:OnTooltipShow(tooltip)
-        end,
-    })
-end
-
-function Minimap:OnButtonClick(button)
-    if not DRE.UI then return end
+    -- Register the minimap icon
+    LibDBIcon:Register("DeathRollEnhancer", minimapLDB, self.db.profile.minimap)
     
-    if button == "LeftButton" then
-        if DRE.UI.mainFrame and DRE.UI.mainFrame:IsVisible() then
-            DRE.UI:HideUI(false)
-        else
-            DRE.UI:ShowUI()
-        end
-    elseif button == "RightButton" then
-        -- Show context menu
-        self:ShowContextMenu()
-    end
+    -- Update visibility based on settings
+    self:UpdateMinimapVisibility()
 end
 
-function Minimap:OnTooltipShow(tooltip)
-    if not tooltip or not tooltip.AddLine then return end
-    
-    tooltip:AddLine("|cFFFF0000Death|r|cFFFF0000Roll|r Enhancer")
-    tooltip:AddLine("|cff808080Left Click:|r Toggle UI")
-    tooltip:AddLine("|cff808080Right Click:|r Options Menu")
-    tooltip:AddLine("|cff808080Commands:|r /dr, /drh, /drreset")
-end
-
-function Minimap:ShowContextMenu()
-    -- Show available options in chat
-    print("|cFF00FF00DeathRoll Options Menu:|r")
-    print("|cFFFFFF00→|r |cFFFFFFFF/dr|r - Open DeathRoll UI")
-    print("|cFFFFFF00→|r |cFFFFFFFF/drreset|r - Reset UI Scale")
-    print("|cFFFFFF00→|r |cFFFFFFFF/drm hide|r - Hide minimap icon")
-    print("|cFFFFFF00→|r |cFFFFFFFF/drh [player]|r - View player history")
-end
-
-function Minimap:ToggleIcon()
+-- Toggle minimap icon visibility
+function DRE:ToggleMinimapIcon()
     if not LibDBIcon then return end
     
-    if LibDBIcon:IsRegistered("DeathRollEnhancer") then
-        local isHidden = LibDBIcon:IsHidden("DeathRollEnhancer")
-        if isHidden then
-            LibDBIcon:Show("DeathRollEnhancer")
-            print("|cFF00FF00DeathRoll: |rMinimap icon shown. Use /deathrollminimap hide to hide it.")
-        else
-            LibDBIcon:Hide("DeathRollEnhancer")
-            print("|cFF00FF00DeathRoll: |rMinimap icon hidden. Use /deathrollminimap show to show it.")
-        end
-        
-        -- Save the new state
-        if DRE.Database then
-            DRE.Database.settings.hide = LibDBIcon:IsHidden("DeathRollEnhancer")
-        end
-    end
-end
-
-function Minimap:SaveButtonPosition()
-    if not LibDBIcon or not DRE.Database then return end
-    
-    -- Save the current position to settings
-    local settings = DRE.Database.settings
-    settings.minimapPos = LibDBIcon:GetMinimapButtonPosition("DeathRollEnhancer")
-    settings.hide = settings.hide or false
-end
-
-function Minimap:RestoreButtonPosition()
-    if not LibDBIcon or not DRE.Database then return end
-    
-    local settings = DRE.Database.settings
-    local pos = settings.minimapPos or DEFAULT_MINIMAP_POSITION.minimapPos
-    local hide = settings.hide or DEFAULT_MINIMAP_POSITION.hide
-    
-    LibDBIcon:Register("DeathRollEnhancer", self.miniButton, {
-        minimapPos = pos,
-        hide = hide,
-        lock = false
-    })
-end
-
-function Minimap:RegisterCallbacks()
-    if not LibDBIcon then return end
-    
-    -- Register callback to save position when icon is moved
-    LibDBIcon:RegisterCallback("LibDBIcon_IconMoved", function(name, position)
-        if name == "DeathRollEnhancer" and DRE.Database then
-            DRE.Database.settings.minimapPos = position
-            self:SaveButtonPosition()
-        end
-    end)
-end
-
-function Minimap:ShowIcon()
-    if LibDBIcon then
-        LibDBIcon:Show("DeathRollEnhancer")
-        if DRE.Database then
-            DRE.Database.settings.hide = false
-        end
-        print("DeathRoll Enhancer minimap icon shown.")
-    end
-end
-
-function Minimap:HideIcon()
-    if LibDBIcon then
+    if self.db.profile.minimap.hide then
         LibDBIcon:Hide("DeathRollEnhancer")
-        if DRE.Database then
-            DRE.Database.settings.hide = true
-        end
-        print("DeathRoll Enhancer minimap icon hidden.")
-    end
-end
-
-function Minimap:IsIconVisible()
-    if not LibDBIcon then return false end
-    return not LibDBIcon:IsButtonHidden("DeathRollEnhancer")
-end
-
-function Minimap:ToggleIcon()
-    if self:IsIconVisible() then
-        self:HideIcon()
     else
-        self:ShowIcon()
+        LibDBIcon:Show("DeathRollEnhancer")
     end
 end
 
-function Minimap:HandleSlashCommand(msg)
-    local command = msg:lower():trim()
+-- Update minimap visibility based on settings
+function DRE:UpdateMinimapVisibility()
+    if not LibDBIcon then return end
+    
+    if self.db and self.db.profile.minimap.hide then
+        LibDBIcon:Hide("DeathRollEnhancer")
+    else
+        LibDBIcon:Show("DeathRollEnhancer")
+    end
+end
+
+-- Update minimap tooltip data
+function DRE:UpdateMinimapTooltip()
+    -- Tooltip data is updated dynamically in OnTooltipShow
+end
+
+-- Lock/unlock minimap icon
+function DRE:SetMinimapLocked(locked)
+    if not self.db then return end
+    
+    self.db.profile.minimap.lock = locked
+    if LibDBIcon then
+        LibDBIcon:Lock("DeathRollEnhancer")
+    end
+end
+
+-- Get minimap icon position
+function DRE:GetMinimapPosition()
+    if not self.db then return 225 end
+    return self.db.profile.minimap.minimapPos or 225
+end
+
+-- Set minimap icon position
+function DRE:SetMinimapPosition(angle)
+    if not self.db then return end
+    
+    self.db.profile.minimap.minimapPos = angle
+    if LibDBIcon then
+        LibDBIcon:Refresh("DeathRollEnhancer")
+    end
+end
+
+-- Handle minimap-related slash commands (legacy support)
+function DRE:HandleMinimapSlashCommand(args)
+    if not args or args == "" then
+        self:Print("Minimap commands:")
+        self:Print("/dr minimap show - Show minimap icon")
+        self:Print("/dr minimap hide - Hide minimap icon")
+        self:Print("/dr minimap lock - Lock minimap icon")
+        self:Print("/dr minimap unlock - Unlock minimap icon")
+        return
+    end
+    
+    local command = args:lower():trim()
     
     if command == "show" then
-        self:ShowIcon()
+        self.db.profile.minimap.hide = false
+        self:ToggleMinimapIcon()
+        self:Print("Minimap icon shown")
+        
     elseif command == "hide" then
-        self:HideIcon()
-    elseif command == "toggle" then
-        self:ToggleIcon()
+        self.db.profile.minimap.hide = true
+        self:ToggleMinimapIcon()
+        self:Print("Minimap icon hidden")
+        
+    elseif command == "lock" then
+        self:SetMinimapLocked(true)
+        self:Print("Minimap icon locked")
+        
+    elseif command == "unlock" then
+        self:SetMinimapLocked(false)
+        self:Print("Minimap icon unlocked")
+        
     else
-        print("DeathRoll Enhancer Minimap Commands:")
-        print("  /deathrollminimap show - Show the minimap icon")
-        print("  /deathrollminimap hide - Hide the minimap icon")
-        print("  /deathrollminimap toggle - Toggle the minimap icon")
+        self:Print("Unknown minimap command: " .. command)
     end
 end
 
--- Get minimap button position for saving
-function Minimap:GetButtonPosition()
+-- Cleanup minimap integration
+function DRE:CleanupMinimap()
     if LibDBIcon then
-        return LibDBIcon:GetMinimapButtonPosition("DeathRollEnhancer")
+        LibDBIcon:Hide("DeathRollEnhancer")
     end
-    return nil
-end
-
--- Set minimap button position
-function Minimap:SetButtonPosition(position)
-    if LibDBIcon and position then
-        LibDBIcon:SetButtonPosition("DeathRollEnhancer", position)
-    end
-end
-
--- Reset minimap button to default position
-function Minimap:ResetButtonPosition()
-    self:SetButtonPosition(DEFAULT_MINIMAP_POSITION.minimapPos)
-    if DRE.Database then
-        DRE.Database.settings.minimapPos = DEFAULT_MINIMAP_POSITION.minimapPos
-        DRE.Database.settings.hide = DEFAULT_MINIMAP_POSITION.hide
-    end
-    print("DeathRoll Enhancer minimap button reset to default position.")
 end

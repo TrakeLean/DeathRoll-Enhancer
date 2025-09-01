@@ -4,22 +4,38 @@
 ## Interface-Wrath: 30403
 ## Interface-Cata: 40400
 ## Title: |cFFFF0000Death|r|cffffffffRoll|r Enhancer
-## Version: 1.5.3
+## Version: 2.0.0
 ## Author: EgyptianSheikh
-## Notes: Elevate your DeathRoll experience! Challenge your target, track your stats, and let fate decide! |n|n|cffffffffFeatures:|r|n- User-friendly UI to easily start DeathRoll games.|n- Track wins, losses, streaks, and gold wagered with each player.|n- Fun emote reactions on win/loss! |n- Minimap icon for quick access.|n- Detailed stats saved between sessions.|n|n|cffffffffCommands:|r|n- |cffffff00/DeathRoll or /dr:|r Open the DeathRoll UI.|n- |cff00ff00/DeathRollHistory [player] or /drh [player]:|r View your win/loss history with a specific player.|n- |cff82c5ff/DeathRollMinimap show|r: Show the minimap icon.|n- |cff82c5ff/DeathRollMinimap hide|r: Hide the minimap icon.|n|n|cffbbbbbbBy EgyptianSheikh|r
+## Notes: |cFFFF0000Version 2.0.0|r - Complete UI overhaul with professional Ace3 framework! Challenge your target, track your stats, and let fate decide! |n|n|cffffffffNew in v2.0:|r|n- Complete rewrite using Ace3 libraries for stability and performance|n- Professional AceGUI interface with modern styling|n- Advanced AceConfig options panel with font selection|n- Comprehensive data management and export tools|n- Enhanced statistics tracking and display|n- LibSharedMedia integration for consistent theming|n|n|cffffffffFeatures:|r|n- Intuitive AceGUI-based interface for starting games|n- Detailed win/loss history tracking per player|n- Advanced gold tracking with streaks and statistics|n- Smart minimap integration with LibDBIcon|n- Automatic emote reactions on wins/losses|n- Cross-version compatibility (Classic Era, TBC, Wrath, Cata, Retail)|n- Professional options panel with Blizzard integration|n- Data export/import functionality|n|n|cffffffffCommands:|r|n- |cffffff00/dr or /deathroll:|r Open the main DeathRoll window|n- |cff00ff00/dr config:|r Open configuration options|n- |cff82c5ff/drh [player]:|r View history with specific player|n|n|cffbbbbbbBy EgyptianSheikh - Powered by Ace3|r
 ## DefaultState: enabled
 ## IconTexture: Interface\Addons\DeathRollEnhancer\Media\Logo.tga
-## SavedVariables: DeathRollHistoryDB, DeathRollSettings
+## SavedVariables: DeathRollEnhancerDB
 
 # Embedded libraries
 Libs\LibStub\LibStub.lua
+
+# Ace3 Core Libraries
+Libs\AceAddon-3.0\AceAddon-3.0.lua
+Libs\AceEvent-3.0\AceEvent-3.0.lua
+Libs\AceHook-3.0\AceHook-3.0.lua
+Libs\AceDB-3.0\AceDB-3.0.lua
+Libs\AceDBOptions-3.0\AceDBOptions-3.0.lua
+Libs\AceConsole-3.0\AceConsole-3.0.lua
+Libs\AceGUI-3.0\AceGUI-3.0.lua
+Libs\AceConfig-3.0\AceConfig-3.0.lua
+Libs\AceConfigRegistry-3.0\AceConfigRegistry-3.0.lua
+Libs\AceConfigDialog-3.0\AceConfigDialog-3.0.lua
+Libs\AceConfigCmd-3.0\AceConfigCmd-3.0.lua
+
+# Additional Libraries
+Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+Libs\LibUIDropDownMenu\LibUIDropDownMenu.lua
 Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
 # Addon modules
 Core.lua
 Database.lua
-GoldTracking.lua
 UI.lua
 Events.lua
 Minimap.lua

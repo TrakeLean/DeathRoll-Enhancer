@@ -187,34 +187,73 @@ function DRE:CreateGameSection(container)
     local goldEdit = AceGUI:Create("EditBox")
     goldEdit:SetLabel("Gold")
     goldEdit:SetWidth(60)
-    goldEdit:SetText("0")
+    goldEdit:SetText("") -- Start empty
     goldEdit:SetMaxLetters(6) -- Reasonable gold limit
     goldEdit:DisableButton(true) -- Remove the "Okay" button
+    
+    -- Set placeholder text
+    goldEdit.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
+    goldEdit:SetText("0")
+    goldEdit.isPlaceholder = true
+    
+    goldEdit:SetCallback("OnEditFocusGained", function(widget)
+        if widget.isPlaceholder then
+            widget:SetText("")
+            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
+            widget.isPlaceholder = false
+        end
+    end)
+    
+    goldEdit:SetCallback("OnEditFocusLost", function(widget)
+        if widget:GetText() == "" then
+            widget:SetText("0")
+            widget.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
+            widget.isPlaceholder = true
+        end
+    end)
+    
     goldEdit:SetCallback("OnTextChanged", function(widget, event, text)
+        if widget.isPlaceholder then return end -- Don't process placeholder text
+        
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
             widget:SetText(numericText)
         end
     end)
-    goldEdit:SetCallback("OnEditFocusGained", function(widget)
-        if widget:GetText() == "0" then
-            widget:SetText("")
-        end
-    end)
-    goldEdit:SetCallback("OnEditFocusLost", function(widget)
-        if widget:GetText() == "" then
-            widget:SetText("0")
-        end
-    end)
+    
     wagerGroup:AddChild(goldEdit)
     
     local silverEdit = AceGUI:Create("EditBox")
     silverEdit:SetLabel("Silver")
     silverEdit:SetWidth(60)
-    silverEdit:SetText("0")
+    silverEdit:SetText("") -- Start empty
     silverEdit:SetMaxLetters(2) -- Silver max 99
     silverEdit:DisableButton(true) -- Remove the "Okay" button
+    
+    -- Set placeholder text
+    silverEdit.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
+    silverEdit:SetText("0")
+    silverEdit.isPlaceholder = true
+    
+    silverEdit:SetCallback("OnEditFocusGained", function(widget)
+        if widget.isPlaceholder then
+            widget:SetText("")
+            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
+            widget.isPlaceholder = false
+        end
+    end)
+    
+    silverEdit:SetCallback("OnEditFocusLost", function(widget)
+        if widget:GetText() == "" then
+            widget:SetText("0")
+            widget.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
+            widget.isPlaceholder = true
+        end
+    end)
+    
     silverEdit:SetCallback("OnTextChanged", function(widget, event, text)
+        if widget.isPlaceholder then return end -- Don't process placeholder text
+        
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
             widget:SetText(numericText)
@@ -225,25 +264,40 @@ function DRE:CreateGameSection(container)
             widget:SetText("99")
         end
     end)
-    silverEdit:SetCallback("OnEditFocusGained", function(widget)
-        if widget:GetText() == "0" then
-            widget:SetText("")
-        end
-    end)
-    silverEdit:SetCallback("OnEditFocusLost", function(widget)
-        if widget:GetText() == "" then
-            widget:SetText("0")
-        end
-    end)
+    
     wagerGroup:AddChild(silverEdit)
     
     local copperEdit = AceGUI:Create("EditBox")
     copperEdit:SetLabel("Copper")
     copperEdit:SetWidth(60)
-    copperEdit:SetText("0")
+    copperEdit:SetText("") -- Start empty
     copperEdit:SetMaxLetters(2) -- Copper max 99
     copperEdit:DisableButton(true) -- Remove the "Okay" button
+    
+    -- Set placeholder text
+    copperEdit.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
+    copperEdit:SetText("0")
+    copperEdit.isPlaceholder = true
+    
+    copperEdit:SetCallback("OnEditFocusGained", function(widget)
+        if widget.isPlaceholder then
+            widget:SetText("")
+            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
+            widget.isPlaceholder = false
+        end
+    end)
+    
+    copperEdit:SetCallback("OnEditFocusLost", function(widget)
+        if widget:GetText() == "" then
+            widget:SetText("0")
+            widget.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
+            widget.isPlaceholder = true
+        end
+    end)
+    
     copperEdit:SetCallback("OnTextChanged", function(widget, event, text)
+        if widget.isPlaceholder then return end -- Don't process placeholder text
+        
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
             widget:SetText(numericText)
@@ -254,16 +308,7 @@ function DRE:CreateGameSection(container)
             widget:SetText("99")
         end
     end)
-    copperEdit:SetCallback("OnEditFocusGained", function(widget)
-        if widget:GetText() == "0" then
-            widget:SetText("")
-        end
-    end)
-    copperEdit:SetCallback("OnEditFocusLost", function(widget)
-        if widget:GetText() == "" then
-            widget:SetText("0")
-        end
-    end)
+    
     wagerGroup:AddChild(copperEdit)
     
     -- Start game button
@@ -274,10 +319,10 @@ function DRE:CreateGameSection(container)
         local target = targetEdit:GetText()
         local roll = tonumber(rollEdit:GetText())
         
-        -- Calculate wager in copper
-        local gold = tonumber(goldEdit:GetText()) or 0
-        local silver = tonumber(silverEdit:GetText()) or 0
-        local copper = tonumber(copperEdit:GetText()) or 0
+        -- Calculate wager in copper, treating placeholders as 0
+        local gold = (goldEdit.isPlaceholder and 0) or (tonumber(goldEdit:GetText()) or 0)
+        local silver = (silverEdit.isPlaceholder and 0) or (tonumber(silverEdit:GetText()) or 0)
+        local copper = (copperEdit.isPlaceholder and 0) or (tonumber(copperEdit:GetText()) or 0)
         local totalWager = (gold * 10000) + (silver * 100) + copper
         
         if not target or target == "" then

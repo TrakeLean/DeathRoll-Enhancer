@@ -1097,9 +1097,8 @@ end
 
 -- Conditional print that respects debug messages setting
 function DRE:DebugPrint(message)
-    if self.db and self.db.profile.gameplay.debugMessages then
-        self:Print("DeathRollEnhancer: " .. message)
-    end
+    -- Force debug for now to help troubleshoot
+    self:Print("[DEBUG] " .. message)
 end
 
 -- Main function to start a DeathRoll challenge (called from UI)
@@ -1617,6 +1616,82 @@ function DRE:HandleSpicyDuelMessage(sender, message)
                 self:ResolveSpicyRound()
             end
         end
+    end
+end
+
+-- UI State update function (delegates to UI.lua)
+function DRE:UpdateGameUIState(state)
+    self:DebugPrint("UpdateGameUIState called with state: " .. (state or "nil"))
+    
+    -- Update UI state
+    if self.UI then
+        self.UI.gameState = state
+        
+        if not self.UI.gameButton then
+            self:DebugPrint("No gameButton found in UI")
+            return
+        end
+        
+        if state == "WAITING" then
+            self.UI.gameButton:SetText("Challenge to DeathRoll!")
+            self.UI.gameButton:SetDisabled(false)
+            if self.UI.statusLabel then
+                self.UI.statusLabel:SetText("Ready to roll!")
+            end
+            
+        elseif state == "WAITING_FOR_ACCEPTANCE" then
+            local target = self.UI.currentTarget or "player"
+            self.UI.gameButton:SetText("Waiting for " .. target .. " to accept...")
+            self.UI.gameButton:SetDisabled(true)
+            if self.UI.statusLabel then
+                self.UI.statusLabel:SetText("Challenge sent to " .. target)
+            end
+            
+        elseif state == "ROLLING" then
+            local rollRange = self.gameState and self.gameState.currentRoll or 100
+            self.UI.gameButton:SetText("Roll 1-" .. rollRange)
+            self.UI.gameButton:SetDisabled(false)
+            if self.UI.statusLabel then
+                self.UI.statusLabel:SetText("Your turn! Click to roll!")
+            end
+            -- Update the roll input to show the current range
+            if self.UI.rollEdit then
+                self:DebugPrint("Updating roll input to: " .. rollRange)
+                self.UI.rollEdit:SetText(tostring(rollRange))
+            else
+                self:DebugPrint("No rollEdit found in UI")
+            end
+            
+        elseif state == "WAITING_FOR_OPPONENT" then
+            local target = self.UI.currentTarget or "opponent"
+            self.UI.gameButton:SetText("Waiting for " .. target .. "...")
+            self.UI.gameButton:SetDisabled(true)
+            if self.UI.statusLabel then
+                self.UI.statusLabel:SetText(target .. "'s turn to roll")
+            end
+            
+        elseif state == "WAITING_FOR_ROLL_RESULT" then
+            self.UI.gameButton:SetText("Rolling...")
+            self.UI.gameButton:SetDisabled(true)
+            if self.UI.statusLabel then
+                self.UI.statusLabel:SetText("Rolling dice...")
+            end
+            
+        elseif state == "GAME_OVER" then
+            self.UI.gameButton:SetText("Challenge to DeathRoll!")
+            self.UI.gameButton:SetDisabled(false)
+            if self.UI.statusLabel then
+                self.UI.statusLabel:SetText("Game finished! Ready for another?")
+            end
+            -- Reset UI state after a short delay
+            C_Timer.After(3, function()
+                if self.UI.gameState == "GAME_OVER" then
+                    self:UpdateGameUIState("WAITING")
+                end
+            end)
+        end
+    else
+        self:DebugPrint("No UI table found")
     end
 end
 

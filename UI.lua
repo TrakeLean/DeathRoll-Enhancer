@@ -5,8 +5,8 @@ local addonName, addonTable = ...
 local DRE = _G.DeathRollEnhancer
 if not DRE then return end
 
-local AceGUI = LibStub("AceGUI-3.0")
-local LSM = LibStub("LibSharedMedia-3.0")
+local AceGUI = LibStub("AceGUI-3.0", true)
+local LSM = LibStub("LibSharedMedia-3.0", true)
 
 -- UI Manager
 DRE.UI = {}
@@ -27,6 +27,11 @@ end
 
 -- Create main DeathRoll window using AceGUI
 function DRE:ShowMainWindow()
+    if not AceGUI then
+        self:Print("AceGUI-3.0 not available. Please install Ace3.")
+        return
+    end
+    
     if UI.mainWindow then
         UI.mainWindow:Show()
         return

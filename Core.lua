@@ -2,18 +2,37 @@
 -- Main addon initialization using Ace3 framework
 
 local addonName, addonTable = ...
+
+-- Check for required libraries
+if not LibStub then
+    error("DeathRollEnhancer requires LibStub")
+    return
+end
+
+-- Initialize addon with Ace3
 local DRE = LibStub("AceAddon-3.0"):NewAddon("DeathRollEnhancer", "AceConsole-3.0", "AceEvent-3.0")
 
 -- Addon information
 DRE.version = "2.0.0"
 DRE.author = "EgyptianSheikh"
 
--- Import libraries
-local AceGUI = LibStub("AceGUI-3.0")
-local AceConfig = LibStub("AceConfig-3.0")
-local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-local AceDB = LibStub("AceDB-3.0")
-local LSM = LibStub("LibSharedMedia-3.0")
+-- Import libraries with safety checks
+local AceGUI = LibStub("AceGUI-3.0", true)
+local AceConfig = LibStub("AceConfig-3.0", true)
+local AceConfigDialog = LibStub("AceConfigDialog-3.0", true)
+local AceDB = LibStub("AceDB-3.0", true)
+local LSM = LibStub("LibSharedMedia-3.0", true)
+
+-- Check for essential libraries
+if not AceGUI then
+    error("DeathRollEnhancer: AceGUI-3.0 library not found. Please install Ace3.")
+    return
+end
+
+if not AceDB then
+    error("DeathRollEnhancer: AceDB-3.0 library not found. Please install Ace3.")
+    return
+end
 
 -- Default database structure
 local defaults = {

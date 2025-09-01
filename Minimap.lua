@@ -5,11 +5,13 @@ local addonName, addonTable = ...
 local DRE = _G.DeathRollEnhancer
 if not DRE then return end
 
-local LibDBIcon = LibStub("LibDBIcon-1.0")
-local LDB = LibStub("LibDataBroker-1.1")
+local LibDBIcon = LibStub("LibDBIcon-1.0", true)
+local LDB = LibStub("LibDataBroker-1.1", true)
 
--- Create data broker object
-local minimapLDB = LDB:NewDataObject("DeathRollEnhancer", {
+-- Create data broker object (if LDB is available)
+local minimapLDB
+if LDB then
+    minimapLDB = LDB:NewDataObject("DeathRollEnhancer", {
     type = "data source",
     text = "DeathRoll",
     icon = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo",
@@ -51,7 +53,8 @@ local minimapLDB = LDB:NewDataObject("DeathRollEnhancer", {
         
         tooltip:Show()
     end,
-})
+    })
+end
 
 -- Initialize minimap integration
 function DRE:InitializeMinimap()

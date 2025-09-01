@@ -1097,8 +1097,9 @@ end
 
 -- Conditional print that respects debug messages setting
 function DRE:DebugPrint(message)
-    -- Force debug for now to help troubleshoot
-    self:Print("[DEBUG] " .. message)
+    if self.db and self.db.profile.gameplay.debugMessages then
+        self:Print("[DEBUG] " .. message)
+    end
 end
 
 -- Main function to start a DeathRoll challenge (called from UI)
@@ -1400,7 +1401,7 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
     end
 end
 
--- Duplicate CHAT_MSG_SYSTEM function removed - using the one at the top of file
+-- Event handling consolidated - CHAT_MSG_SYSTEM handler is at the top of file
 
 -- Spicy Duel Game Logic
 function DRE:StartSpicyDuel(target)
@@ -1619,25 +1620,55 @@ function DRE:HandleSpicyDuelMessage(sender, message)
     end
 end
 
--- UI State update function (delegates to UI.lua)
+-- Helper function to safely update UI elements
+function DRE:SafeUIUpdate(element, updateFunc, elementName)
+    if not element then
+        self:DebugPrint("No " .. (elementName or "element") .. " found in UI")
+        return false
+    end
+    
+    local success, errorMsg = pcall(updateFunc)
+    if not success then
+        self:DebugPrint("Error updating " .. (elementName or "element") .. ": " .. tostring(errorMsg))
+        return false
+    end
+    
+    return true
+end
+
+-- UI State update function with comprehensive error handling
 function DRE:UpdateGameUIState(state)
-    self:DebugPrint("UpdateGameUIState called with state: " .. (state or "nil"))
+    if not state then
+        self:DebugPrint("UpdateGameUIState called with nil state")
+        return
+    end
+    
+    self:DebugPrint("UpdateGameUIState called with state: " .. state)
+    
+    -- Validate UI table exists
+    if not self.UI then
+        self:DebugPrint("No UI table found - UI may not be initialized")
+        return
+    end
     
     -- Update UI state
-    if self.UI then
-        self.UI.gameState = state
-        
-        if not self.UI.gameButton then
-            self:DebugPrint("No gameButton found in UI")
-            return
-        end
+    self.UI.gameState = state
+    
+    -- Validate gameButton exists
+    if not self.UI.gameButton then
+        self:DebugPrint("No gameButton found in UI - UI may not be fully initialized")
+        return
+    end
         
         if state == "WAITING" then
-            self.UI.gameButton:SetText("Challenge to DeathRoll!")
-            self.UI.gameButton:SetDisabled(false)
-            if self.UI.statusLabel then
+            self:SafeUIUpdate(self.UI.gameButton, function()
+                self.UI.gameButton:SetText("Challenge to DeathRoll!")
+                self.UI.gameButton:SetDisabled(false)
+            end, "gameButton")
+            
+            self:SafeUIUpdate(self.UI.statusLabel, function()
                 self.UI.statusLabel:SetText("Ready to roll!")
-            end
+            end, "statusLabel")
             
         elseif state == "WAITING_FOR_ACCEPTANCE" then
             local target = self.UI.currentTarget or "player"

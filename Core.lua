@@ -43,7 +43,7 @@ local defaults = {
             lock = false,
         },
         ui = {
-            scale = 1.0,
+            scale = 0.9,
             framePos = {
                 point = "CENTER",
                 x = 0,
@@ -491,15 +491,15 @@ function DRE:SetupOptions()
                     },
                     scale = {
                         name = "UI Scale",
-                        desc = "Adjust the scale of the DeathRoll window",
+                        desc = "Adjust the scale of the DeathRoll window (1.0 = recommended size)",
                         type = "range",
-                        min = 0.5,
-                        max = 2.0,
+                        min = 0.6,
+                        max = 2.2,
                         step = 0.1,
                         bigStep = 0.1,
-                        get = function() return self.db.profile.ui.scale end,
+                        get = function() return (self.db.profile.ui.scale + 0.1) end,
                         set = function(_, val) 
-                            self.db.profile.ui.scale = val
+                            self.db.profile.ui.scale = val - 0.1
                             self:UpdateUIScale()
                         end,
                         order = 1,
@@ -785,7 +785,7 @@ end
 
 function DRE:UpdateUIScale()
     if DRE.UI and DRE.UI.mainWindow and DRE.UI.mainWindow.frame then
-        local scale = self.db.profile.ui.scale or 1.0
+        local scale = self.db.profile.ui.scale or 0.9
         DRE.UI.mainWindow.frame:SetScale(scale)
     end
 end

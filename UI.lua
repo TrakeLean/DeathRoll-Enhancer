@@ -51,6 +51,8 @@ function DRE:ShowMainWindow()
     -- Apply scaling from settings
     if self.db and self.db.profile.ui.scale then
         frame.frame:SetScale(self.db.profile.ui.scale)
+    else
+        frame.frame:SetScale(0.9) -- Default scale
     end
     
     UI.mainWindow = frame

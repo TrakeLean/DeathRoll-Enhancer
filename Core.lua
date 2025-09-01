@@ -520,8 +520,18 @@ function DRE:SetupOptions()
                         name = "UI Font",
                         desc = "Choose the font for the DeathRoll interface",
                         type = "select",
-                        dialogControl = "LSM30_Font",
-                        values = LSM and LSM:HashTable("font") or {},
+                        values = function()
+                            if LSM then
+                                return LSM:HashTable("font")
+                            else
+                                return {
+                                    ["Friz Quadrata TT"] = "Friz Quadrata TT",
+                                    ["Skurri"] = "Skurri", 
+                                    ["morpheus"] = "Morpheus",
+                                    ["Fonts\\ARIALN.TTF"] = "Arial Narrow",
+                                }
+                            end
+                        end,
                         get = function() return self.db.profile.ui.font or "Friz Quadrata TT" end,
                         set = function(_, val) 
                             self.db.profile.ui.font = val

@@ -815,10 +815,55 @@ end
 
 function DRE:UpdateUIFont()
     -- Update font for UI elements
-    if DRE.UI and self.db.profile.ui.font then
-        -- This would update fonts in AceGUI widgets
-        self:Print("Font updated to: " .. self.db.profile.ui.font)
+    if not self.db or not self.db.profile.ui.font then
+        return
     end
+    
+    local fontName = self.db.profile.ui.font
+    local fontSize = 12
+    local fontFlags = ""
+    
+    -- Get the actual font path if using LibSharedMedia
+    local fontPath = fontName
+    if LSM and LSM:IsValid("font", fontName) then
+        fontPath = LSM:Fetch("font", fontName)
+    end
+    
+    -- Update main window if it exists
+    if UI and UI.mainWindow and UI.mainWindow.frame then
+        -- Update the main window title font
+        if UI.mainWindow.frame.titletext then
+            UI.mainWindow.frame.titletext:SetFont(fontPath, 14, fontFlags)
+        end
+        
+        -- Update status text font
+        if UI.mainWindow.frame.statustext then
+            UI.mainWindow.frame.statustext:SetFont(fontPath, 10, fontFlags)
+        end
+    end
+    
+    -- Update other UI elements if they exist
+    if UI.statsLabel and UI.statsLabel.label then
+        UI.statsLabel.label:SetFont(fontPath, fontSize, fontFlags)
+    end
+    
+    if UI.streakLabel and UI.streakLabel.label then
+        UI.streakLabel.label:SetFont(fontPath, fontSize, fontFlags)
+    end
+    
+    if UI.funStatsLabel and UI.funStatsLabel.label then
+        UI.funStatsLabel.label:SetFont(fontPath, fontSize, fontFlags)
+    end
+    
+    if UI.historyBox and UI.historyBox.editBox then
+        UI.historyBox.editBox:SetFont(fontPath, fontSize, fontFlags)
+    end
+    
+    -- Note: Most AceGUI widgets manage their own fonts and would need to be recreated
+    -- to properly apply new fonts. For a complete font change, the user should close
+    -- and reopen the main window.
+    
+    self:Print("Font updated to: " .. fontName .. ". Close and reopen the main window (/dr) to see all changes.")
 end
 
 function DRE:ResetWindowPosition()

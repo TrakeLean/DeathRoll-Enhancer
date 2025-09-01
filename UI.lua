@@ -127,6 +127,35 @@ function DRE:CreateGameSection(container)
     rollEdit:SetText("100")
     rollGroup:AddChild(rollEdit)
     
+    -- Wager section
+    local wagerGroup = AceGUI:Create("SimpleGroup")
+    wagerGroup:SetFullWidth(true)
+    wagerGroup:SetLayout("Flow")
+    gameGroup:AddChild(wagerGroup)
+    
+    local wagerLabel = AceGUI:Create("Label")
+    wagerLabel:SetText("Wager:")
+    wagerLabel:SetWidth(80)
+    wagerGroup:AddChild(wagerLabel)
+    
+    local goldEdit = AceGUI:Create("EditBox")
+    goldEdit:SetLabel("Gold")
+    goldEdit:SetWidth(60)
+    goldEdit:SetText("0")
+    wagerGroup:AddChild(goldEdit)
+    
+    local silverEdit = AceGUI:Create("EditBox")
+    silverEdit:SetLabel("Silver")
+    silverEdit:SetWidth(60)
+    silverEdit:SetText("0")
+    wagerGroup:AddChild(silverEdit)
+    
+    local copperEdit = AceGUI:Create("EditBox")
+    copperEdit:SetLabel("Copper")
+    copperEdit:SetWidth(60)
+    copperEdit:SetText("0")
+    wagerGroup:AddChild(copperEdit)
+    
     -- Start game button
     local startButton = AceGUI:Create("Button")
     startButton:SetText("Challenge to DeathRoll!")
@@ -134,6 +163,12 @@ function DRE:CreateGameSection(container)
     startButton:SetCallback("OnClick", function()
         local target = targetEdit:GetText()
         local roll = tonumber(rollEdit:GetText())
+        
+        -- Calculate wager in copper
+        local gold = tonumber(goldEdit:GetText()) or 0
+        local silver = tonumber(silverEdit:GetText()) or 0
+        local copper = tonumber(copperEdit:GetText()) or 0
+        local totalWager = (gold * 10000) + (silver * 100) + copper
         
         if not target or target == "" then
             self:Print("Please enter a target name!")
@@ -145,7 +180,22 @@ function DRE:CreateGameSection(container)
             return
         end
         
-        self:StartDeathRoll(target, roll)
+        if gold < 0 or silver < 0 or copper < 0 then
+            self:Print("Wager amounts cannot be negative!")
+            return
+        end
+        
+        if silver > 99 then
+            self:Print("Silver cannot exceed 99!")
+            return
+        end
+        
+        if copper > 99 then
+            self:Print("Copper cannot exceed 99!")
+            return
+        end
+        
+        self:StartDeathRoll(target, roll, totalWager)
     end)
     gameGroup:AddChild(startButton)
     
@@ -211,7 +261,7 @@ function DRE:CreateHistorySection(container)
 end
 
 -- Start a DeathRoll game
-function DRE:StartDeathRoll(target, initialRoll)
+function DRE:StartDeathRoll(target, initialRoll, wagerAmount)
     if not target or target == "" then
         self:Print("Invalid target!")
         return
@@ -220,16 +270,31 @@ function DRE:StartDeathRoll(target, initialRoll)
     UI.currentTarget = target
     UI.isGameActive = true
     UI.gameState = "ROLLING"
+    wagerAmount = wagerAmount or 0
+    
+    -- Create challenge message with wager information
+    local message
+    if wagerAmount > 0 then
+        local wagerText = self:FormatGold(wagerAmount)
+        message = string.format("DEATHROLL_CHALLENGE:%d:%d:%s", initialRoll, wagerAmount, "I challenge you to a DeathRoll! Starting at " .. initialRoll .. " for " .. wagerText .. "!")
+    else
+        message = string.format("DEATHROLL_CHALLENGE:%d:0:%s", initialRoll, "I challenge you to a DeathRoll! Starting at " .. initialRoll .. " (no wager)")
+    end
     
     -- Send challenge message as whisper
-    local message = string.format("I challenge you to a DeathRoll! Starting at %d. Type /roll %d to accept!", initialRoll, initialRoll)
     SendChatMessage(message, "WHISPER", nil, target)
     
     if UI.statusLabel then
-        UI.statusLabel:SetText("Challenging " .. target .. " to DeathRoll starting at " .. initialRoll)
+        local statusText = wagerAmount > 0 and 
+            string.format("Challenging %s: %d starting roll, %s wager", target, initialRoll, self:FormatGold(wagerAmount)) or
+            string.format("Challenging %s: %d starting roll, no wager", target, initialRoll)
+        UI.statusLabel:SetText(statusText)
     end
     
-    self:Print("Challenged " .. target .. " to DeathRoll starting at " .. initialRoll)
+    local printText = wagerAmount > 0 and
+        string.format("Challenged %s to DeathRoll starting at %d for %s", target, initialRoll, self:FormatGold(wagerAmount)) or
+        string.format("Challenged %s to DeathRoll starting at %d (no wager)", target, initialRoll)
+    self:Print(printText)
 end
 
 -- Update UI scale

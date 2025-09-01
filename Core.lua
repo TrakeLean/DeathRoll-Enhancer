@@ -124,9 +124,15 @@ function DRE:SlashCommand(input)
         self:ShowMainWindow()
     elseif input == "config" or input == "options" then
         self:OpenOptions()
+    elseif input == "accept" then
+        self:Print("No pending challenge to accept")
+    elseif input == "decline" then
+        self:Print("No pending challenge to decline")
     else
         self:Print("Usage: /dr or /deathroll - Opens the main window")
         self:Print("       /dr config - Opens configuration")
+        self:Print("       /dr accept - Accept pending challenge")
+        self:Print("       /dr decline - Decline pending challenge")
     end
 end
 

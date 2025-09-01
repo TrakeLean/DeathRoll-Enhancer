@@ -24,7 +24,9 @@ local PATTERNS = {
     ROLL_PATTERN = "^(.+) rolls (%d+) %(1%-(%d+)%)$",
     DEATHROLL_CHALLENGE = "[Cc]hallenge.* you to a [Dd]eathRoll",
     DEATHROLL_CHALLENGE_ALT = "I challenge you to a DeathRoll",
+    DEATHROLL_CHALLENGE_NEW = "^DEATHROLL_CHALLENGE:(%d+):(%d+):(.+)$",
     DEATHROLL_ACCEPT = "accepts? your [Dd]eathRoll challenge",
+    DEATHROLL_DECLINE = "DEATHROLL_DECLINE",
     GOLD_WAGER = "(%d+)g",
     SILVER_WAGER = "(%d+)s",
     COPPER_WAGER = "(%d+)c"
@@ -111,9 +113,21 @@ function DRE:HandleChatMessage(message, sender, channel)
     
     local lowerMessage = message:lower()
     
-    -- Check for DeathRoll challenge
+    -- Check for new format DeathRoll challenge
+    local startRoll, wagerAmount, challengeText = message:match(PATTERNS.DEATHROLL_CHALLENGE_NEW)
+    if startRoll and wagerAmount and challengeText then
+        self:HandleNewDeathRollChallenge(sender, tonumber(startRoll), tonumber(wagerAmount), challengeText, channel)
+        return
+    end
+    
+    -- Check for old format DeathRoll challenge
     if lowerMessage:find(PATTERNS.DEATHROLL_CHALLENGE) or lowerMessage:find(PATTERNS.DEATHROLL_CHALLENGE_ALT) then
         self:HandleDeathRollChallenge(sender, message, channel)
+    end
+    
+    -- Check for challenge decline
+    if message:find(PATTERNS.DEATHROLL_DECLINE) then
+        self:HandleChallengeDecline(sender)
     end
     
     -- Check for challenge acceptance
@@ -165,6 +179,111 @@ function DRE:HandleDeathRollChallenge(sender, message, channel)
     end
 end
 
+-- Handle new format DeathRoll challenge with wager
+function DRE:HandleNewDeathRollChallenge(sender, startRoll, wagerAmount, challengeText, channel)
+    if sender == UnitName("player") then return end
+    
+    self:Print(string.format("%s has challenged you to a DeathRoll via whisper!", sender))
+    
+    -- Show challenge popup dialog
+    self:ShowChallengeDialog(sender, startRoll, wagerAmount, challengeText)
+end
+
+-- Show challenge dialog popup
+function DRE:ShowChallengeDialog(sender, startRoll, wagerAmount, challengeText)
+    if not AceGUI then
+        -- Fallback for no AceGUI
+        self:Print(string.format("Challenge from %s: Starting at %d, Wager: %s", sender, startRoll, self:FormatGold(wagerAmount)))
+        self:Print("Type '/dr accept' to accept or '/dr decline' to decline")
+        return
+    end
+    
+    -- Create challenge dialog
+    local dialog = AceGUI:Create("Frame")
+    dialog:SetTitle("DeathRoll Challenge!")
+    dialog:SetLayout("Flow")
+    dialog:SetWidth(400)
+    dialog:SetHeight(250)
+    dialog:SetCallback("OnClose", function(widget)
+        widget:Hide()
+        -- Auto-decline if closed without response
+        SendChatMessage("DEATHROLL_DECLINE", "WHISPER", nil, sender)
+    end)
+    
+    -- Challenge info
+    local infoGroup = AceGUI:Create("SimpleGroup")
+    infoGroup:SetFullWidth(true)
+    infoGroup:SetLayout("Flow")
+    dialog:AddChild(infoGroup)
+    
+    local challengerLabel = AceGUI:Create("Heading")
+    challengerLabel:SetText(sender .. " challenges you!")
+    challengerLabel:SetFullWidth(true)
+    infoGroup:AddChild(challengerLabel)
+    
+    local detailsLabel = AceGUI:Create("Label")
+    local wagerText = wagerAmount > 0 and self:FormatGold(wagerAmount) or "No wager"
+    detailsLabel:SetText(string.format("Starting Roll: %d\nWager: %s\n\n%s", startRoll, wagerText, challengeText))
+    detailsLabel:SetFullWidth(true)
+    detailsLabel:SetColor(1, 1, 0.8) -- Light yellow
+    infoGroup:AddChild(detailsLabel)
+    
+    -- Buttons
+    local buttonGroup = AceGUI:Create("SimpleGroup")
+    buttonGroup:SetFullWidth(true)
+    buttonGroup:SetLayout("Flow")
+    dialog:AddChild(buttonGroup)
+    
+    local acceptButton = AceGUI:Create("Button")
+    acceptButton:SetText("Accept Challenge")
+    acceptButton:SetWidth(150)
+    acceptButton:SetCallback("OnClick", function()
+        dialog:Hide()
+        self:AcceptChallenge(sender, startRoll, wagerAmount)
+    end)
+    buttonGroup:AddChild(acceptButton)
+    
+    local declineButton = AceGUI:Create("Button")
+    declineButton:SetText("Decline")
+    declineButton:SetWidth(100)
+    declineButton:SetCallback("OnClick", function()
+        dialog:Hide()
+        self:DeclineChallenge(sender)
+    end)
+    buttonGroup:AddChild(declineButton)
+    
+    dialog:Show()
+    
+    -- Play sound if available
+    if self.db and self.db.profile.gameplay.soundEnabled then
+        PlaySound(SOUNDKIT.TELL_MESSAGE)
+    end
+end
+
+-- Accept a challenge
+function DRE:AcceptChallenge(sender, startRoll, wagerAmount)
+    local message = string.format("DEATHROLL_ACCEPT:%d:%d", startRoll, wagerAmount)
+    SendChatMessage(message, "WHISPER", nil, sender)
+    
+    -- Start the game
+    self:StartGame(sender, startRoll, wagerAmount)
+    
+    local wagerText = wagerAmount > 0 and (" for " .. self:FormatGold(wagerAmount)) or ""
+    self:Print(string.format("Accepted DeathRoll challenge from %s%s!", sender, wagerText))
+end
+
+-- Decline a challenge
+function DRE:DeclineChallenge(sender)
+    SendChatMessage("DEATHROLL_DECLINE", "WHISPER", nil, sender)
+    self:Print(string.format("Declined DeathRoll challenge from %s", sender))
+end
+
+-- Handle challenge decline
+function DRE:HandleChallengeDecline(sender)
+    self:Print(string.format("%s declined your DeathRoll challenge", sender))
+    self:ResetGameState()
+end
+
 -- Handle challenge acceptance
 function DRE:HandleChallengeAcceptance(sender, message, channel)
     if sender == UnitName("player") then return end
@@ -176,13 +295,13 @@ function DRE:HandleChallengeAcceptance(sender, message, channel)
 end
 
 -- Start a new DeathRoll game
-function DRE:StartGame(target, initialRoll)
+function DRE:StartGame(target, initialRoll, wagerAmount)
     gameState.isActive = true
     gameState.currentTarget = target
     gameState.initialRoll = initialRoll or 100
     gameState.playerRoll = nil
     gameState.opponentRoll = nil
-    gameState.goldAmount = 0
+    gameState.goldAmount = wagerAmount or 0
     gameState.waitingForRoll = false
     
     self:Print(string.format("DeathRoll game started with %s (starting at %d)", target, gameState.initialRoll))

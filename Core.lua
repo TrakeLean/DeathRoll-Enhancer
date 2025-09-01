@@ -830,33 +830,33 @@ function DRE:UpdateUIFont()
     end
     
     -- Update main window if it exists
-    if UI and UI.mainWindow and UI.mainWindow.frame then
+    if self.UI and self.UI.mainWindow and self.UI.mainWindow.frame then
         -- Update the main window title font
-        if UI.mainWindow.frame.titletext then
-            UI.mainWindow.frame.titletext:SetFont(fontPath, 14, fontFlags)
+        if self.UI.mainWindow.frame.titletext then
+            self.UI.mainWindow.frame.titletext:SetFont(fontPath, 14, fontFlags)
         end
         
         -- Update status text font
-        if UI.mainWindow.frame.statustext then
-            UI.mainWindow.frame.statustext:SetFont(fontPath, 10, fontFlags)
+        if self.UI.mainWindow.frame.statustext then
+            self.UI.mainWindow.frame.statustext:SetFont(fontPath, 10, fontFlags)
         end
     end
     
     -- Update other UI elements if they exist
-    if UI.statsLabel and UI.statsLabel.label then
-        UI.statsLabel.label:SetFont(fontPath, fontSize, fontFlags)
+    if self.UI and self.UI.statsLabel and self.UI.statsLabel.label then
+        self.UI.statsLabel.label:SetFont(fontPath, fontSize, fontFlags)
     end
     
-    if UI.streakLabel and UI.streakLabel.label then
-        UI.streakLabel.label:SetFont(fontPath, fontSize, fontFlags)
+    if self.UI and self.UI.streakLabel and self.UI.streakLabel.label then
+        self.UI.streakLabel.label:SetFont(fontPath, fontSize, fontFlags)
     end
     
-    if UI.funStatsLabel and UI.funStatsLabel.label then
-        UI.funStatsLabel.label:SetFont(fontPath, fontSize, fontFlags)
+    if self.UI and self.UI.funStatsLabel and self.UI.funStatsLabel.label then
+        self.UI.funStatsLabel.label:SetFont(fontPath, fontSize, fontFlags)
     end
     
-    if UI.historyBox and UI.historyBox.editBox then
-        UI.historyBox.editBox:SetFont(fontPath, fontSize, fontFlags)
+    if self.UI and self.UI.historyBox and self.UI.historyBox.editBox then
+        self.UI.historyBox.editBox:SetFont(fontPath, fontSize, fontFlags)
     end
     
     -- Note: Most AceGUI widgets manage their own fonts and would need to be recreated

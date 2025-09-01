@@ -8,10 +8,8 @@ if not DRE then return end
 local LibDBIcon = LibStub("LibDBIcon-1.0", true)
 local LDB = LibStub("LibDataBroker-1.1", true)
 
--- Create data broker object (if LDB is available)
-local minimapLDB
-if LDB then
-    minimapLDB = LDB:NewDataObject("DeathRollEnhancer", {
+-- Create data broker object - LibDBIcon can work without LibDataBroker in many cases
+local minimapLDB = {
     type = "data source",
     text = "DeathRoll",
     icon = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo",
@@ -53,7 +51,11 @@ if LDB then
         
         tooltip:Show()
     end,
-    })
+}
+
+-- If LibDataBroker is available, register with it for better compatibility
+if LDB then
+    minimapLDB = LDB:NewDataObject("DeathRollEnhancer", minimapLDB)
 end
 
 -- Initialize minimap integration

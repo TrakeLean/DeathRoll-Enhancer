@@ -10,7 +10,7 @@
 ## DefaultState: enabled
 ## IconTexture: Interface\Addons\DeathRollEnhancer\Media\Logo.tga
 ## SavedVariables: DeathRollEnhancerDB
-## Dependencies: Ace3, LibSharedMedia-3.0, LibDataBroker-1.1, LibDBIcon-1.0
+## Dependencies: Ace3, LibSharedMedia-3.0, LibDBIcon-1.0
 ## OptionalDeps: LibUIDropDownMenu
 
 # Addon modules

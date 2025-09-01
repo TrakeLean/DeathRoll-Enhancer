@@ -1721,9 +1721,6 @@ function DRE:UpdateGameUIState(state)
                 end
             end)
         end
-    else
-        self:DebugPrint("No UI table found")
-    end
 end
 
 -- Make the addon globally accessible

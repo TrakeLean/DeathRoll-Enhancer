@@ -163,43 +163,11 @@ function DRE:CreateGameSection(container)
     goldEdit:SetMaxLetters(6) -- Reasonable gold limit
     goldEdit:DisableButton(true) -- Remove the "Okay" button
     
-    -- Set placeholder text
-    goldEdit.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
-    goldEdit:SetText("0")
-    goldEdit.isPlaceholder = true
-    
-    goldEdit:SetCallback("OnEditFocusGained", function(widget)
-        if widget.isPlaceholder then
-            widget:SetText("")
-            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
-            widget.isPlaceholder = false
-        end
-    end)
-    
-    goldEdit:SetCallback("OnEditFocusLost", function(widget)
-        if widget:GetText() == "" then
-            widget:SetText("0")
-            widget.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
-            widget.isPlaceholder = true
-        end
-    end)
-    
     goldEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        if widget.isPlaceholder and text == "0" then return end -- Don't process initial placeholder
-        
-        -- User is typing, clear placeholder state
-        if widget.isPlaceholder then
-            widget.isPlaceholder = false
-            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
-        end
-        
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
             widget:SetText(numericText)
         end
-        
-        -- If they clear everything, don't set back to placeholder yet
-        -- (let OnEditFocusLost handle that)
     end)
     
     wagerGroup:AddChild(goldEdit)
@@ -211,36 +179,7 @@ function DRE:CreateGameSection(container)
     silverEdit:SetMaxLetters(2) -- Silver max 99
     silverEdit:DisableButton(true) -- Remove the "Okay" button
     
-    -- Set placeholder text
-    silverEdit.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
-    silverEdit:SetText("0")
-    silverEdit.isPlaceholder = true
-    
-    silverEdit:SetCallback("OnEditFocusGained", function(widget)
-        if widget.isPlaceholder then
-            widget:SetText("")
-            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
-            widget.isPlaceholder = false
-        end
-    end)
-    
-    silverEdit:SetCallback("OnEditFocusLost", function(widget)
-        if widget:GetText() == "" then
-            widget:SetText("0")
-            widget.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
-            widget.isPlaceholder = true
-        end
-    end)
-    
     silverEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        if widget.isPlaceholder and text == "0" then return end -- Don't process initial placeholder
-        
-        -- User is typing, clear placeholder state
-        if widget.isPlaceholder then
-            widget.isPlaceholder = false
-            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
-        end
-        
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
             widget:SetText(numericText)
@@ -261,36 +200,7 @@ function DRE:CreateGameSection(container)
     copperEdit:SetMaxLetters(2) -- Copper max 99
     copperEdit:DisableButton(true) -- Remove the "Okay" button
     
-    -- Set placeholder text
-    copperEdit.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
-    copperEdit:SetText("0")
-    copperEdit.isPlaceholder = true
-    
-    copperEdit:SetCallback("OnEditFocusGained", function(widget)
-        if widget.isPlaceholder then
-            widget:SetText("")
-            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
-            widget.isPlaceholder = false
-        end
-    end)
-    
-    copperEdit:SetCallback("OnEditFocusLost", function(widget)
-        if widget:GetText() == "" then
-            widget:SetText("0")
-            widget.editbox:SetTextColor(0.5, 0.5, 0.5) -- Gray placeholder color
-            widget.isPlaceholder = true
-        end
-    end)
-    
     copperEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        if widget.isPlaceholder and text == "0" then return end -- Don't process initial placeholder
-        
-        -- User is typing, clear placeholder state
-        if widget.isPlaceholder then
-            widget.isPlaceholder = false
-            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
-        end
-        
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
             widget:SetText(numericText)
@@ -312,10 +222,10 @@ function DRE:CreateGameSection(container)
         local target = UnitName("target")
         local roll = tonumber(rollEdit:GetText())
         
-        -- Calculate wager in copper, treating placeholders as 0
-        local gold = (goldEdit.isPlaceholder and 0) or (tonumber(goldEdit:GetText()) or 0)
-        local silver = (silverEdit.isPlaceholder and 0) or (tonumber(silverEdit:GetText()) or 0)
-        local copper = (copperEdit.isPlaceholder and 0) or (tonumber(copperEdit:GetText()) or 0)
+        -- Calculate wager in copper, treating empty fields as 0
+        local gold = tonumber(goldEdit:GetText()) or 0
+        local silver = tonumber(silverEdit:GetText()) or 0
+        local copper = tonumber(copperEdit:GetText()) or 0
         local totalWager = (gold * 10000) + (silver * 100) + copper
         
         if not target or target == "" then

@@ -45,8 +45,11 @@ function DRE:ShowMainWindow()
         widget:Hide()
     end)
     frame:SetLayout("Fill")
-    frame:SetWidth(350)
-    frame:SetHeight(290)
+    -- Use default dimensions from database settings
+    local frameWidth = self.db.profile.ui.frameWidth or 350
+    local frameHeight = self.db.profile.ui.frameHeight or 290
+    frame:SetWidth(frameWidth)
+    frame:SetHeight(frameHeight)
     
     -- Apply scaling from settings
     if self.db and self.db.profile.ui.scale then

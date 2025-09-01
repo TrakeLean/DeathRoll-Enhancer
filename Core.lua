@@ -49,6 +49,8 @@ local defaults = {
                 x = 0,
                 y = 0,
             },
+            frameWidth = 350,
+            frameHeight = 290,
         },
         gameplay = {
             autoEmote = true,

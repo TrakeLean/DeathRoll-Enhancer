@@ -145,12 +145,8 @@ function DRE:CreateGameSection(container)
     end)
     rollGroup:AddChild(rollEdit)
     
-    -- Store references for UI updates
+    -- Store roll edit reference
     UI.rollEdit = rollEdit
-    UI.goldEdit = goldEdit
-    UI.silverEdit = silverEdit
-    UI.copperEdit = copperEdit
-    UI.gameButton = gameButton
     
     -- Wager section
     local wagerGroup = AceGUI:Create("SimpleGroup")
@@ -237,6 +233,11 @@ function DRE:CreateGameSection(container)
     statusLabel:SetColor(1, 1, 0) -- Yellow text
     gameGroup:AddChild(statusLabel)
     
+    -- Store all UI references for later updates
+    UI.goldEdit = goldEdit
+    UI.silverEdit = silverEdit
+    UI.copperEdit = copperEdit
+    UI.gameButton = gameButton
     UI.statusLabel = statusLabel
 end
 

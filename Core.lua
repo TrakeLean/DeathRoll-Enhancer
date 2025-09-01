@@ -115,6 +115,9 @@ function DRE:OnInitialize()
     self:RegisterChatCommand("deathrollhistory", "HistoryCommand")
     
     self:Print("DeathRoll Enhancer v" .. self.version .. " loaded!")
+    
+    -- Test debug buffer
+    self:AddToDebugBuffer("SYSTEM", "Addon loaded and debug buffer initialized")
 end
 
 function DRE:OnEnable()
@@ -421,6 +424,7 @@ function DRE:SlashCommand(input)
     elseif input == "config" or input == "options" then
         self:OpenOptions()
     elseif input == "debug" then
+        self:Print("Debug command triggered - dumping buffer...")
         self:DumpDebugBuffer()
     elseif input == "accept" then
         self:Print("No pending challenge to accept")
@@ -1167,11 +1171,18 @@ end
 
 -- Dump debug buffer to chat
 function DRE:DumpDebugBuffer()
-    self:Print("=== DEBUG CHAT BUFFER (Last " .. #self.debugChatBuffer .. " messages) ===")
-    for i, entry in ipairs(self.debugChatBuffer) do
-        self:Print(entry)
+    self:Print("=== DEBUG CHAT BUFFER START ===")
+    self:Print("Buffer size: " .. #self.debugChatBuffer .. " messages")
+    
+    if #self.debugChatBuffer == 0 then
+        self:Print("No messages in buffer yet - try doing some actions first")
+    else
+        for i, entry in ipairs(self.debugChatBuffer) do
+            self:Print(entry)
+        end
     end
-    self:Print("=== END DEBUG BUFFER ===")
+    
+    self:Print("=== DEBUG CHAT BUFFER END ===")
 end
 
 -- Conditional print that respects debug messages setting

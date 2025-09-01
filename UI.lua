@@ -14,7 +14,6 @@ local UI = DRE.UI
 
 -- UI state
 UI.mainWindow = nil
-UI.currentTarget = nil
 UI.isGameActive = false
 UI.playerRoll = nil
 UI.opponentRoll = nil
@@ -44,9 +43,9 @@ function DRE:ShowMainWindow()
     frame:SetCallback("OnClose", function(widget)
         widget:Hide()
     end)
-    frame:SetLayout("Flow")
-    frame:SetWidth(400)
-    frame:SetHeight(500)
+    frame:SetLayout("Fill")
+    frame:SetWidth(450)
+    frame:SetHeight(550)
     
     -- Apply scaling from settings
     if self.db and self.db.profile.ui.scale then
@@ -55,18 +54,39 @@ function DRE:ShowMainWindow()
     
     UI.mainWindow = frame
     
-    -- Create UI components
-    self:CreateGameSection(frame)
-    self:CreateStatsSection(frame)
-    self:CreateHistorySection(frame)
+    -- Create TabGroup
+    local tabGroup = AceGUI:Create("TabGroup")
+    tabGroup:SetLayout("Fill")
+    tabGroup:SetFullWidth(true)
+    tabGroup:SetFullHeight(true)
+    tabGroup:SetTabs({
+        {text="DeathRoll", value="deathroll"},
+        {text="Statistics", value="statistics"}, 
+        {text="History", value="history"}
+    })
+    tabGroup:SetCallback("OnGroupSelected", function(container, event, group)
+        container:ReleaseChildren()
+        if group == "deathroll" then
+            self:CreateGameSection(container)
+        elseif group == "statistics" then
+            self:CreateStatsSection(container)
+        elseif group == "history" then
+            self:CreateHistorySection(container)
+        end
+    end)
+    tabGroup:SelectTab("deathroll") -- Default to DeathRoll tab
+    
+    frame:AddChild(tabGroup)
+    UI.tabGroup = tabGroup
     
     frame:Show()
 end
 
 -- Create game control section
 function DRE:CreateGameSection(container)
-    local gameGroup = AceGUI:Create("SimpleGroup")
+    local gameGroup = AceGUI:Create("ScrollFrame")
     gameGroup:SetFullWidth(true)
+    gameGroup:SetFullHeight(true)
     gameGroup:SetLayout("Flow")
     container:AddChild(gameGroup)
     
@@ -76,39 +96,12 @@ function DRE:CreateGameSection(container)
     header:SetFullWidth(true)
     gameGroup:AddChild(header)
     
-    -- Target selection
-    local targetGroup = AceGUI:Create("SimpleGroup")
-    targetGroup:SetFullWidth(true)
-    targetGroup:SetLayout("Flow")
-    gameGroup:AddChild(targetGroup)
-    
-    local targetLabel = AceGUI:Create("Label")
-    targetLabel:SetText("Target:")
-    targetLabel:SetWidth(80)
-    targetGroup:AddChild(targetLabel)
-    
-    local targetEdit = AceGUI:Create("EditBox")
-    targetEdit:SetLabel("")
-    targetEdit:SetWidth(200)
-    targetEdit:SetText(UnitName("target") or "")
-    targetEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        UI.currentTarget = text
-    end)
-    targetGroup:AddChild(targetEdit)
-    
-    local targetButton = AceGUI:Create("Button")
-    targetButton:SetText("Target")
-    targetButton:SetWidth(100)
-    targetButton:SetCallback("OnClick", function()
-        local target = UnitName("target")
-        if target then
-            targetEdit:SetText(target)
-            UI.currentTarget = target
-        else
-            self:Print("No target selected!")
-        end
-    end)
-    targetGroup:AddChild(targetButton)
+    -- Target info display
+    local targetInfo = AceGUI:Create("Label")
+    targetInfo:SetText("Target someone in-game, then click Challenge!")
+    targetInfo:SetFullWidth(true)
+    targetInfo:SetColor(0.8, 0.8, 0.8)
+    gameGroup:AddChild(targetInfo)
     
     -- Roll amount section
     local rollGroup = AceGUI:Create("SimpleGroup")
@@ -148,30 +141,6 @@ function DRE:CreateGameSection(container)
     
     -- Store reference for auto-roll updates
     UI.rollEdit = rollEdit
-    
-    -- Auto-roll refresh button (only show if setting is enabled)
-    if self.db and self.db.profile.gameplay.autoRollFromMoney then
-        local refreshButton = AceGUI:Create("Button")
-        refreshButton:SetText("↻")
-        refreshButton:SetWidth(30)
-        refreshButton:SetCallback("OnClick", function()
-            local newRoll = self:CalculateAutoRoll()
-            rollEdit:SetText(tostring(newRoll))
-            self:Print(string.format("Roll updated from your money: %d", newRoll))
-        end)
-        rollGroup:AddChild(refreshButton)
-        
-        -- Add tooltip
-        refreshButton.frame:SetScript("OnEnter", function()
-            GameTooltip:SetOwner(refreshButton.frame, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Refresh roll from current money", 1, 1, 1)
-            GameTooltip:AddLine("Updates roll based on your total gold/silver/copper", 0.8, 0.8, 0.8, true)
-            GameTooltip:Show()
-        end)
-        refreshButton.frame:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-    end
     
     -- Wager section
     local wagerGroup = AceGUI:Create("SimpleGroup")
@@ -316,7 +285,7 @@ function DRE:CreateGameSection(container)
     startButton:SetText("Challenge to DeathRoll!")
     startButton:SetFullWidth(true)
     startButton:SetCallback("OnClick", function()
-        local target = targetEdit:GetText()
+        local target = UnitName("target")
         local roll = tonumber(rollEdit:GetText())
         
         -- Calculate wager in copper, treating placeholders as 0
@@ -326,7 +295,7 @@ function DRE:CreateGameSection(container)
         local totalWager = (gold * 10000) + (silver * 100) + copper
         
         if not target or target == "" then
-            self:Print("Please enter a target name!")
+            self:Print("Please target a player first!")
             return
         end
         
@@ -361,53 +330,256 @@ end
 
 -- Create stats section
 function DRE:CreateStatsSection(container)
-    local statsGroup = AceGUI:Create("InlineGroup")
-    statsGroup:SetTitle("Statistics")
+    local statsGroup = AceGUI:Create("ScrollFrame")
     statsGroup:SetFullWidth(true)
+    statsGroup:SetFullHeight(true)
     statsGroup:SetLayout("Flow")
     container:AddChild(statsGroup)
     
+    -- Header
+    local header = AceGUI:Create("Heading")
+    header:SetText("DeathRoll Statistics")
+    header:SetFullWidth(true)
+    statsGroup:AddChild(header)
+    
     if not self.db or not self.db.profile.goldTracking then
+        local noDataLabel = AceGUI:Create("Label")
+        noDataLabel:SetText("No statistics available yet. Play some DeathRoll games to see your stats here!")
+        noDataLabel:SetFullWidth(true)
+        statsGroup:AddChild(noDataLabel)
         return
     end
     
     local stats = self.db.profile.goldTracking
     
-    -- Stats display
+    -- Overall statistics
+    local overallGroup = AceGUI:Create("InlineGroup")
+    overallGroup:SetTitle("Overall Performance")
+    overallGroup:SetFullWidth(true)
+    overallGroup:SetLayout("Flow")
+    statsGroup:AddChild(overallGroup)
+    
+    -- Calculate total games and win rate
+    local totalGames = 0
+    local totalWins = 0
+    local totalLosses = 0
+    if self.db.profile.history then
+        for playerName, playerData in pairs(self.db.profile.history) do
+            totalWins = totalWins + (playerData.wins or 0)
+            totalLosses = totalLosses + (playerData.losses or 0)
+        end
+    end
+    totalGames = totalWins + totalLosses
+    local winRate = totalGames > 0 and (totalWins / totalGames * 100) or 0
+    
+    -- Stats display with better formatting
     local statsText = string.format(
-        "Gold Won: %s\nGold Lost: %s\nCurrent Streak: %d\nBest Win Streak: %d\nWorst Loss Streak: %d",
+        "Total Games Played: %d\nGames Won: %d\nGames Lost: %d\nWin Rate: %.1f%%\n\nGold Won: %s\nGold Lost: %s\nNet Profit: %s",
+        totalGames,
+        totalWins,
+        totalLosses,
+        winRate,
         self:FormatGold(stats.totalWon or 0),
         self:FormatGold(stats.totalLost or 0),
-        stats.currentStreak or 0,
-        stats.bestWinStreak or 0,
-        stats.worstLossStreak or 0
+        self:FormatGold((stats.totalWon or 0) - (stats.totalLost or 0))
     )
     
     local statsLabel = AceGUI:Create("Label")
     statsLabel:SetText(statsText)
     statsLabel:SetFullWidth(true)
-    statsGroup:AddChild(statsLabel)
+    overallGroup:AddChild(statsLabel)
+    
+    -- Streak information
+    local streakGroup = AceGUI:Create("InlineGroup")
+    streakGroup:SetTitle("Streaks")
+    streakGroup:SetFullWidth(true)
+    streakGroup:SetLayout("Flow")
+    statsGroup:AddChild(streakGroup)
+    
+    local streakText = string.format(
+        "Current Streak: %s%d\nBest Win Streak: %d\nWorst Loss Streak: %d",
+        (stats.currentStreak or 0) >= 0 and "+" or "",
+        stats.currentStreak or 0,
+        stats.bestWinStreak or 0,
+        stats.worstLossStreak or 0
+    )
+    
+    local streakLabel = AceGUI:Create("Label")
+    streakLabel:SetText(streakText)
+    streakLabel:SetFullWidth(true)
+    streakGroup:AddChild(streakLabel)
+    
+    -- Fun Statistics section
+    self:CreateFunStatsSection(statsGroup)
     
     UI.statsLabel = statsLabel
+    UI.streakLabel = streakLabel
+end
+
+-- Create fun statistics section
+function DRE:CreateFunStatsSection(container)
+    if not self.db or not self.db.profile.funStats then
+        return
+    end
+    
+    -- Calculate fun stats
+    local funStats = self:CalculateFunStats()
+    local settings = self.db.profile.funStats
+    
+    -- Check if any fun stats are enabled
+    local hasEnabledStats = false
+    for key, enabled in pairs(settings) do
+        if enabled then
+            hasEnabledStats = true
+            break
+        end
+    end
+    
+    if not hasEnabledStats then
+        return
+    end
+    
+    local funStatsGroup = AceGUI:Create("InlineGroup")
+    funStatsGroup:SetTitle("Fun Statistics")
+    funStatsGroup:SetFullWidth(true)
+    funStatsGroup:SetLayout("Flow")
+    container:AddChild(funStatsGroup)
+    
+    -- Create a text string with all enabled fun stats
+    local funStatsText = ""
+    local statsToShow = {}
+    
+    -- Map settings to stat keys and check if they should be shown
+    local statMappings = {
+        showMostPlayedWith = "mostPlayedWith",
+        showMostWinsAgainst = "mostWinsAgainst", 
+        showMostLossesAgainst = "mostLossesAgainst",
+        showMostMoneyWonFrom = "mostMoneyWonFrom",
+        showMostMoneyLostTo = "mostMoneyLostTo",
+        showBiggestWin = "biggestWin",
+        showBiggestLoss = "biggestLoss",
+        showNemesis = "nemesis",
+        showVictim = "victim",
+        showHighRoller = "highRoller",
+        showCheapskate = "cheapskate",
+        showLuckyPlayer = "luckyPlayer",
+        showUnluckyPlayer = "unluckyPlayer", 
+        showDaredevil = "daredevil",
+        showConservative = "conservative",
+    }
+    
+    -- Collect enabled stats
+    for settingKey, statKey in pairs(statMappings) do
+        if settings[settingKey] then
+            local statText = self:FormatFunStat(statKey, funStats[statKey])
+            if statText then
+                table.insert(statsToShow, statText)
+            end
+        end
+    end
+    
+    -- Display the stats
+    if #statsToShow > 0 then
+        funStatsText = table.concat(statsToShow, "\n")
+    else
+        funStatsText = "No fun statistics available yet.\nPlay more games to unlock interesting insights!"
+    end
+    
+    local funStatsLabel = AceGUI:Create("Label")
+    funStatsLabel:SetText(funStatsText)
+    funStatsLabel:SetFullWidth(true)
+    funStatsLabel:SetColor(0.9, 0.9, 0.5) -- Light yellow color for fun stats
+    funStatsGroup:AddChild(funStatsLabel)
+    
+    -- Add settings hint
+    local settingsHint = AceGUI:Create("Label")
+    settingsHint:SetText("\nTip: Use /dr config → Fun Statistics to customize which stats are shown!")
+    settingsHint:SetFullWidth(true)
+    settingsHint:SetColor(0.7, 0.7, 0.7)
+    funStatsGroup:AddChild(settingsHint)
+    
+    UI.funStatsLabel = funStatsLabel
 end
 
 -- Create history section
 function DRE:CreateHistorySection(container)
-    local historyGroup = AceGUI:Create("InlineGroup")
-    historyGroup:SetTitle("Recent History")
+    local historyGroup = AceGUI:Create("ScrollFrame")
     historyGroup:SetFullWidth(true)
-    historyGroup:SetLayout("Fill")
+    historyGroup:SetFullHeight(true)
+    historyGroup:SetLayout("Flow")
     container:AddChild(historyGroup)
     
+    -- Header
+    local header = AceGUI:Create("Heading")
+    header:SetText("Game History")
+    header:SetFullWidth(true)
+    historyGroup:AddChild(header)
+    
+    if not self.db or not self.db.profile.history then
+        local noDataLabel = AceGUI:Create("Label")
+        noDataLabel:SetText("No game history yet. Start playing DeathRoll games to see your history here!")
+        noDataLabel:SetFullWidth(true)
+        historyGroup:AddChild(noDataLabel)
+        return
+    end
+    
+    -- Player selector dropdown
+    local playerGroup = AceGUI:Create("SimpleGroup")
+    playerGroup:SetFullWidth(true)
+    playerGroup:SetLayout("Flow")
+    historyGroup:AddChild(playerGroup)
+    
+    local playerLabel = AceGUI:Create("Label")
+    playerLabel:SetText("Player:")
+    playerLabel:SetWidth(60)
+    playerGroup:AddChild(playerLabel)
+    
+    -- Create dropdown with all players
+    local playerNames = {}
+    local playerDropdown = {}
+    for playerName, _ in pairs(self.db.profile.history) do
+        table.insert(playerNames, playerName)
+        playerDropdown[playerName] = playerName
+    end
+    table.sort(playerNames)
+    
+    if #playerNames == 0 then
+        local noPlayersLabel = AceGUI:Create("Label")
+        noPlayersLabel:SetText("No players in history yet!")
+        noPlayersLabel:SetFullWidth(true)
+        historyGroup:AddChild(noPlayersLabel)
+        return
+    end
+    
+    local dropdown = AceGUI:Create("Dropdown")
+    dropdown:SetList(playerDropdown)
+    dropdown:SetValue(playerNames[1])
+    dropdown:SetWidth(200)
+    dropdown:SetCallback("OnValueChanged", function(widget, event, key)
+        self:UpdateHistoryDisplay(key)
+    end)
+    playerGroup:AddChild(dropdown)
+    
+    -- History display area
+    local historyDisplayGroup = AceGUI:Create("InlineGroup")
+    historyDisplayGroup:SetTitle("Player Statistics & Recent Games")
+    historyDisplayGroup:SetFullWidth(true)
+    historyDisplayGroup:SetLayout("Fill")
+    historyGroup:AddChild(historyDisplayGroup)
+    
     local historyBox = AceGUI:Create("MultiLineEditBox")
-    historyBox:SetText("Recent games will appear here...")
-    historyBox:SetNumLines(8)
+    historyBox:SetNumLines(15)
     historyBox:DisableButton(true)
     historyBox:SetFullWidth(true)
     historyBox:SetFullHeight(true)
-    historyGroup:AddChild(historyBox)
+    historyDisplayGroup:AddChild(historyBox)
     
+    -- Store references for updates
     UI.historyBox = historyBox
+    UI.historyDropdown = dropdown
+    
+    -- Show first player's history by default
+    self:UpdateHistoryDisplay(playerNames[1])
 end
 
 -- Start a DeathRoll game
@@ -417,7 +589,6 @@ function DRE:StartDeathRoll(target, initialRoll, wagerAmount)
         return
     end
     
-    UI.currentTarget = target
     UI.isGameActive = true
     UI.gameState = "ROLLING"
     wagerAmount = wagerAmount or 0
@@ -542,16 +713,138 @@ function DRE:UpdateStatsDisplay()
     end
     
     local stats = self.db.profile.goldTracking
+    
+    -- Recalculate total games and win rate
+    local totalGames = 0
+    local totalWins = 0
+    local totalLosses = 0
+    if self.db.profile.history then
+        for playerName, playerData in pairs(self.db.profile.history) do
+            totalWins = totalWins + (playerData.wins or 0)
+            totalLosses = totalLosses + (playerData.losses or 0)
+        end
+    end
+    totalGames = totalWins + totalLosses
+    local winRate = totalGames > 0 and (totalWins / totalGames * 100) or 0
+    
     local statsText = string.format(
-        "Gold Won: %s\nGold Lost: %s\nCurrent Streak: %d\nBest Win Streak: %d\nWorst Loss Streak: %d",
+        "Total Games Played: %d\nGames Won: %d\nGames Lost: %d\nWin Rate: %.1f%%\n\nGold Won: %s\nGold Lost: %s\nNet Profit: %s",
+        totalGames,
+        totalWins,
+        totalLosses,
+        winRate,
         self:FormatGold(stats.totalWon or 0),
         self:FormatGold(stats.totalLost or 0),
-        stats.currentStreak or 0,
-        stats.bestWinStreak or 0,
-        stats.worstLossStreak or 0
+        self:FormatGold((stats.totalWon or 0) - (stats.totalLost or 0))
     )
     
     UI.statsLabel:SetText(statsText)
+    
+    if UI.streakLabel then
+        local streakText = string.format(
+            "Current Streak: %s%d\nBest Win Streak: %d\nWorst Loss Streak: %d",
+            (stats.currentStreak or 0) >= 0 and "+" or "",
+            stats.currentStreak or 0,
+            stats.bestWinStreak or 0,
+            stats.worstLossStreak or 0
+        )
+        UI.streakLabel:SetText(streakText)
+    end
+    
+    -- Update fun stats if they exist
+    if UI.funStatsLabel and self.db and self.db.profile.funStats then
+        local funStats = self:CalculateFunStats()
+        local settings = self.db.profile.funStats
+        local statsToShow = {}
+        
+        local statMappings = {
+            showMostPlayedWith = "mostPlayedWith",
+            showMostWinsAgainst = "mostWinsAgainst", 
+            showMostLossesAgainst = "mostLossesAgainst",
+            showMostMoneyWonFrom = "mostMoneyWonFrom",
+            showMostMoneyLostTo = "mostMoneyLostTo",
+            showBiggestWin = "biggestWin",
+            showBiggestLoss = "biggestLoss",
+            showNemesis = "nemesis",
+            showVictim = "victim",
+            showHighRoller = "highRoller",
+            showCheapskate = "cheapskate",
+            showLuckyPlayer = "luckyPlayer",
+            showUnluckyPlayer = "unluckyPlayer", 
+            showDaredevil = "daredevil",
+            showConservative = "conservative",
+        }
+        
+        for settingKey, statKey in pairs(statMappings) do
+            if settings[settingKey] then
+                local statText = self:FormatFunStat(statKey, funStats[statKey])
+                if statText then
+                    table.insert(statsToShow, statText)
+                end
+            end
+        end
+        
+        local funStatsText = #statsToShow > 0 and 
+            table.concat(statsToShow, "\n") or
+            "No fun statistics available yet.\nPlay more games to unlock interesting insights!"
+            
+        UI.funStatsLabel:SetText(funStatsText)
+    end
+end
+
+-- Update history display for selected player
+function DRE:UpdateHistoryDisplay(playerName)
+    if not UI.historyBox or not self.db or not self.db.profile.history then
+        return
+    end
+    
+    local playerData = self.db.profile.history[playerName]
+    if not playerData then
+        UI.historyBox:SetText("No data available for " .. (playerName or "Unknown"))
+        return
+    end
+    
+    -- Enhanced player history formatting
+    local text = string.format("=== HISTORY WITH %s ===\n\n", string.upper(playerName))
+    text = text .. string.format("Games Played: %d\n", (playerData.wins or 0) + (playerData.losses or 0))
+    text = text .. string.format("Wins: %d\n", playerData.wins or 0)
+    text = text .. string.format("Losses: %d\n", playerData.losses or 0)
+    
+    local totalGames = (playerData.wins or 0) + (playerData.losses or 0)
+    if totalGames > 0 then
+        local winRate = (playerData.wins or 0) / totalGames * 100
+        text = text .. string.format("Win Rate: %.1f%%\n", winRate)
+    end
+    
+    text = text .. string.format("Gold Won: %s\n", self:FormatGold(playerData.goldWon or 0))
+    text = text .. string.format("Gold Lost: %s\n", self:FormatGold(playerData.goldLost or 0))
+    text = text .. string.format("Net Profit: %s\n", self:FormatGold((playerData.goldWon or 0) - (playerData.goldLost or 0)))
+    
+    if playerData.recentGames and #playerData.recentGames > 0 then
+        text = text .. "\n=== RECENT GAMES ===\n"
+        local displayCount = math.min(#playerData.recentGames, 15) -- Show last 15 games
+        for i = 1, displayCount do
+            local game = playerData.recentGames[i]
+            if game then
+                local resultIcon = (game.result == "Won") and "✓" or "✗"
+                local goldDisplay = (game.goldAmount and game.goldAmount > 0) and 
+                    (" (" .. self:FormatGold(game.goldAmount) .. ")") or ""
+                text = text .. string.format("%s %s - %s%s\n", 
+                    resultIcon,
+                    game.date or "Unknown Date",
+                    game.result or "Unknown",
+                    goldDisplay)
+            end
+        end
+        
+        if #playerData.recentGames > 15 then
+            text = text .. string.format("\n... and %d more games\n", #playerData.recentGames - 15)
+        end
+    else
+        text = text .. "\n=== RECENT GAMES ===\nNo games recorded yet."
+    end
+    
+    UI.historyBox:SetText(text)
 end
 
 -- Clean up UI

@@ -64,6 +64,28 @@ local defaults = {
             bestWinStreak = 0,
             worstLossStreak = 0,
         },
+        funStats = {
+            showMostPlayedWith = true,
+            showMostWinsAgainst = true,
+            showMostLossesAgainst = true,
+            showMostMoneyWonFrom = true,
+            showMostMoneyLostTo = true,
+            showBiggestWin = true,
+            showBiggestLoss = true,
+            showLuckyPlayer = true,
+            showUnluckyPlayer = true,
+            showNemesis = true,
+            showVictim = true,
+            showGoldMinePlayer = true,
+            showMoneySinkPlayer = true,
+            showLongestWinStreak = true,
+            showLongestLossStreak = true,
+            showAvgWager = true,
+            showHighRoller = true,
+            showCheapskate = true,
+            showDaredevil = true,
+            showConservative = true,
+        },
     },
 }
 
@@ -135,6 +157,241 @@ function DRE:CalculateAutoRoll()
     end
     
     return rollValue
+end
+
+-- Calculate fun statistics from history data
+function DRE:CalculateFunStats()
+    if not self.db or not self.db.profile.history then
+        return {}
+    end
+    
+    local history = self.db.profile.history
+    local funStats = {}
+    
+    -- Initialize counters
+    local mostGamesPlayer, mostGamesCount = nil, 0
+    local mostWinsPlayer, mostWinsCount = nil, 0
+    local mostLossesPlayer, mostLossesCount = nil, 0
+    local mostMoneyWonPlayer, mostMoneyWonAmount = nil, 0
+    local mostMoneyLostPlayer, mostMoneyLostAmount = nil, 0
+    local nemesisPlayer, nemesisWinRate = nil, 0
+    local victimPlayer, victimWinRate = nil, 1
+    local highRollerPlayer, highRollerAvg = nil, 0
+    local cheapskatePlayer, cheapskateAvg = nil, math.huge
+    local luckyPlayer, luckyWinRate = nil, 0
+    local unluckyPlayer, unluckyWinRate = nil, 1
+    local daredevilPlayer, daredevilAvg = nil, 0
+    local conservativePlayer, conservativeAvg = nil, math.huge
+    local biggestWinAmount, biggestWinPlayer = 0, nil
+    local biggestLossAmount, biggestLossPlayer = 0, nil
+    
+    -- Analyze each player
+    for playerName, playerData in pairs(history) do
+        local wins = playerData.wins or 0
+        local losses = playerData.losses or 0
+        local totalGames = wins + losses
+        local goldWon = playerData.goldWon or 0
+        local goldLost = playerData.goldLost or 0
+        
+        if totalGames > 0 then
+            -- Most games played with
+            if totalGames > mostGamesCount then
+                mostGamesPlayer = playerName
+                mostGamesCount = totalGames
+            end
+            
+            -- Most wins against
+            if wins > mostWinsCount then
+                mostWinsPlayer = playerName
+                mostWinsCount = wins
+            end
+            
+            -- Most losses against
+            if losses > mostLossesCount then
+                mostLossesPlayer = playerName
+                mostLossesCount = losses
+            end
+            
+            -- Most money won from
+            if goldWon > mostMoneyWonAmount then
+                mostMoneyWonPlayer = playerName
+                mostMoneyWonAmount = goldWon
+            end
+            
+            -- Most money lost to
+            if goldLost > mostMoneyLostAmount then
+                mostMoneyLostPlayer = playerName
+                mostMoneyLostAmount = goldLost
+            end
+            
+            -- Calculate win rates for nemesis/victim (minimum 5 games)
+            if totalGames >= 5 then
+                local theirWinRate = losses / totalGames -- Their wins against us
+                local ourWinRate = wins / totalGames -- Our wins against them
+                
+                -- Nemesis (highest win rate against us)
+                if theirWinRate > nemesisWinRate then
+                    nemesisPlayer = playerName
+                    nemesisWinRate = theirWinRate
+                end
+                
+                -- Victim (lowest win rate against us, highest for us)
+                if theirWinRate < victimWinRate then
+                    victimPlayer = playerName
+                    victimWinRate = theirWinRate
+                end
+                
+                -- Lucky/Unlucky based on our win rate
+                if ourWinRate > luckyWinRate then
+                    luckyPlayer = playerName
+                    luckyWinRate = ourWinRate
+                end
+                
+                if ourWinRate < unluckyWinRate then
+                    unluckyPlayer = playerName
+                    unluckyWinRate = ourWinRate
+                end
+            end
+            
+            -- Analyze recent games for additional stats
+            if playerData.recentGames then
+                local totalWager = 0
+                local wagerCount = 0
+                local totalStartRoll = 0
+                local rollCount = 0
+                
+                for _, game in ipairs(playerData.recentGames) do
+                    -- Track biggest single win/loss
+                    if game.goldAmount and game.goldAmount > 0 then
+                        if game.result == "Won" and game.goldAmount > biggestWinAmount then
+                            biggestWinAmount = game.goldAmount
+                            biggestWinPlayer = playerName
+                        elseif game.result == "Lost" and game.goldAmount > biggestLossAmount then
+                            biggestLossAmount = game.goldAmount
+                            biggestLossPlayer = playerName
+                        end
+                        
+                        totalWager = totalWager + game.goldAmount
+                        wagerCount = wagerCount + 1
+                    end
+                    
+                    -- Track starting rolls for daredevil/conservative
+                    if game.startingRoll and game.startingRoll > 0 then
+                        totalStartRoll = totalStartRoll + game.startingRoll
+                        rollCount = rollCount + 1
+                    end
+                end
+                
+                -- Calculate average wager
+                if wagerCount > 0 then
+                    local avgWager = totalWager / wagerCount
+                    if avgWager > highRollerAvg then
+                        highRollerPlayer = playerName
+                        highRollerAvg = avgWager
+                    end
+                    if avgWager < cheapskateAvg then
+                        cheapskatePlayer = playerName
+                        cheapskateAvg = avgWager
+                    end
+                end
+                
+                -- Calculate average starting roll
+                if rollCount > 0 then
+                    local avgRoll = totalStartRoll / rollCount
+                    if avgRoll > daredevilAvg then
+                        daredevilPlayer = playerName
+                        daredevilAvg = avgRoll
+                    end
+                    if avgRoll < conservativeAvg then
+                        conservativePlayer = playerName
+                        conservativeAvg = avgRoll
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Package the results
+    return {
+        mostPlayedWith = {player = mostGamesPlayer, count = mostGamesCount},
+        mostWinsAgainst = {player = mostWinsPlayer, count = mostWinsCount},
+        mostLossesAgainst = {player = mostLossesPlayer, count = mostLossesCount},
+        mostMoneyWonFrom = {player = mostMoneyWonPlayer, amount = mostMoneyWonAmount},
+        mostMoneyLostTo = {player = mostMoneyLostPlayer, amount = mostMoneyLostAmount},
+        nemesis = {player = nemesisPlayer, winRate = nemesisWinRate},
+        victim = {player = victimPlayer, winRate = victimWinRate},
+        highRoller = {player = highRollerPlayer, avgWager = highRollerAvg},
+        cheapskate = {player = cheapskatePlayer, avgWager = cheapskateAvg},
+        luckyPlayer = {player = luckyPlayer, winRate = luckyWinRate},
+        unluckyPlayer = {player = unluckyPlayer, winRate = unluckyWinRate},
+        daredevil = {player = daredevilPlayer, avgRoll = daredevilAvg},
+        conservative = {player = conservativePlayer, avgRoll = conservativeAvg},
+        biggestWin = {amount = biggestWinAmount, player = biggestWinPlayer},
+        biggestLoss = {amount = biggestLossAmount, player = biggestLossPlayer},
+    }
+end
+
+-- Format fun statistic for display
+function DRE:FormatFunStat(statType, statData)
+    if not statData or not statData.player then
+        return nil
+    end
+    
+    local player = statData.player
+    local formatters = {
+        mostPlayedWith = function(data)
+            return string.format("Most Played With: %s (%d games)", player, data.count)
+        end,
+        mostWinsAgainst = function(data)
+            return string.format("Most Wins Against: %s (%d wins)", player, data.count)
+        end,
+        mostLossesAgainst = function(data)
+            return string.format("Most Losses Against: %s (%d losses)", player, data.count)
+        end,
+        mostMoneyWonFrom = function(data)
+            return string.format("Biggest Gold Mine: %s (%s won)", player, self:FormatGold(data.amount))
+        end,
+        mostMoneyLostTo = function(data)
+            return string.format("Biggest Money Sink: %s (%s lost)", player, self:FormatGold(data.amount))
+        end,
+        nemesis = function(data)
+            return string.format("Your Nemesis: %s (%.1f%% win rate against you)", player, data.winRate * 100)
+        end,
+        victim = function(data)
+            return string.format("Your Victim: %s (%.1f%% win rate against you)", player, data.winRate * 100)
+        end,
+        highRoller = function(data)
+            return string.format("High Roller: %s (%s avg wager)", player, self:FormatGold(data.avgWager))
+        end,
+        cheapskate = function(data)
+            return string.format("Cheapskate: %s (%s avg wager)", player, self:FormatGold(data.avgWager))
+        end,
+        luckyPlayer = function(data)
+            return string.format("Lucky Charm: %s (%.1f%% win rate with them)", player, data.winRate * 100)
+        end,
+        unluckyPlayer = function(data)
+            return string.format("Bad Luck Magnet: %s (%.1f%% win rate with them)", player, data.winRate * 100)
+        end,
+        daredevil = function(data)
+            return string.format("Daredevil: %s (avg %.0f starting roll)", player, data.avgRoll)
+        end,
+        conservative = function(data)
+            return string.format("Conservative: %s (avg %.0f starting roll)", player, data.avgRoll)
+        end,
+        biggestWin = function(data)
+            return string.format("Biggest Single Win: %s vs %s", self:FormatGold(data.amount), player)
+        end,
+        biggestLoss = function(data)
+            return string.format("Biggest Single Loss: %s to %s", self:FormatGold(data.amount), player)
+        end,
+    }
+    
+    local formatter = formatters[statType]
+    if formatter then
+        return formatter(statData)
+    end
+    
+    return nil
 end
 
 -- Slash command handlers
@@ -364,6 +621,158 @@ function DRE:SetupOptions()
                             frame:Show()
                         end,
                         order = 5,
+                    },
+                },
+            },
+            statistics = {
+                name = "Fun Statistics",
+                type = "group",
+                order = 5,
+                args = {
+                    header = {
+                        name = "Choose which fun statistics to display",
+                        type = "header",
+                        order = 0,
+                    },
+                    description = {
+                        name = "Select which interesting statistics you want to see in the Statistics tab. These provide fun insights into your DeathRoll gaming habits!",
+                        type = "description",
+                        order = 1,
+                    },
+                    separator1 = {
+                        name = "Player Relationships",
+                        type = "header",
+                        order = 2,
+                    },
+                    showMostPlayedWith = {
+                        name = "Most Played With",
+                        desc = "Show which player you've played the most games against",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showMostPlayedWith end,
+                        set = function(_, val) self.db.profile.funStats.showMostPlayedWith = val end,
+                        order = 3,
+                    },
+                    showMostWinsAgainst = {
+                        name = "Most Wins Against",
+                        desc = "Show which player you've beaten the most times",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showMostWinsAgainst end,
+                        set = function(_, val) self.db.profile.funStats.showMostWinsAgainst = val end,
+                        order = 4,
+                    },
+                    showMostLossesAgainst = {
+                        name = "Most Losses Against",
+                        desc = "Show which player has beaten you the most times",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showMostLossesAgainst end,
+                        set = function(_, val) self.db.profile.funStats.showMostLossesAgainst = val end,
+                        order = 5,
+                    },
+                    showNemesis = {
+                        name = "Your Nemesis",
+                        desc = "Show the player with the highest win rate against you (min 5 games)",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showNemesis end,
+                        set = function(_, val) self.db.profile.funStats.showNemesis = val end,
+                        order = 6,
+                    },
+                    showVictim = {
+                        name = "Your Victim",
+                        desc = "Show the player with the lowest win rate against you (min 5 games)",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showVictim end,
+                        set = function(_, val) self.db.profile.funStats.showVictim = val end,
+                        order = 7,
+                    },
+                    separator2 = {
+                        name = "Gold & Money",
+                        type = "header",
+                        order = 8,
+                    },
+                    showMostMoneyWonFrom = {
+                        name = "Biggest Gold Mine",
+                        desc = "Show which player you've won the most gold from",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showMostMoneyWonFrom end,
+                        set = function(_, val) self.db.profile.funStats.showMostMoneyWonFrom = val end,
+                        order = 9,
+                    },
+                    showMostMoneyLostTo = {
+                        name = "Biggest Money Sink",
+                        desc = "Show which player you've lost the most gold to",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showMostMoneyLostTo end,
+                        set = function(_, val) self.db.profile.funStats.showMostMoneyLostTo = val end,
+                        order = 10,
+                    },
+                    showBiggestWin = {
+                        name = "Biggest Single Win",
+                        desc = "Show your largest single game victory",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showBiggestWin end,
+                        set = function(_, val) self.db.profile.funStats.showBiggestWin = val end,
+                        order = 11,
+                    },
+                    showBiggestLoss = {
+                        name = "Biggest Single Loss",
+                        desc = "Show your largest single game defeat",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showBiggestLoss end,
+                        set = function(_, val) self.db.profile.funStats.showBiggestLoss = val end,
+                        order = 12,
+                    },
+                    showHighRoller = {
+                        name = "High Roller",
+                        desc = "Show the player you've had the highest average wager with",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showHighRoller end,
+                        set = function(_, val) self.db.profile.funStats.showHighRoller = val end,
+                        order = 13,
+                    },
+                    showCheapskate = {
+                        name = "Cheapskate",
+                        desc = "Show the player you've had the lowest average wager with",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showCheapskate end,
+                        set = function(_, val) self.db.profile.funStats.showCheapskate = val end,
+                        order = 14,
+                    },
+                    separator3 = {
+                        name = "Luck & Streaks",
+                        type = "header",
+                        order = 15,
+                    },
+                    showLuckyPlayer = {
+                        name = "Lucky Player",
+                        desc = "Show which player seems to bring you the most luck",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showLuckyPlayer end,
+                        set = function(_, val) self.db.profile.funStats.showLuckyPlayer = val end,
+                        order = 16,
+                    },
+                    showUnluckyPlayer = {
+                        name = "Unlucky Player",
+                        desc = "Show which player seems to bring you bad luck",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showUnluckyPlayer end,
+                        set = function(_, val) self.db.profile.funStats.showUnluckyPlayer = val end,
+                        order = 17,
+                    },
+                    showDaredevil = {
+                        name = "Daredevil Opponent",
+                        desc = "Show which player prefers the highest starting rolls",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showDaredevil end,
+                        set = function(_, val) self.db.profile.funStats.showDaredevil = val end,
+                        order = 18,
+                    },
+                    showConservative = {
+                        name = "Conservative Opponent",
+                        desc = "Show which player prefers the lowest starting rolls",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showConservative end,
+                        set = function(_, val) self.db.profile.funStats.showConservative = val end,
+                        order = 19,
                     },
                 },
             },

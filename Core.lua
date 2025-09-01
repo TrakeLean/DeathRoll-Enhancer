@@ -433,7 +433,7 @@ function DRE:SetupOptions()
         type = "group",
         args = {
             general = {
-                name = "General Settings",
+                name = "General",
                 type = "group",
                 order = 1,
                 args = {
@@ -442,13 +442,18 @@ function DRE:SetupOptions()
                         type = "header",
                         order = 0,
                     },
+                    gameplayHeader = {
+                        name = "Gameplay Settings",
+                        type = "header",
+                        order = 1,
+                    },
                     autoEmote = {
                         name = "Auto Emote",
                         desc = "Automatically perform emotes on win/loss",
                         type = "toggle",
                         get = function() return self.db.profile.gameplay.autoEmote end,
                         set = function(_, val) self.db.profile.gameplay.autoEmote = val end,
-                        order = 1,
+                        order = 2,
                     },
                     soundEnabled = {
                         name = "Sound Effects",
@@ -456,7 +461,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.gameplay.soundEnabled end,
                         set = function(_, val) self.db.profile.gameplay.soundEnabled = val end,
-                        order = 2,
+                        order = 3,
                     },
                     trackGold = {
                         name = "Track Gold",
@@ -464,7 +469,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.gameplay.trackGold end,
                         set = function(_, val) self.db.profile.gameplay.trackGold = val end,
-                        order = 3,
+                        order = 4,
                     },
                     autoRollFromMoney = {
                         name = "Auto-Roll from Money",
@@ -475,19 +480,12 @@ function DRE:SetupOptions()
                             self.db.profile.gameplay.autoRollFromMoney = val
                             self:Print("Auto-roll setting changed. Close and reopen the main window to see the new UI.")
                         end,
-                        order = 4,
+                        order = 5,
                     },
-                },
-            },
-            ui = {
-                name = "Interface",
-                type = "group",
-                order = 2,
-                args = {
-                    header = {
+                    interfaceHeader = {
                         name = "Interface Settings",
                         type = "header",
-                        order = 0,
+                        order = 6,
                     },
                     scale = {
                         name = "UI Scale",
@@ -502,27 +500,15 @@ function DRE:SetupOptions()
                             self.db.profile.ui.scale = val - 0.1
                             self:UpdateUIScale()
                         end,
-                        order = 1,
+                        order = 7,
                     },
                     resetPosition = {
                         name = "Reset Window Position",
                         desc = "Reset the DeathRoll window to center of screen",
                         type = "execute",
                         func = function() self:ResetWindowPosition() end,
-                        order = 2,
+                        order = 8,
                     },
-                    separator1 = {
-                        name = "",
-                        type = "header",
-                        order = 3,
-                    },
-                },
-            },
-            minimap = {
-                name = "Minimap",
-                type = "group",
-                order = 3,
-                args = {
                     hide = {
                         name = "Hide Minimap Icon",
                         desc = "Hide the minimap icon",
@@ -532,23 +518,16 @@ function DRE:SetupOptions()
                             self.db.profile.minimap.hide = val
                             self:ToggleMinimapIcon()
                         end,
-                        order = 1,
+                        order = 9,
                     },
-                },
-            },
-            data = {
-                name = "Data Management",
-                type = "group",
-                order = 4,
-                args = {
-                    header = {
-                        name = "Data and Statistics",
+                    dataHeader = {
+                        name = "Data Management",
                         type = "header",
-                        order = 0,
+                        order = 10,
                     },
                     stats = {
                         name = "Show Statistics",
-                        desc = "Display current statistics",
+                        desc = "Display current statistics in chat",
                         type = "execute",
                         func = function() 
                             local stats = self:GetOverallStats()
@@ -560,12 +539,7 @@ function DRE:SetupOptions()
                             self:Print("Gold Lost: " .. self:FormatGold(stats.totalGoldLost))
                             self:Print("Current Streak: " .. stats.currentStreak)
                         end,
-                        order = 1,
-                    },
-                    separator1 = {
-                        name = "",
-                        type = "header",
-                        order = 2,
+                        order = 11,
                     },
                     cleanOldData = {
                         name = "Clean Old Data",
@@ -574,7 +548,7 @@ function DRE:SetupOptions()
                         func = function() 
                             self:CleanOldData(30)
                         end,
-                        order = 3,
+                        order = 12,
                     },
                     resetData = {
                         name = "Reset All Data",
@@ -583,7 +557,7 @@ function DRE:SetupOptions()
                         func = function() 
                             StaticPopup_Show("DEATHROLL_RESET_CONFIRM")
                         end,
-                        order = 4,
+                        order = 13,
                     },
                     exportData = {
                         name = "Export Data",
@@ -591,7 +565,6 @@ function DRE:SetupOptions()
                         type = "execute",
                         func = function()
                             local exportString = self:ExportData()
-                            -- Create a simple text display frame
                             local frame = AceGUI:Create("Frame")
                             frame:SetTitle("Export Data")
                             frame:SetLayout("Fill")
@@ -607,14 +580,14 @@ function DRE:SetupOptions()
                             
                             frame:Show()
                         end,
-                        order = 5,
+                        order = 14,
                     },
                 },
             },
             statistics = {
                 name = "Fun Statistics",
                 type = "group",
-                order = 5,
+                order = 2,
                 args = {
                     header = {
                         name = "Choose which fun statistics to display",

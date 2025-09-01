@@ -1141,20 +1141,13 @@ function DRE:StartDeathRoll(target, roll, wager)
     if target == playerName then
         self:Print("Starting self-duel! You'll play against yourself.")
         
-        -- Update UI state
-        if self.UI then
-            self.UI.isGameActive = true
-            self.UI.gameState = "ROLLING"
-            if self.UI.statusLabel then
-                local statusText = wager > 0 and 
-                    string.format("Self-duel: %d starting roll, %s wager", roll, self:FormatGold(wager)) or
-                    string.format("Self-duel: %d starting roll, no wager", roll)
-                self.UI.statusLabel:SetText(statusText)
-            end
-        end
-        
         -- Start the actual game immediately for self-dueling
         self:StartActualGame(target, roll, wager)
+        
+        -- Update UI state to rolling
+        if self.UpdateGameUIState then
+            self:UpdateGameUIState("ROLLING")
+        end
         return
     end
     
@@ -1258,8 +1251,9 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
         self:ChatPrint("You go first! Roll 1-" .. self.gameState.currentRoll)
     end
     
-    if self.UI and self.UI.statusLabel then
-        self.UI.statusLabel:SetText("Your turn! Roll 1-" .. self.gameState.currentRoll)
+    -- Update UI state to rolling
+    if self.UpdateGameUIState then
+        self:UpdateGameUIState("ROLLING")
     end
     
     -- Ensure system messages are registered to track rolls
@@ -1309,10 +1303,12 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll)
     if self.UI then
         self.UI.pendingChallenge = nil
         self.UI.isGameActive = false
-        self.UI.gameState = "WAITING"
-        if self.UI.statusLabel then
-            self.UI.statusLabel:SetText("Ready to roll!")
-        end
+        self.UI.currentTarget = nil
+    end
+    
+    -- Update UI state to game over
+    if self.UpdateGameUIState then
+        self:UpdateGameUIState("GAME_OVER")
     end
     
     -- Update stats display
@@ -1359,8 +1355,9 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
                     
                 self:ChatPrint(nextTurnText)
                 
-                if self.UI and self.UI.statusLabel then
-                    self.UI.statusLabel:SetText("Roll 1-" .. self.gameState.currentRoll .. " (Turn " .. (self.gameState.rollCount + 1) .. ")")
+                -- Update UI state - always rolling for self-duel
+                if self.UpdateGameUIState then
+                    self:UpdateGameUIState("ROLLING")
                 end
             end
         else
@@ -1376,8 +1373,9 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
                 self.gameState.playerTurn = false
                 self:ChatPrint(self.gameState.target .. "'s turn! They need to roll 1-" .. self.gameState.currentRoll)
                 
-                if self.UI and self.UI.statusLabel then
-                    self.UI.statusLabel:SetText(self.gameState.target .. "'s turn! Roll 1-" .. self.gameState.currentRoll)
+                -- Update UI state to waiting for opponent
+                if self.UpdateGameUIState then
+                    self:UpdateGameUIState("WAITING_FOR_OPPONENT")
                 end
             end
         end
@@ -1395,8 +1393,9 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
             self.gameState.playerTurn = true
             self:ChatPrint("Your turn! Roll 1-" .. self.gameState.currentRoll)
             
-            if self.UI and self.UI.statusLabel then
-                self.UI.statusLabel:SetText("Your turn! Roll 1-" .. self.gameState.currentRoll)
+            -- Update UI state to rolling
+            if self.UpdateGameUIState then
+                self:UpdateGameUIState("ROLLING")
             end
         end
     end

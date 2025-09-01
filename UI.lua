@@ -145,8 +145,12 @@ function DRE:CreateGameSection(container)
     end)
     rollGroup:AddChild(rollEdit)
     
-    -- Store reference for auto-roll updates
+    -- Store references for UI updates
     UI.rollEdit = rollEdit
+    UI.goldEdit = goldEdit
+    UI.silverEdit = silverEdit
+    UI.copperEdit = copperEdit
+    UI.gameButton = gameButton
     
     -- Wager section
     local wagerGroup = AceGUI:Create("SimpleGroup")
@@ -217,61 +221,14 @@ function DRE:CreateGameSection(container)
     
     wagerGroup:AddChild(copperEdit)
     
-    -- Start game button
-    local startButton = AceGUI:Create("Button")
-    startButton:SetText("Challenge to DeathRoll!")
-    startButton:SetFullWidth(true)
-    startButton:SetCallback("OnClick", function()
-        local target = UnitName("target")
-        
-        -- Check if we have a target
-        if UnitExists("target") then
-            -- Check if target is yourself (self-dueling)
-            if UnitIsUnit("target", "player") then
-                target = UnitName("player")
-                self:Print("Self-duel mode activated!")
-            else
-                -- Check if target is a player (not NPC)
-                if not UnitIsPlayer("target") then
-                    self:Print("You can only DeathRoll with other players, not NPCs!")
-                    return
-                end
-                
-                -- Target is a valid player
-                target = UnitName("target")
-            end
-        else
-            -- No target selected
-            self:Print("Please target a player first (or target yourself for self-duel)!")
-            return
-        end
-        
-        local roll = tonumber(rollEdit:GetText())
-        
-        -- Calculate wager in copper, treating empty fields as 0
-        local gold = tonumber(goldEdit:GetText()) or 0
-        local silver = tonumber(silverEdit:GetText()) or 0
-        local copper = tonumber(copperEdit:GetText()) or 0
-        local totalWager = (gold * 10000) + (silver * 100) + copper
-        
-        if not roll or roll < 2 then
-            self:Print("Roll must be at least 2!")
-            return
-        end
-        
-        if roll > 999999 then
-            self:Print("Roll cannot exceed 999,999 (6 digits maximum)!")
-            return
-        end
-        
-        if gold < 0 or silver < 0 or copper < 0 then
-            self:Print("Wager amounts cannot be negative!")
-            return
-        end
-        
-        self:StartDeathRoll(target, roll, totalWager)
+    -- Game action button (changes based on game state)
+    local gameButton = AceGUI:Create("Button")
+    gameButton:SetText("Challenge to DeathRoll!")
+    gameButton:SetFullWidth(true)
+    gameButton:SetCallback("OnClick", function()
+        self:HandleGameButtonClick()
     end)
-    gameGroup:AddChild(startButton)
+    gameGroup:AddChild(gameButton)
     
     -- Game status
     local statusLabel = AceGUI:Create("Label")
@@ -951,6 +908,173 @@ Attack = consistent pressure | Defend = blocks & counters | Gamble = swingy chao
     UI.spicyGameState = gameStateLabel
     UI.spicyStance = stanceDropdown
     UI.spicyRollButton = rollButton
+end
+
+-- Handle game button clicks based on current state
+function DRE:HandleGameButtonClick()
+    local gameState = UI.gameState or "WAITING"
+    
+    if gameState == "WAITING" then
+        -- Initial challenge state
+        self:StartChallengeFlow()
+    elseif gameState == "ROLLING" then
+        -- Player needs to roll
+        self:PerformRoll()
+    elseif gameState == "WAITING_FOR_OPPONENT" then
+        -- Waiting for opponent, button should be disabled
+        self:Print("Waiting for opponent to roll...")
+    elseif gameState == "WAITING_FOR_ACCEPTANCE" then
+        -- Waiting for challenge acceptance, button should be disabled
+        self:Print("Waiting for " .. (UI.currentTarget or "player") .. " to accept the challenge...")
+    end
+end
+
+-- Start the challenge flow
+function DRE:StartChallengeFlow()
+    local target = UnitName("target")
+    
+    -- Check if we have a target
+    if UnitExists("target") then
+        -- Check if target is yourself (self-dueling)
+        if UnitIsUnit("target", "player") then
+            target = UnitName("player")
+            self:Print("Self-duel mode activated!")
+        else
+            -- Check if target is a player (not NPC)
+            if not UnitIsPlayer("target") then
+                self:Print("You can only DeathRoll with other players, not NPCs!")
+                return
+            end
+            
+            -- Target is a valid player
+            target = UnitName("target")
+        end
+    else
+        -- No target selected
+        self:Print("Please target a player first (or target yourself for self-duel)!")
+        return
+    end
+    
+    local roll = tonumber(UI.rollEdit:GetText())
+    
+    -- Calculate wager in copper, treating empty fields as 0
+    local gold = tonumber(UI.goldEdit:GetText()) or 0
+    local silver = tonumber(UI.silverEdit:GetText()) or 0
+    local copper = tonumber(UI.copperEdit:GetText()) or 0
+    local totalWager = (gold * 10000) + (silver * 100) + copper
+    
+    if not roll or roll < 2 then
+        self:Print("Roll must be at least 2!")
+        return
+    end
+    
+    if roll > 999999 then
+        self:Print("Roll cannot exceed 999,999 (6 digits maximum)!")
+        return
+    end
+    
+    if gold < 0 or silver < 0 or copper < 0 then
+        self:Print("Wager amounts cannot be negative!")
+        return
+    end
+    
+    -- Store current target and game info for UI updates
+    UI.currentTarget = target
+    UI.initialRoll = roll
+    UI.currentWager = totalWager
+    
+    -- Update UI state
+    self:UpdateGameUIState("WAITING_FOR_ACCEPTANCE")
+    
+    -- Start the challenge
+    self:StartDeathRoll(target, roll, totalWager)
+end
+
+-- Perform a roll in the active game
+function DRE:PerformRoll()
+    if not self.gameState or not self.gameState.isActive then
+        self:Print("No active game!")
+        return
+    end
+    
+    local rollRange = self.gameState.currentRoll
+    if not rollRange or rollRange < 1 then
+        self:Print("Invalid roll range!")
+        return
+    end
+    
+    -- Update UI to show we're waiting for the roll result
+    self:UpdateGameUIState("WAITING_FOR_ROLL_RESULT")
+    
+    -- Perform the roll using WoW's built-in roll system with a small delay
+    C_Timer.After(0.1, function()
+        RandomRoll(1, rollRange)
+    end)
+end
+
+-- Update the game UI state
+function DRE:UpdateGameUIState(state)
+    UI.gameState = state
+    
+    if not UI.gameButton then
+        return
+    end
+    
+    if state == "WAITING" then
+        UI.gameButton:SetText("Challenge to DeathRoll!")
+        UI.gameButton:SetDisabled(false)
+        if UI.statusLabel then
+            UI.statusLabel:SetText("Ready to roll!")
+        end
+        
+    elseif state == "WAITING_FOR_ACCEPTANCE" then
+        local target = UI.currentTarget or "player"
+        UI.gameButton:SetText("Waiting for " .. target .. " to accept...")
+        UI.gameButton:SetDisabled(true)
+        if UI.statusLabel then
+            UI.statusLabel:SetText("Challenge sent to " .. target)
+        end
+        
+    elseif state == "ROLLING" then
+        local rollRange = self.gameState and self.gameState.currentRoll or 100
+        UI.gameButton:SetText("Roll 1-" .. rollRange)
+        UI.gameButton:SetDisabled(false)
+        if UI.statusLabel then
+            UI.statusLabel:SetText("Your turn! Click to roll!")
+        end
+        -- Update the roll input to show the current range
+        if UI.rollEdit then
+            UI.rollEdit:SetText(tostring(rollRange))
+        end
+        
+    elseif state == "WAITING_FOR_OPPONENT" then
+        local target = UI.currentTarget or "opponent"
+        UI.gameButton:SetText("Waiting for " .. target .. "...")
+        UI.gameButton:SetDisabled(true)
+        if UI.statusLabel then
+            UI.statusLabel:SetText(target .. "'s turn to roll")
+        end
+        
+    elseif state == "WAITING_FOR_ROLL_RESULT" then
+        UI.gameButton:SetText("Rolling...")
+        UI.gameButton:SetDisabled(true)
+        if UI.statusLabel then
+            UI.statusLabel:SetText("Rolling dice...")
+        end
+        
+    elseif state == "GAME_OVER" then
+        UI.gameButton:SetText("Challenge to DeathRoll!")
+        UI.gameButton:SetDisabled(false)
+        if UI.statusLabel then
+            UI.statusLabel:SetText("Game finished! Ready for another?")
+        end
+        -- Reset UI state after a short delay
+        C_Timer.After(3, function()
+            if UI.gameState == "GAME_OVER" then
+                self:UpdateGameUIState("WAITING")
+            end
+        end)
+    end
 end
 
 -- Clean up UI

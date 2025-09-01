@@ -1110,6 +1110,23 @@ function DRE:StartDeathRoll(target, roll, wager)
         return
     end
     
+    -- Validate that target is a real player name (basic check)
+    local playerName = UnitName("player")
+    if target ~= playerName then
+        -- For non-self duels, perform additional validation
+        -- Check if the name looks like a player name (not too long, reasonable characters)
+        if string.len(target) > 12 or string.len(target) < 2 then
+            self:Print("Invalid player name: " .. target)
+            return
+        end
+        
+        -- Basic character validation (letters, some special characters)
+        if not target:match("^[%a%s'-]+$") then
+            self:Print("Invalid player name format: " .. target)
+            return
+        end
+    end
+    
     if not roll or roll < 2 then
         self:Print("Roll must be at least 2!")
         return
@@ -1120,7 +1137,28 @@ function DRE:StartDeathRoll(target, roll, wager)
         return
     end
     
-    -- Create challenge object
+    -- Check for self-dueling
+    if target == playerName then
+        self:Print("Starting self-duel! You'll play against yourself.")
+        
+        -- Update UI state
+        if self.UI then
+            self.UI.isGameActive = true
+            self.UI.gameState = "ROLLING"
+            if self.UI.statusLabel then
+                local statusText = wager > 0 and 
+                    string.format("Self-duel: %d starting roll, %s wager", roll, self:FormatGold(wager)) or
+                    string.format("Self-duel: %d starting roll, no wager", roll)
+                self.UI.statusLabel:SetText(statusText)
+            end
+        end
+        
+        -- Start the actual game immediately for self-dueling
+        self:StartActualGame(target, roll, wager)
+        return
+    end
+    
+    -- Create challenge object for other players
     local challenge = {
         target = target,
         roll = roll,
@@ -1187,6 +1225,9 @@ StaticPopupDialogs["DEATHROLL_RESET_CONFIRM"] = {
 
 -- Start the actual DeathRoll game
 function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
+    local myName = UnitName("player")
+    local isSelfDuel = (target == myName)
+    
     -- Initialize game state
     self.gameState = {
         isActive = true,
@@ -1194,7 +1235,8 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
         initialRoll = initialRoll,
         currentRoll = currentRoll or initialRoll,
         wager = wager or 0,
-        playerTurn = true
+        playerTurn = true,
+        rollCount = isSelfDuel and 0 or nil  -- Initialize roll counter for self-duels
     }
     
     -- Clear fallback challenge since we're starting the actual game
@@ -1286,27 +1328,62 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
     end
     
     local myName = UnitName("player")
+    local isSelfDuel = (self.gameState.target == myName)
     
+    -- Only process rolls from the player if it's a regular duel or self-duel
     if playerName == myName then
-        -- Our roll
-        self:ChatPrint("You rolled " .. roll .. " (1-" .. maxRoll .. ")")
-        
-        if roll == 1 then
-            -- We lost
-            self:HandleGameEnd(myName, "LOSS", self.gameState.wager, self.gameState.initialRoll)
-        else
-            -- Continue game, opponent's turn
-            self.gameState.currentRoll = roll - 1
-            self.gameState.playerTurn = false
-            self:ChatPrint(self.gameState.target .. "'s turn! They need to roll 1-" .. self.gameState.currentRoll)
+        if isSelfDuel then
+            -- Increment roll counter
+            self.gameState.rollCount = self.gameState.rollCount + 1
             
-            if self.UI and self.UI.statusLabel then
-                self.UI.statusLabel:SetText(self.gameState.target .. "'s turn! Roll 1-" .. self.gameState.currentRoll)
+            -- Self-duel: every roll alternates the game state
+            self:ChatPrint("Roll " .. self.gameState.rollCount .. ": " .. roll .. " (1-" .. maxRoll .. ")")
+            
+            if roll == 1 then
+                -- Game over - determine winner/loser based on roll count
+                if (self.gameState.rollCount % 2) == 1 then
+                    self:ChatPrint("You lost your self-duel! (Rolled 1 on turn " .. self.gameState.rollCount .. ")")
+                    self:HandleGameEnd(myName, "LOSS", self.gameState.wager, self.gameState.initialRoll)
+                else
+                    self:ChatPrint("You won your self-duel! (Your opponent-self rolled 1 on turn " .. self.gameState.rollCount .. ")")
+                    self:HandleGameEnd(myName, "WIN", self.gameState.wager, self.gameState.initialRoll)
+                end
+            else
+                -- Continue game
+                self.gameState.currentRoll = roll - 1
+                self.gameState.playerTurn = not self.gameState.playerTurn
+                
+                local nextTurnText = (self.gameState.rollCount % 2) == 1 and
+                    "Your opponent-self's turn! Roll 1-" .. self.gameState.currentRoll or
+                    "Your turn! Roll 1-" .. self.gameState.currentRoll
+                    
+                self:ChatPrint(nextTurnText)
+                
+                if self.UI and self.UI.statusLabel then
+                    self.UI.statusLabel:SetText("Roll 1-" .. self.gameState.currentRoll .. " (Turn " .. (self.gameState.rollCount + 1) .. ")")
+                end
+            end
+        else
+            -- Regular duel - our roll
+            self:ChatPrint("You rolled " .. roll .. " (1-" .. maxRoll .. ")")
+            
+            if roll == 1 then
+                -- We lost
+                self:HandleGameEnd(myName, "LOSS", self.gameState.wager, self.gameState.initialRoll)
+            else
+                -- Continue game, opponent's turn
+                self.gameState.currentRoll = roll - 1
+                self.gameState.playerTurn = false
+                self:ChatPrint(self.gameState.target .. "'s turn! They need to roll 1-" .. self.gameState.currentRoll)
+                
+                if self.UI and self.UI.statusLabel then
+                    self.UI.statusLabel:SetText(self.gameState.target .. "'s turn! Roll 1-" .. self.gameState.currentRoll)
+                end
             end
         end
         
-    elseif playerName == self.gameState.target then
-        -- Opponent's roll
+    elseif not isSelfDuel and playerName == self.gameState.target then
+        -- Regular duel - opponent's roll (not applicable for self-duel)
         self:ChatPrint(playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
         
         if roll == 1 then

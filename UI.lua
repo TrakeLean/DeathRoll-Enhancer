@@ -223,6 +223,29 @@ function DRE:CreateGameSection(container)
     startButton:SetFullWidth(true)
     startButton:SetCallback("OnClick", function()
         local target = UnitName("target")
+        
+        -- Check if we have a target
+        if UnitExists("target") then
+            -- Check if target is yourself (self-dueling)
+            if UnitIsUnit("target", "player") then
+                target = UnitName("player")
+                self:Print("Self-duel mode activated!")
+            else
+                -- Check if target is a player (not NPC)
+                if not UnitIsPlayer("target") then
+                    self:Print("You can only DeathRoll with other players, not NPCs!")
+                    return
+                end
+                
+                -- Target is a valid player
+                target = UnitName("target")
+            end
+        else
+            -- No target selected
+            self:Print("Please target a player first (or target yourself for self-duel)!")
+            return
+        end
+        
         local roll = tonumber(rollEdit:GetText())
         
         -- Calculate wager in copper, treating empty fields as 0
@@ -230,11 +253,6 @@ function DRE:CreateGameSection(container)
         local silver = tonumber(silverEdit:GetText()) or 0
         local copper = tonumber(copperEdit:GetText()) or 0
         local totalWager = (gold * 10000) + (silver * 100) + copper
-        
-        if not target or target == "" then
-            self:Print("Please target a player first!")
-            return
-        end
         
         if not roll or roll < 2 then
             self:Print("Roll must be at least 2!")

@@ -125,6 +125,18 @@ function DRE:CreateGameSection(container)
     rollEdit:SetLabel("")
     rollEdit:SetWidth(120)
     rollEdit:SetText("100")
+    rollEdit:SetMaxLetters(6) -- Limit to 6 digits
+    rollEdit:SetCallback("OnTextChanged", function(widget, event, text)
+        -- Only allow numbers
+        local numericText = text:gsub("[^0-9]", "")
+        if numericText ~= text then
+            widget:SetText(numericText)
+        end
+        -- Ensure it doesn't exceed 6 digits
+        if #numericText > 6 then
+            widget:SetText(numericText:sub(1, 6))
+        end
+    end)
     rollGroup:AddChild(rollEdit)
     
     -- Wager section
@@ -142,18 +154,49 @@ function DRE:CreateGameSection(container)
     goldEdit:SetLabel("Gold")
     goldEdit:SetWidth(60)
     goldEdit:SetText("0")
+    goldEdit:SetMaxLetters(6) -- Reasonable gold limit
+    goldEdit:SetCallback("OnTextChanged", function(widget, event, text)
+        local numericText = text:gsub("[^0-9]", "")
+        if numericText ~= text then
+            widget:SetText(numericText)
+        end
+    end)
     wagerGroup:AddChild(goldEdit)
     
     local silverEdit = AceGUI:Create("EditBox")
     silverEdit:SetLabel("Silver")
     silverEdit:SetWidth(60)
     silverEdit:SetText("0")
+    silverEdit:SetMaxLetters(2) -- Silver max 99
+    silverEdit:SetCallback("OnTextChanged", function(widget, event, text)
+        local numericText = text:gsub("[^0-9]", "")
+        if numericText ~= text then
+            widget:SetText(numericText)
+        end
+        -- Limit silver to 99
+        local num = tonumber(numericText)
+        if num and num > 99 then
+            widget:SetText("99")
+        end
+    end)
     wagerGroup:AddChild(silverEdit)
     
     local copperEdit = AceGUI:Create("EditBox")
     copperEdit:SetLabel("Copper")
     copperEdit:SetWidth(60)
     copperEdit:SetText("0")
+    copperEdit:SetMaxLetters(2) -- Copper max 99
+    copperEdit:SetCallback("OnTextChanged", function(widget, event, text)
+        local numericText = text:gsub("[^0-9]", "")
+        if numericText ~= text then
+            widget:SetText(numericText)
+        end
+        -- Limit copper to 99
+        local num = tonumber(numericText)
+        if num and num > 99 then
+            widget:SetText("99")
+        end
+    end)
     wagerGroup:AddChild(copperEdit)
     
     -- Start game button
@@ -180,18 +223,13 @@ function DRE:CreateGameSection(container)
             return
         end
         
+        if roll > 999999 then
+            self:Print("Roll cannot exceed 999,999 (6 digits maximum)!")
+            return
+        end
+        
         if gold < 0 or silver < 0 or copper < 0 then
             self:Print("Wager amounts cannot be negative!")
-            return
-        end
-        
-        if silver > 99 then
-            self:Print("Silver cannot exceed 99!")
-            return
-        end
-        
-        if copper > 99 then
-            self:Print("Copper cannot exceed 99!")
             return
         end
         

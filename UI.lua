@@ -162,6 +162,16 @@ function DRE:CreateGameSection(container)
             widget:SetText(numericText)
         end
     end)
+    goldEdit:SetCallback("OnEditFocusGained", function(widget)
+        if widget:GetText() == "0" then
+            widget:SetText("")
+        end
+    end)
+    goldEdit:SetCallback("OnEditFocusLost", function(widget)
+        if widget:GetText() == "" then
+            widget:SetText("0")
+        end
+    end)
     wagerGroup:AddChild(goldEdit)
     
     local silverEdit = AceGUI:Create("EditBox")
@@ -181,6 +191,16 @@ function DRE:CreateGameSection(container)
             widget:SetText("99")
         end
     end)
+    silverEdit:SetCallback("OnEditFocusGained", function(widget)
+        if widget:GetText() == "0" then
+            widget:SetText("")
+        end
+    end)
+    silverEdit:SetCallback("OnEditFocusLost", function(widget)
+        if widget:GetText() == "" then
+            widget:SetText("0")
+        end
+    end)
     wagerGroup:AddChild(silverEdit)
     
     local copperEdit = AceGUI:Create("EditBox")
@@ -198,6 +218,16 @@ function DRE:CreateGameSection(container)
         local num = tonumber(numericText)
         if num and num > 99 then
             widget:SetText("99")
+        end
+    end)
+    copperEdit:SetCallback("OnEditFocusGained", function(widget)
+        if widget:GetText() == "0" then
+            widget:SetText("")
+        end
+    end)
+    copperEdit:SetCallback("OnEditFocusLost", function(widget)
+        if widget:GetText() == "" then
+            widget:SetText("0")
         end
     end)
     wagerGroup:AddChild(copperEdit)

@@ -1183,6 +1183,43 @@ function DRE:DumpDebugBuffer()
     end
     
     self:Print("=== DEBUG CHAT BUFFER END ===")
+    
+    -- Also save to file
+    self:SaveDebugBufferToFile()
+end
+
+-- Save debug buffer to file
+function DRE:SaveDebugBufferToFile()
+    local fileName = "DeathRollEnhancer_Debug.txt"
+    local timestamp = date("%Y-%m-%d %H:%M:%S")
+    
+    -- Build file content
+    local content = "DeathRoll Enhancer Debug Log\n"
+    content = content .. "Generated: " .. timestamp .. "\n"
+    content = content .. "Buffer size: " .. #self.debugChatBuffer .. " messages\n"
+    content = content .. string.rep("=", 50) .. "\n\n"
+    
+    if #self.debugChatBuffer == 0 then
+        content = content .. "No messages in buffer yet - try doing some actions first\n"
+    else
+        for i, entry in ipairs(self.debugChatBuffer) do
+            content = content .. entry .. "\n"
+        end
+    end
+    
+    content = content .. "\n" .. string.rep("=", 50) .. "\n"
+    content = content .. "End of debug log\n"
+    
+    -- Write to file (WoW will save this in the WoW directory)
+    local file = io.open(fileName, "w")
+    if file then
+        file:write(content)
+        file:close()
+        self:Print("Debug buffer saved to: " .. fileName)
+        self:Print("File location: World of Warcraft folder")
+    else
+        self:Print("Error: Could not save debug file")
+    end
 end
 
 -- Conditional print that respects debug messages setting

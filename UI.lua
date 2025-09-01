@@ -185,12 +185,21 @@ function DRE:CreateGameSection(container)
     end)
     
     goldEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        if widget.isPlaceholder then return end -- Don't process placeholder text
+        if widget.isPlaceholder and text == "0" then return end -- Don't process initial placeholder
+        
+        -- User is typing, clear placeholder state
+        if widget.isPlaceholder then
+            widget.isPlaceholder = false
+            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
+        end
         
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
             widget:SetText(numericText)
         end
+        
+        -- If they clear everything, don't set back to placeholder yet
+        -- (let OnEditFocusLost handle that)
     end)
     
     wagerGroup:AddChild(goldEdit)
@@ -224,7 +233,13 @@ function DRE:CreateGameSection(container)
     end)
     
     silverEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        if widget.isPlaceholder then return end -- Don't process placeholder text
+        if widget.isPlaceholder and text == "0" then return end -- Don't process initial placeholder
+        
+        -- User is typing, clear placeholder state
+        if widget.isPlaceholder then
+            widget.isPlaceholder = false
+            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
+        end
         
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then
@@ -268,7 +283,13 @@ function DRE:CreateGameSection(container)
     end)
     
     copperEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        if widget.isPlaceholder then return end -- Don't process placeholder text
+        if widget.isPlaceholder and text == "0" then return end -- Don't process initial placeholder
+        
+        -- User is typing, clear placeholder state
+        if widget.isPlaceholder then
+            widget.isPlaceholder = false
+            widget.editbox:SetTextColor(1, 1, 1) -- White normal text
+        end
         
         local numericText = text:gsub("[^0-9]", "")
         if numericText ~= text then

@@ -60,10 +60,7 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll)
         initialRoll = initialRoll or 0
     })
     
-    -- Keep only last 50 games
-    if #playerData.recentGames > 50 then
-        table.remove(playerData.recentGames, 51)
-    end
+    -- Keep all games - complete history tracking
     
     -- Update overall gold tracking
     self:UpdateGoldTracking(result, goldAmount)

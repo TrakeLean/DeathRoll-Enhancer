@@ -3,6 +3,9 @@
 
 local addonName, addonTable = ...
 
+-- Declare saved variables for debug export
+DeathRollEnhancer_DebugExport = DeathRollEnhancer_DebugExport or {}
+
 -- Check for required libraries
 if not LibStub then
     error("DeathRollEnhancer requires LibStub")
@@ -53,8 +56,8 @@ local defaults = {
                 x = 0,
                 y = 0,
             },
-            frameWidth = 350,
-            frameHeight = 290,
+            frameWidth = 400,
+            frameHeight = 300,
         },
         gameplay = {
             autoEmote = true,
@@ -552,6 +555,13 @@ function DRE:SetupOptions()
                         func = function() self:ResetWindowPosition() end,
                         order = 8,
                     },
+                    resetSize = {
+                        name = "Reset Window Size",
+                        desc = "Reset the DeathRoll window to default size (400x300)",
+                        type = "execute",
+                        func = function() self:ResetWindowSize() end,
+                        order = 8.5,
+                    },
                     hide = {
                         name = "Hide Minimap Icon",
                         desc = "Hide the minimap icon",
@@ -808,12 +818,39 @@ end
 
 
 function DRE:ResetWindowPosition()
-    self.db.profile.ui.framePos = {
-        point = "CENTER",
-        x = 0,
-        y = 0,
-    }
-    self:Print("Window position reset to center")
+    -- Clear AceGUI status table position data
+    if self.db.profile.ui.frameStatus then
+        self.db.profile.ui.frameStatus.left = nil
+        self.db.profile.ui.frameStatus.top = nil
+        self.db.profile.ui.frameStatus.width = nil
+        self.db.profile.ui.frameStatus.height = nil
+    end
+    
+    -- Also reset the currently open window if it exists
+    if self.UI and self.UI.mainWindow and self.UI.mainWindow.frame then
+        self.UI.mainWindow.frame:ClearAllPoints()
+        self.UI.mainWindow.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        self.UI.mainWindow:SetWidth(400)
+        self.UI.mainWindow:SetHeight(300)
+    end
+    
+    self:Print("Window position and size reset to defaults")
+end
+
+function DRE:ResetWindowSize()
+    -- Clear AceGUI status table size data
+    if self.db.profile.ui.frameStatus then
+        self.db.profile.ui.frameStatus.width = nil
+        self.db.profile.ui.frameStatus.height = nil
+    end
+    
+    -- Also resize the currently open window if it exists
+    if self.UI and self.UI.mainWindow then
+        self.UI.mainWindow:SetWidth(400)
+        self.UI.mainWindow:SetHeight(300)
+    end
+    
+    self:Print("Window size reset to default (400x300)")
 end
 
 -- Module initialization methods (actual implementations are in separate files)
@@ -847,7 +884,39 @@ function DRE:CHAT_MSG_SYSTEM(event, message)
     -- Debug: Show all system messages to help identify roll format
     self:DebugPrint("CHAT_MSG_SYSTEM triggered with message: '" .. (message or "nil") .. "'")
     
-    -- Use unified processing function
+    -- Handle fallback challenge mode (legacy logic for non-addon users)
+    if self.fallbackChallenge then
+        -- Look for roll patterns: "PlayerName rolls 1-100 (42)"
+        local playerName, maxRoll, rollResult = message:match("(%S+) rolls 1%-(%d+) %((%d+)%)")
+        
+        if playerName and rollResult and maxRoll then
+            -- Check if this is from our challenged player
+            if playerName == self.fallbackChallenge.target then
+                local currentRoll = tonumber(rollResult)
+                local expectedRoll = self.fallbackChallenge.roll
+                
+                -- Check if they rolled the expected starting number
+                if tonumber(maxRoll) == expectedRoll then
+                    -- They rolled within the expected range, challenge accepted
+                    self:ChatPrint(playerName .. " accepted! They rolled " .. currentRoll .. " (1-" .. expectedRoll .. ")")
+                    
+                    if currentRoll == 1 then
+                        self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
+                        -- Handle win
+                        self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
+                    else
+                        self:ChatPrint("Challenge accepted! Now you roll 1-" .. currentRoll)
+                        -- Start actual game
+                        self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, currentRoll)
+                    end
+                    self:StopFallbackMode()
+                    return -- Don't process as regular roll if handled as fallback
+                end
+            end
+        end
+    end
+    
+    -- Use unified processing function for regular roll detection
     self:ProcessPotentialRoll(message, nil, "SYSTEM")
 end
 
@@ -891,6 +960,8 @@ end
 
 -- Handle detected roll from any event source
 function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
+    self:DebugPrint("HandleDetectedRoll called: player=" .. (playerName or "nil") .. ", roll=" .. (roll or "nil") .. ", maxRoll=" .. (maxRoll or "nil"))
+    
     -- Handle fallback mode (watching for challenge acceptance)
     if self.fallbackChallenge then
         if playerName == self.fallbackChallenge.target then
@@ -903,8 +974,8 @@ function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
                     self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
                     self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
                 else
-                    self:ChatPrint("Challenge accepted! Now you roll 1-" .. (roll - 1))
-                    self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, roll - 1)
+                    self:ChatPrint("Challenge accepted! Now you roll 1-" .. roll)
+                    self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, roll)
                 end
                 self:StopFallbackMode()
                 return
@@ -1088,39 +1159,7 @@ function DRE:StopFallbackMode()
 end
 
 -- Handle system messages for fallback roll watching
-function DRE:CHAT_MSG_SYSTEM(event, message)
-    if not self.fallbackChallenge then
-        return
-    end
-    
-    -- Look for roll patterns: "PlayerName rolls 1-100 (42)"
-    local playerName, maxRoll, rollResult = message:match("(%S+) rolls 1%-(%d+) %((%d+)%)")
-    
-    if playerName and rollResult and maxRoll then
-        -- Check if this is from our challenged player
-        if playerName == self.fallbackChallenge.target then
-            local currentRoll = tonumber(rollResult)
-            local expectedRoll = self.fallbackChallenge.roll
-            
-            -- Check if they rolled the expected starting number
-            if tonumber(maxRoll) == expectedRoll then
-                -- They rolled within the expected range, challenge accepted
-                self:ChatPrint(playerName .. " accepted! They rolled " .. currentRoll .. " (1-" .. expectedRoll .. ")")
-                
-                if currentRoll == 1 then
-                    self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
-                    -- Handle win
-                    self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
-                else
-                    self:ChatPrint("Challenge accepted! Now you roll 1-" .. (currentRoll - 1))
-                    -- Start actual game
-                    self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, currentRoll)
-                end
-                self:StopFallbackMode()
-            end
-        end
-    end
-end
+-- NOTE: This function was merged with the primary CHAT_MSG_SYSTEM handler above to avoid conflicts
 
 -- Handle addon accept response
 function DRE:HandleAddonAccept(sender, data, channel)
@@ -1190,36 +1229,51 @@ end
 
 -- Save debug buffer to file
 function DRE:SaveDebugBufferToFile()
-    local fileName = "DeathRollEnhancer_Debug.txt"
     local timestamp = date("%Y-%m-%d %H:%M:%S")
     
-    -- Build file content
-    local content = "DeathRoll Enhancer Debug Log\n"
-    content = content .. "Generated: " .. timestamp .. "\n"
-    content = content .. "Buffer size: " .. #self.debugChatBuffer .. " messages\n"
-    content = content .. string.rep("=", 50) .. "\n\n"
+    -- Save to WoW saved variables instead of file I/O
+    if not DeathRollEnhancer_DebugExport then
+        DeathRollEnhancer_DebugExport = {}
+    end
+    
+    -- Build debug data
+    local debugData = {
+        generated = timestamp,
+        bufferSize = #self.debugChatBuffer,
+        messages = {}
+    }
     
     if #self.debugChatBuffer == 0 then
-        content = content .. "No messages in buffer yet - try doing some actions first\n"
+        table.insert(debugData.messages, "No messages in buffer yet - try doing some actions first")
     else
         for i, entry in ipairs(self.debugChatBuffer) do
-            content = content .. entry .. "\n"
+            table.insert(debugData.messages, entry)
         end
     end
     
-    content = content .. "\n" .. string.rep("=", 50) .. "\n"
-    content = content .. "End of debug log\n"
+    -- Store in saved variables
+    DeathRollEnhancer_DebugExport[timestamp] = debugData
     
-    -- Write to file (WoW will save this in the WoW directory)
-    local file = io.open(fileName, "w")
-    if file then
-        file:write(content)
-        file:close()
-        self:Print("Debug buffer saved to: " .. fileName)
-        self:Print("File location: World of Warcraft folder")
+    self:Print("Debug buffer saved to saved variables")
+    self:Print("Will be available in SavedVariables/DeathRollEnhancer.lua after /reload")
+    self:Print("Also showing copyable format in chat:")
+    
+    -- Print copyable format to chat
+    print("=== DEATHROLL DEBUG EXPORT ===")
+    print("Generated: " .. timestamp)
+    print("Buffer size: " .. #self.debugChatBuffer .. " messages")
+    print("=" .. string.rep("=", 30))
+    
+    if #self.debugChatBuffer == 0 then
+        print("No messages in buffer yet")
     else
-        self:Print("Error: Could not save debug file")
+        for i, entry in ipairs(self.debugChatBuffer) do
+            print(entry)
+        end
     end
+    
+    print("=" .. string.rep("=", 30))
+    print("=== END DEBUG EXPORT ===")
 end
 
 -- Conditional print that respects debug messages setting
@@ -1365,6 +1419,9 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
         rollCount = isSelfDuel and 0 or nil  -- Initialize roll counter for self-duels
     }
     
+    -- Clear previous game's roll history to start fresh
+    self:ClearRollHistory()
+    
     self:DebugPrint("Game state initialized - isActive: " .. tostring(self.gameState.isActive) .. ", currentRoll: " .. self.gameState.currentRoll)
     
     -- Clear fallback challenge since we're starting the actual game
@@ -1402,18 +1459,22 @@ end
 function DRE:HandleGameEnd(loser, result, wager, initialRoll)
     local playerName = UnitName("player")
     local won = (result == "WIN")
+    local opponent = self.gameState and self.gameState.target or "Unknown"
     
     if won then
-        self:Print("🎉 You WON the DeathRoll!")
+        self:Print("You WON the DeathRoll!")
         if self.db and self.db.profile.gameplay.autoEmote then
             DoEmote(self:GetRandomHappyEmote())
         end
     else
-        self:Print("💀 You LOST the DeathRoll!")
+        self:Print("You LOST the DeathRoll!")
         if self.db and self.db.profile.gameplay.autoEmote then
             DoEmote(self:GetRandomSadEmote())
         end
     end
+    
+    -- Add result to roll history
+    self:AddGameResultToHistory(result, opponent, wager)
     
     -- Record the game result
     if loser and loser ~= playerName then
@@ -1454,6 +1515,8 @@ end
 
 -- Handle ongoing game rolls
 function DRE:HandleGameRoll(playerName, roll, maxRoll)
+    self:DebugPrint("HandleGameRoll called: player=" .. (playerName or "nil") .. ", roll=" .. (roll or "nil") .. ", maxRoll=" .. (maxRoll or "nil") .. ", gameState.isActive=" .. tostring(self.gameState and self.gameState.isActive or false))
+    
     if not self.gameState or not self.gameState.isActive then
         return
     end
@@ -1466,6 +1529,9 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
         if isSelfDuel then
             -- Increment roll counter
             self.gameState.rollCount = self.gameState.rollCount + 1
+            
+            -- Add roll to history display
+            self:AddRollToHistory(playerName, roll, maxRoll, true, self.gameState.rollCount)
             
             -- Self-duel: every roll alternates the game state
             self:ChatPrint("Roll " .. self.gameState.rollCount .. ": " .. roll .. " (1-" .. maxRoll .. ")")
@@ -1481,7 +1547,7 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
                 end
             else
                 -- Continue game
-                self.gameState.currentRoll = roll - 1
+                self.gameState.currentRoll = roll
                 self.gameState.playerTurn = not self.gameState.playerTurn
                 
                 local nextTurnText = (self.gameState.rollCount % 2) == 1 and
@@ -1497,6 +1563,7 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
             end
         else
             -- Regular duel - our roll
+            self:AddRollToHistory(playerName, roll, maxRoll, false, nil)
             self:ChatPrint("You rolled " .. roll .. " (1-" .. maxRoll .. ")")
             
             if roll == 1 then
@@ -1504,7 +1571,7 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
                 self:HandleGameEnd(myName, "LOSS", self.gameState.wager, self.gameState.initialRoll)
             else
                 -- Continue game, opponent's turn
-                self.gameState.currentRoll = roll - 1
+                self.gameState.currentRoll = roll
                 self.gameState.playerTurn = false
                 self:ChatPrint(self.gameState.target .. "'s turn! They need to roll 1-" .. self.gameState.currentRoll)
                 
@@ -1517,6 +1584,7 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
         
     elseif not isSelfDuel and playerName == self.gameState.target then
         -- Regular duel - opponent's roll (not applicable for self-duel)
+        self:AddRollToHistory(playerName, roll, maxRoll, false, nil)
         self:ChatPrint(playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
         
         if roll == 1 then
@@ -1524,7 +1592,7 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
             self:HandleGameEnd(playerName, "WIN", self.gameState.wager, self.gameState.initialRoll)
         else
             -- Continue game, our turn
-            self.gameState.currentRoll = roll - 1
+            self.gameState.currentRoll = roll
             self.gameState.playerTurn = true
             self:ChatPrint("Your turn! Roll 1-" .. self.gameState.currentRoll)
             
@@ -1707,13 +1775,13 @@ function DRE:ResolveSpicyRound()
     
     -- Check for game end
     if self.spicyDuel.myHP <= 0 and self.spicyDuel.opponentHP <= 0 then
-        self:Print("🤝 Double KO! What an epic battle!")
+        self:Print("Double KO! What an epic battle!")
         self:EndSpicyDuel()
     elseif self.spicyDuel.myHP <= 0 then
-        self:Print("💀 You lost the Spicy Duel! " .. self.spicyDuel.target .. " is victorious!")
+        self:Print("You lost the Spicy Duel! " .. self.spicyDuel.target .. " is victorious!")
         self:EndSpicyDuel()
     elseif self.spicyDuel.opponentHP <= 0 then
-        self:Print("🎉 You won the Spicy Duel! Excellent strategy!")
+        self:Print("You won the Spicy Duel! Excellent strategy!")
         self:EndSpicyDuel()
     else
         -- Continue to next round
@@ -1801,25 +1869,19 @@ function DRE:UpdateGameUIState(state)
                 self.UI.gameButton:SetDisabled(false)
             end, "gameButton")
             
-            self:SafeUIUpdate(self.UI.statusLabel, function()
-                self.UI.statusLabel:SetText("Ready to roll!")
-            end, "statusLabel")
+            self:UpdateRollHistoryStatus("Ready to start! Target someone and click Challenge to DeathRoll!", true)
             
         elseif state == "WAITING_FOR_ACCEPTANCE" then
             local target = self.UI.currentTarget or "player"
             self.UI.gameButton:SetText("Waiting for " .. target .. " to accept...")
             self.UI.gameButton:SetDisabled(true)
-            if self.UI.statusLabel then
-                self.UI.statusLabel:SetText("Challenge sent to " .. target)
-            end
+            self:UpdateRollHistoryStatus("Challenge sent to " .. target .. "\nWaiting for acceptance...", true)
             
         elseif state == "ROLLING" then
             local rollRange = self.gameState and self.gameState.currentRoll or 100
             self.UI.gameButton:SetText("Roll 1-" .. rollRange)
             self.UI.gameButton:SetDisabled(false)
-            if self.UI.statusLabel then
-                self.UI.statusLabel:SetText("Your turn! Click to roll!")
-            end
+            -- Don't update history status for rolling - let the roll history show
             -- Update the roll input to show the current range
             if self.UI.rollEdit then
                 self:DebugPrint("Updating roll input to: " .. rollRange)
@@ -1832,29 +1894,18 @@ function DRE:UpdateGameUIState(state)
             local target = self.UI.currentTarget or "opponent"
             self.UI.gameButton:SetText("Waiting for " .. target .. "...")
             self.UI.gameButton:SetDisabled(true)
-            if self.UI.statusLabel then
-                self.UI.statusLabel:SetText(target .. "'s turn to roll")
-            end
+            -- Don't update history status - let the roll history show the opponent's upcoming turn
             
         elseif state == "WAITING_FOR_ROLL_RESULT" then
             self.UI.gameButton:SetText("Rolling...")
             self.UI.gameButton:SetDisabled(true)
-            if self.UI.statusLabel then
-                self.UI.statusLabel:SetText("Rolling dice...")
-            end
+            -- Don't update history status - the roll result will appear in history soon
             
         elseif state == "GAME_OVER" then
             self.UI.gameButton:SetText("Challenge to DeathRoll!")
             self.UI.gameButton:SetDisabled(false)
-            if self.UI.statusLabel then
-                self.UI.statusLabel:SetText("Game finished! Ready for another?")
-            end
-            -- Reset UI state after a short delay
-            C_Timer.After(3, function()
-                if self.UI.gameState == "GAME_OVER" then
-                    self:UpdateGameUIState("WAITING")
-                end
-            end)
+            -- Don't update roll history - let the win/loss message persist
+            -- Don't auto-reset to WAITING - let the user manually start a new game
         end
 end
 

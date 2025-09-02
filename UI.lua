@@ -39,17 +39,31 @@ function DRE:ShowMainWindow()
     
     -- Create main window frame
     local frame = AceGUI:Create("Frame")
-    frame:SetTitle("DeathRoll Enhancer v" .. self.version)
-    frame:SetStatusText("Ready to roll!")
+    frame:SetTitle("DeathRoll Enhancer")
+    frame:SetStatusText("v" .. self.version)
     frame:SetCallback("OnClose", function(widget)
         widget:Hide()
     end)
+    
+    -- Set default dimensions FIRST
+    frame:SetWidth(400)
+    frame:SetHeight(300)
     frame:SetLayout("Fill")
-    -- Use default dimensions from database settings
-    local frameWidth = self.db.profile.ui.frameWidth or 350
-    local frameHeight = self.db.profile.ui.frameHeight or 290
-    frame:SetWidth(frameWidth)
-    frame:SetHeight(frameHeight)
+    
+    -- Then set up AceGUI status table (this will override defaults if saved values exist)
+    if not self.db.profile.ui.frameStatus then
+        self.db.profile.ui.frameStatus = {}
+    end
+    
+    frame:SetStatusTable(self.db.profile.ui.frameStatus)
+    frame:EnableResize(true)
+    
+    -- Debug hook
+    local originalApplyStatus = frame.ApplyStatus
+    frame.ApplyStatus = function(self_frame)
+        originalApplyStatus(self_frame)
+        self:DebugPrint("Frame status applied (position/size restored)")
+    end
     
     -- Apply scaling from settings
     if self.db and self.db.profile.ui.scale then
@@ -57,6 +71,8 @@ function DRE:ShowMainWindow()
     else
         frame.frame:SetScale(0.9) -- Default scale
     end
+    
+    -- Position/size restoration is now handled by AceGUI status table
     
     UI.mainWindow = frame
     
@@ -68,19 +84,28 @@ function DRE:ShowMainWindow()
     tabGroup:SetTabs({
         {text="DeathRoll", value="deathroll"},
         {text="Statistics", value="statistics"}, 
-        {text="History", value="history"},
-        {text="Spicy Duel", value="spicy"}
+        {text="History", value="history"}
     })
     tabGroup:SetCallback("OnGroupSelected", function(container, event, group)
         container:ReleaseChildren()
+        -- Clear UI references when switching tabs to prevent cross-contamination
+        UI.statsLabel = nil
+        UI.streakLabel = nil
+        UI.funStatsLabel = nil
+        UI.rollHistoryBox = nil
+        UI.rollHistory = {}
+        UI.historyBox = nil
+        UI.historyDropdown = nil
+        
+        -- Track current tab
+        UI.currentTab = group
+        
         if group == "deathroll" then
             self:CreateGameSection(container)
         elseif group == "statistics" then
             self:CreateStatsSection(container)
         elseif group == "history" then
             self:CreateHistorySection(container)
-        elseif group == "spicy" then
-            self:CreateSpicyDuelSection(container)
         end
     end)
     tabGroup:SelectTab("deathroll") -- Default to DeathRoll tab
@@ -229,11 +254,11 @@ function DRE:CreateGameSection(container)
     end)
     gameGroup:AddChild(gameButton)
     
-    -- Game status
+    -- Game status (compact, simple display)
     local statusLabel = AceGUI:Create("Label")
-    statusLabel:SetText("")
+    statusLabel:SetText("Ready to start! Target someone and click Challenge to DeathRoll!")
     statusLabel:SetFullWidth(true)
-    statusLabel:SetColor(1, 1, 0) -- Yellow text
+    statusLabel:SetColor(0.9, 0.9, 0.9) -- Light gray text
     gameGroup:AddChild(statusLabel)
     
     -- Store all UI references for later updates
@@ -241,7 +266,109 @@ function DRE:CreateGameSection(container)
     UI.silverEdit = silverEdit
     UI.copperEdit = copperEdit
     UI.gameButton = gameButton
-    UI.statusLabel = statusLabel
+    UI.rollHistoryBox = statusLabel -- Simple status label for roll display
+    UI.rollHistory = {} -- Array to store roll entries
+end
+
+-- Add a roll entry to the history display
+function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
+    if not UI.rollHistoryBox or not UI.rollHistory then
+        return
+    end
+    
+    local myName = UnitName("player")
+    local displayName = playerName
+    local isMe = (playerName == myName)
+    
+    -- For self-duels, alternate the color but keep the same name
+    if isSelfDuel then
+        displayName = myName
+        if (rollCount % 2) == 1 then
+            isMe = true
+        else
+            isMe = false
+        end
+    end
+    
+    -- Calculate loss probability (chance of rolling 1)
+    local lossChance = (1 / maxRoll) * 100
+    
+    -- Create colored entry
+    local colorCode = isMe and "|cff00ff00" or "|cffff6666" -- Green for player, red for opponent
+    local resetColor = "|r"
+    
+    local entry = string.format("%s%s%s rolled %d (1-%d) - %.3f%% chance of losing", 
+        colorCode, displayName, resetColor, roll, maxRoll, lossChance)
+    
+    -- Add to history array
+    table.insert(UI.rollHistory, 1, entry) -- Insert at beginning
+    
+    -- Keep only last 3 entries for compact display
+    if #UI.rollHistory > 3 then
+        table.remove(UI.rollHistory, 4)
+    end
+    
+    -- Update display with compact format
+    local historyText = table.concat(UI.rollHistory, "\n")
+    UI.rollHistoryBox:SetText(historyText)
+end
+
+-- Update roll history with game status messages (for non-game states only)
+function DRE:UpdateRollHistoryStatus(message, clearHistory)
+    if not UI.rollHistoryBox then
+        return
+    end
+    
+    -- Only clear history if explicitly requested (for new games/challenges)
+    if clearHistory then
+        UI.rollHistory = {}
+    end
+    
+    -- For status messages, just replace the content
+    UI.rollHistoryBox:SetText(message)
+end
+
+-- Clear roll history for new game
+function DRE:ClearRollHistory()
+    if UI.rollHistory then
+        UI.rollHistory = {}
+    end
+end
+
+-- Add game result to roll history
+function DRE:AddGameResultToHistory(result, opponent, wager)
+    if not UI.rollHistoryBox or not UI.rollHistory then
+        return
+    end
+    
+    local resultText = ""
+    local colorCode = ""
+    
+    if result == "WIN" then
+        colorCode = "|cff00ff00" -- Bright green
+        resultText = "*** YOU WON! ***"
+    elseif result == "LOSS" then
+        colorCode = "|cffff0000" -- Bright red
+        resultText = "*** YOU LOST! ***"
+    end
+    
+    local resetColor = "|r"
+    local wagerText = wager and wager > 0 and (" (" .. self:FormatGold(wager) .. ")") or ""
+    
+    local entry = string.format("%s%s%s vs %s%s", 
+        colorCode, resultText, resetColor, opponent or "Unknown", wagerText)
+    
+    -- Add result to top of history
+    table.insert(UI.rollHistory, 1, entry)
+    
+    -- Keep only last 3 entries
+    if #UI.rollHistory > 3 then
+        table.remove(UI.rollHistory, 4)
+    end
+    
+    -- Update display
+    local historyText = table.concat(UI.rollHistory, "\n")
+    UI.rollHistoryBox:SetText(historyText)
 end
 
 -- Create stats section
@@ -328,6 +455,13 @@ function DRE:CreateStatsSection(container)
     -- Fun Statistics section
     self:CreateFunStatsSection(statsGroup)
     
+    -- Force ScrollFrame to recalculate content area
+    C_Timer.After(0.1, function()
+        if statsGroup and statsGroup.content then
+            statsGroup:DoLayout()
+        end
+    end)
+    
     UI.statsLabel = statsLabel
     UI.streakLabel = streakLabel
 end
@@ -358,6 +492,7 @@ function DRE:CreateFunStatsSection(container)
     local funStatsGroup = AceGUI:Create("InlineGroup")
     funStatsGroup:SetTitle("Fun Statistics")
     funStatsGroup:SetFullWidth(true)
+    funStatsGroup:SetHeight(200) -- Set explicit height to ensure proper scrolling
     funStatsGroup:SetLayout("Flow")
     container:AddChild(funStatsGroup)
     
@@ -439,17 +574,6 @@ function DRE:CreateHistorySection(container)
         return
     end
     
-    -- Player selector dropdown
-    local playerGroup = AceGUI:Create("SimpleGroup")
-    playerGroup:SetFullWidth(true)
-    playerGroup:SetLayout("Flow")
-    historyGroup:AddChild(playerGroup)
-    
-    local playerLabel = AceGUI:Create("Label")
-    playerLabel:SetText("Player:")
-    playerLabel:SetWidth(60)
-    playerGroup:AddChild(playerLabel)
-    
     -- Create dropdown with all players
     local playerNames = {}
     local playerDropdown = {}
@@ -467,31 +591,50 @@ function DRE:CreateHistorySection(container)
         return
     end
     
+    -- Player selector section
+    local playerSelectorGroup = AceGUI:Create("SimpleGroup")
+    playerSelectorGroup:SetFullWidth(true)
+    playerSelectorGroup:SetLayout("Flow")
+    historyGroup:AddChild(playerSelectorGroup)
+    
+    local playerLabel = AceGUI:Create("Label")
+    playerLabel:SetText("View history with:")
+    playerLabel:SetWidth(120)
+    playerSelectorGroup:AddChild(playerLabel)
+    
     local dropdown = AceGUI:Create("Dropdown")
     dropdown:SetList(playerDropdown)
     dropdown:SetValue(playerNames[1])
-    dropdown:SetWidth(200)
+    dropdown:SetWidth(180)
     dropdown:SetCallback("OnValueChanged", function(widget, event, key)
         self:UpdateHistoryDisplay(key)
     end)
-    playerGroup:AddChild(dropdown)
+    playerSelectorGroup:AddChild(dropdown)
     
-    -- History display area
+    -- History display area - with explicit height for proper scrolling
     local historyDisplayGroup = AceGUI:Create("InlineGroup")
-    historyDisplayGroup:SetTitle("Player Statistics & Recent Games")
+    historyDisplayGroup:SetTitle("Statistics & Recent Games")
     historyDisplayGroup:SetFullWidth(true)
+    historyDisplayGroup:SetHeight(200) -- Set explicit height to ensure proper scrolling
     historyDisplayGroup:SetLayout("Fill")
     historyGroup:AddChild(historyDisplayGroup)
     
-    local historyBox = AceGUI:Create("MultiLineEditBox")
-    historyBox:SetNumLines(15)
-    historyBox:DisableButton(true)
-    historyBox:SetFullWidth(true)
-    historyBox:SetFullHeight(true)
-    historyDisplayGroup:AddChild(historyBox)
+    local historyLabel = AceGUI:Create("Label")
+    historyLabel:SetText("Select a player to view history")
+    historyLabel:SetFullWidth(true)
+    historyLabel:SetJustifyV("TOP")
+    historyLabel:SetJustifyH("LEFT")
+    historyDisplayGroup:AddChild(historyLabel)
+    
+    -- Force ScrollFrame to recalculate content area
+    C_Timer.After(0.1, function()
+        if historyGroup and historyGroup.content then
+            historyGroup:DoLayout()
+        end
+    end)
     
     -- Store references for updates
-    UI.historyBox = historyBox
+    UI.historyBox = historyLabel -- Now using Label instead of EditBox
     UI.historyDropdown = dropdown
     
     -- Show first player's history by default
@@ -591,6 +734,11 @@ end
 
 -- Update stats display
 function DRE:UpdateStatsDisplay()
+    -- Only update stats if we're on the statistics tab
+    if UI.currentTab ~= "statistics" then
+        return
+    end
+    
     if not UI.statsLabel or not self.db or not self.db.profile.goldTracking then
         return
     end
@@ -709,7 +857,7 @@ function DRE:UpdateHistoryDisplay(playerName)
         for i = 1, displayCount do
             local game = playerData.recentGames[i]
             if game then
-                local resultIcon = (game.result == "Won") and "✓" or "✗"
+                local resultIcon = (game.result == "Won") and "[W]" or "[L]"
                 local goldDisplay = (game.goldAmount and game.goldAmount > 0) and 
                     (" (" .. self:FormatGold(game.goldAmount) .. ")") or ""
                 text = text .. string.format("%s %s - %s%s\n", 
@@ -818,7 +966,7 @@ function DRE:CreateSpicyDuelSection(container)
     
     -- Header
     local header = AceGUI:Create("Heading")
-    header:SetText("Spicy DeathRoll — RPS Dice Duel")
+    header:SetText("Spicy DeathRoll - RPS Dice Duel")
     header:SetFullWidth(true)
     spicyGroup:AddChild(header)
     
@@ -895,8 +1043,8 @@ function DRE:CreateSpicyDuelSection(container)
     
     local rulesText = AceGUI:Create("MultiLineEditBox")
     rulesText:SetText([[Attack vs Attack: Higher roll deals difference damage
-Attack vs Defend: Defend blocks if D≥A, else A deals (A-D)
-Attack vs Gamble: Glass Cannon - if A≥G then A deals full A, else G deals full G
+Attack vs Defend: Defend blocks if D>=A, else A deals (A-D)
+Attack vs Gamble: Glass Cannon - if A>=G then A deals full A, else G deals full G
 Defend vs Defend: No damage (stalemate)
 Defend vs Gamble: If G>D then G deals full G, else recoil (D-G)/2 to Gambler
 Gamble vs Gamble: Higher deals double difference, tie = both take 10
@@ -918,8 +1066,12 @@ end
 function DRE:HandleGameButtonClick()
     local gameState = UI.gameState or "WAITING"
     
-    if gameState == "WAITING" then
-        -- Initial challenge state
+    if gameState == "WAITING" or gameState == "GAME_OVER" then
+        -- Initial challenge state or starting new game after previous ended
+        if gameState == "GAME_OVER" then
+            -- Reset to WAITING state first to clear previous game
+            self:UpdateGameUIState("WAITING")
+        end
         self:StartChallengeFlow()
     elseif gameState == "ROLLING" then
         -- Player needs to roll
@@ -1013,6 +1165,14 @@ function DRE:PerformRoll()
     -- Perform the roll using WoW's built-in roll system with a small delay
     C_Timer.After(0.1, function()
         RandomRoll(1, rollRange)
+    end)
+    
+    -- Fallback timeout to reset UI if roll detection fails (especially for self-duels)
+    C_Timer.After(3, function()
+        if self.UI and self.UI.gameState == "WAITING_FOR_ROLL_RESULT" then
+            self:DebugPrint("Roll detection timeout - resetting UI to ROLLING state")
+            self:UpdateGameUIState("ROLLING")
+        end
     end)
 end
 

@@ -14,6 +14,9 @@
 ### Version 2.0.0 (Complete Rewrite)
 **MASSIVE ARCHITECTURAL OVERHAUL** - Complete transformation from basic addon to enterprise-level professional addon.
 
+### Version 2.1.0 (Major Feature Update)
+**GAME RECORD EDITING & UI IMPROVEMENTS** - Added comprehensive game editing system with major bug fixes and enhanced user experience.
+
 ## Current Architecture
 
 ### **Core Framework: Ace3**
@@ -38,14 +41,39 @@
 
 ```
 DeathRollEnhancer/
-├── DeathRollEnhancer.toc     # TOC with Ace3 dependencies
-├── Core.lua                  # Main Ace3 addon with options system
-├── Database.lua              # AceDB helper functions and data management
-├── UI.lua                    # AceGUI-based user interface
-├── Events.lua                # Event handling and game logic
-├── Minimap.lua              # LibDBIcon minimap integration
-└── DEVELOPMENT_CONTEXT.md   # This file
+├── DeathRollEnhancer.toc        # TOC with Ace3 dependencies
+├── Core.lua                     # Main Ace3 addon with options system
+├── Database.lua                 # AceDB helper functions and data management
+├── UI.lua                       # AceGUI-based user interface
+├── Events.lua                   # Event handling and game logic
+├── Minimap.lua                  # LibDBIcon minimap integration
+├── CHANGELOG.md                 # Version history and release notes for CurseForge
+├── CurseForge_Description.md    # Project description and features for CurseForge
+└── DEVELOPMENT_CONTEXT.md       # This development context file
 ```
+
+## Documentation Files
+
+### **CHANGELOG.md**
+- **Purpose**: Comprehensive version history for CurseForge releases
+- **Format**: Markdown with professional styling and categorized improvements
+- **Content**: Major features, bug fixes, technical enhancements, developer notes
+- **Usage**: Copy to CurseForge release notes, user reference for updates
+- **Maintenance**: Updated with each version release to document all changes
+
+### **CurseForge_Description.md**  
+- **Purpose**: Complete addon description and feature overview for CurseForge project page
+- **Format**: Markdown with emojis, sections, and user-friendly language
+- **Content**: Feature highlights, commands, configuration options, technical details
+- **Usage**: CurseForge project description, GitHub README reference
+- **Maintenance**: Updated with major feature releases to reflect current capabilities
+
+### **Context Usage**
+These documentation files provide valuable context for understanding:
+- **What features exist**: Current and historical functionality
+- **What's been improved**: Version-to-version changes and fixes
+- **User perspective**: How features are marketed and explained to users
+- **Project scope**: Complete feature set and technical capabilities
 
 ## Key Features Implemented
 

@@ -55,6 +55,7 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll)
     
     table.insert(playerData.recentGames, 1, {
         date = date("%Y-%m-%d %H:%M"),
+        timestamp = time(),
         result = result,
         goldAmount = goldAmount or 0,
         initialRoll = initialRoll or 0
@@ -297,4 +298,156 @@ function DRE:ExportData()
     end
     
     return serialize(exportData)
+end
+
+-- Find and return the most recent game record for editing
+function DRE:GetLastGameRecord()
+    if not self.db or not self.db.profile.history then
+        return nil
+    end
+    
+    local latestGame = nil
+    local latestPlayer = nil
+    local latestTime = 0
+    
+    -- Find the most recent game across all players
+    for playerName, playerData in pairs(self.db.profile.history) do
+        if playerData.recentGames and #playerData.recentGames > 0 then
+            local game = playerData.recentGames[1] -- Most recent is first
+            local gameTime = game.timestamp or 0
+            
+            if gameTime > latestTime then
+                latestTime = gameTime
+                latestGame = game
+                latestPlayer = playerName
+            end
+        end
+    end
+    
+    return latestGame, latestPlayer
+end
+
+-- Get all recent games for editing (last 50 games across all players)
+function DRE:GetRecentGamesForEditing(limit)
+    limit = limit or 50
+    
+    if not self.db or not self.db.profile.history then
+        return {}
+    end
+    
+    local allGames = {}
+    
+    -- Collect all games with player and game info
+    for playerName, playerData in pairs(self.db.profile.history) do
+        if playerData.recentGames and #playerData.recentGames > 0 then
+            for gameIndex, game in ipairs(playerData.recentGames) do
+                table.insert(allGames, {
+                    playerName = playerName,
+                    gameIndex = gameIndex,
+                    game = game,
+                    timestamp = game.timestamp or 0
+                })
+            end
+        end
+    end
+    
+    -- Sort by timestamp (newest first) - handle missing timestamps
+    table.sort(allGames, function(a, b) 
+        local aTime = a.timestamp or 0
+        local bTime = b.timestamp or 0
+        if aTime == bTime then
+            -- If timestamps are equal (or both 0), maintain original order
+            return false
+        end
+        return aTime > bTime
+    end)
+    
+    -- Limit results
+    local result = {}
+    for i = 1, math.min(limit, #allGames) do
+        table.insert(result, allGames[i])
+    end
+    
+    -- Debug info
+    if DRE and DRE.DebugPrint then
+        DRE:DebugPrint("GetRecentGamesForEditing: Found " .. #allGames .. " total games, returning " .. #result .. " (limit: " .. limit .. ")")
+    end
+    
+    return result
+end
+
+-- Edit a specific game record by player and game index
+function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, newInitialRoll)
+    if not self.db or not self.db.profile.history or not playerName then
+        return false, "No data available"
+    end
+    
+    local playerData = self.db.profile.history[playerName]
+    if not playerData or not playerData.recentGames or #playerData.recentGames == 0 then
+        return false, "No recent games found for " .. playerName
+    end
+    
+    if gameIndex < 1 or gameIndex > #playerData.recentGames then
+        return false, "Invalid game index"
+    end
+    
+    local oldGame = playerData.recentGames[gameIndex]
+    local oldResult = oldGame.result
+    local oldGoldAmount = oldGame.goldAmount or 0
+    
+    -- Update the game record
+    oldGame.result = newResult
+    oldGame.goldAmount = newGoldAmount or 0
+    oldGame.initialRoll = newInitialRoll or oldGame.initialRoll
+    
+    -- Adjust player statistics
+    -- First, undo the old game's impact
+    if oldResult == "Won" or oldResult == "WIN" then
+        playerData.wins = (playerData.wins or 1) - 1
+        playerData.goldWon = (playerData.goldWon or oldGoldAmount) - oldGoldAmount
+    elseif oldResult == "Lost" or oldResult == "LOSS" then
+        playerData.losses = (playerData.losses or 1) - 1
+        playerData.goldLost = (playerData.goldLost or oldGoldAmount) - oldGoldAmount
+    end
+    
+    -- Then apply the new game's impact
+    if newResult == "Won" or newResult == "WIN" then
+        playerData.wins = (playerData.wins or 0) + 1
+        playerData.goldWon = (playerData.goldWon or 0) + (newGoldAmount or 0)
+    elseif newResult == "Lost" or newResult == "LOSS" then
+        playerData.losses = (playerData.losses or 0) + 1
+        playerData.goldLost = (playerData.goldLost or 0) + (newGoldAmount or 0)
+    end
+    
+    -- Update gold tracking statistics
+    local oldGoldDelta = (oldResult == "Won" or oldResult == "WIN") and oldGoldAmount or -oldGoldAmount
+    local newGoldDelta = (newResult == "Won" or newResult == "WIN") and (newGoldAmount or 0) or -(newGoldAmount or 0)
+    
+    if self.db.profile.goldTracking then
+        -- Undo old impact
+        if oldResult == "Won" or oldResult == "WIN" then
+            self.db.profile.goldTracking.totalWon = (self.db.profile.goldTracking.totalWon or oldGoldAmount) - oldGoldAmount
+        else
+            self.db.profile.goldTracking.totalLost = (self.db.profile.goldTracking.totalLost or oldGoldAmount) - oldGoldAmount
+        end
+        
+        -- Apply new impact
+        if newResult == "Won" or newResult == "WIN" then
+            self.db.profile.goldTracking.totalWon = (self.db.profile.goldTracking.totalWon or 0) + (newGoldAmount or 0)
+        else
+            self.db.profile.goldTracking.totalLost = (self.db.profile.goldTracking.totalLost or 0) + (newGoldAmount or 0)
+        end
+    end
+    
+    -- Update UI if it's open
+    if self.UpdateStatsDisplay then
+        self:UpdateStatsDisplay()
+    end
+    
+    return true, "Game record updated successfully"
+end
+
+-- Compatibility function - edit the most recent game record
+function DRE:EditLastGame(playerName, newResult, newGoldAmount, newInitialRoll)
+    return self:EditGameRecord(playerName, 1, newResult, newGoldAmount, newInitialRoll)
 end

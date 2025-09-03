@@ -34,10 +34,12 @@ function DRE:ShowMainWindow()
     
     if UI.mainWindow then
         UI.mainWindow:Show()
+        -- Check for recent rolls when reopening UI
+        self:CheckRecentRollsForChallenge()
         return
     end
     
-    -- Create main window frame
+    -- Create main window frame (initially hidden to prevent flash)
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("DeathRoll Enhancer")
     frame:SetStatusText("v" .. self.version)
@@ -45,12 +47,15 @@ function DRE:ShowMainWindow()
         widget:Hide()
     end)
     
-    -- Set default dimensions FIRST
+    -- Hide frame initially to prevent flash during setup
+    frame.frame:Hide()
+    
+    -- Set default dimensions first
     frame:SetWidth(400)
     frame:SetHeight(300)
     frame:SetLayout("Fill")
     
-    -- Then set up AceGUI status table (this will override defaults if saved values exist)
+    -- Set up AceGUI status table (this will override defaults if saved values exist)
     if not self.db.profile.ui.frameStatus then
         self.db.profile.ui.frameStatus = {}
     end
@@ -58,18 +63,27 @@ function DRE:ShowMainWindow()
     frame:SetStatusTable(self.db.profile.ui.frameStatus)
     frame:EnableResize(true)
     
-    -- Debug hook
+    -- Apply scaling AFTER AceGUI status table is set up
+    -- This ensures the scale is applied consistently
+    local scaleValue = (self.db and self.db.profile.ui.scale) or 0.9
+    frame.frame:SetScale(scaleValue)
+    
+    -- For first-time users, ensure correct dimensions immediately (no timer)
+    if not self.db.profile.ui.frameStatus.width and not self.db.profile.ui.frameStatus.height then
+        -- This is likely first time opening - ensure proper sizing immediately
+        frame:SetWidth(400)
+        frame:SetHeight(300)
+        self:DebugPrint("Applied first-time window dimensions immediately after scale")
+    end
+    
+    -- Debug hook - ensure scale is maintained when AceGUI restores status
     local originalApplyStatus = frame.ApplyStatus
     frame.ApplyStatus = function(self_frame)
         originalApplyStatus(self_frame)
-        self:DebugPrint("Frame status applied (position/size restored)")
-    end
-    
-    -- Apply scaling from settings
-    if self.db and self.db.profile.ui.scale then
-        frame.frame:SetScale(self.db.profile.ui.scale)
-    else
-        frame.frame:SetScale(0.9) -- Default scale
+        -- Reapply scale after status restoration
+        local scaleValue = (self.db and self.db.profile.ui.scale) or 0.9
+        self_frame.frame:SetScale(scaleValue)
+        self:DebugPrint("Frame status applied (position/size restored) - scale reapplied: " .. scaleValue)
     end
     
     -- Position/size restoration is now handled by AceGUI status table
@@ -96,12 +110,25 @@ function DRE:ShowMainWindow()
         UI.rollHistory = {}
         UI.historyBox = nil
         UI.historyDropdown = nil
+        UI.historyScrollFrame = nil
+        UI.historyDisplayGroup = nil
+        -- Clear challenge UI references too
+        UI.gameButton = nil
+        UI.goldEdit = nil
+        UI.silverEdit = nil
+        UI.copperEdit = nil
         
         -- Track current tab
         UI.currentTab = group
         
         if group == "deathroll" then
             self:CreateGameSection(container)
+            -- Check for recent rolls when switching to deathroll tab
+            self:CheckRecentRollsForChallenge()
+            -- Ensure auto-roll setting is applied if no recent challenges
+            if not (self.UI and self.UI.recentTargetRoll) then
+                self:SetRollInput()
+            end
         elseif group == "statistics" then
             self:CreateStatsSection(container)
         elseif group == "history" then
@@ -113,7 +140,11 @@ function DRE:ShowMainWindow()
     frame:AddChild(tabGroup)
     UI.tabGroup = tabGroup
     
+    -- Show the frame AFTER all setup is complete to prevent flash
     frame:Show()
+    
+    -- Check for recent rolls when first opening UI
+    self:CheckRecentRollsForChallenge()
 end
 
 -- Create game control section
@@ -247,16 +278,17 @@ function DRE:CreateGameSection(container)
     
     -- Game action button (changes based on game state)
     local gameButton = AceGUI:Create("Button")
-    gameButton:SetText("Challenge to DeathRoll!")
+    gameButton:SetText("Challenge Player to DeathRoll!")
     gameButton:SetFullWidth(true)
     gameButton:SetCallback("OnClick", function()
         self:HandleGameButtonClick()
     end)
     gameGroup:AddChild(gameButton)
     
+    
     -- Game status (compact, simple display)
     local statusLabel = AceGUI:Create("Label")
-    statusLabel:SetText("Ready to start! Target someone and click Challenge to DeathRoll!")
+    statusLabel:SetText("Ready to start! Target someone and click Challenge Player to DeathRoll!")
     statusLabel:SetFullWidth(true)
     statusLabel:SetColor(0.9, 0.9, 0.9) -- Light gray text
     gameGroup:AddChild(statusLabel)
@@ -268,6 +300,9 @@ function DRE:CreateGameSection(container)
     UI.gameButton = gameButton
     UI.rollHistoryBox = statusLabel -- Simple status label for roll display
     UI.rollHistory = {} -- Array to store roll entries
+    
+    -- Update button text with current target initially
+    self:UpdateChallengeButtonText()
 end
 
 -- Add a roll entry to the history display
@@ -634,8 +669,10 @@ function DRE:CreateHistorySection(container)
     end)
     
     -- Store references for updates
-    UI.historyBox = historyLabel -- Now using Label instead of EditBox
+    UI.historyBox = historyLabel
     UI.historyDropdown = dropdown
+    UI.historyScrollFrame = historyGroup
+    UI.historyDisplayGroup = historyDisplayGroup -- Store the container for recreating labels
     
     -- Show first player's history by default
     self:UpdateHistoryDisplay(playerNames[1])
@@ -825,136 +862,80 @@ end
 
 -- Update history display for selected player
 function DRE:UpdateHistoryDisplay(playerName)
-    if not UI.historyBox or not self.db or not self.db.profile.history then
+    if not UI.historyDisplayGroup or not self.db or not self.db.profile.history then
         return
     end
     
     local playerData = self.db.profile.history[playerName]
+    local text
+    
     if not playerData then
-        UI.historyBox:SetText("No data available for " .. (playerName or "Unknown"))
-        return
-    end
-    
-    -- Enhanced player history formatting
-    local text = string.format("=== HISTORY WITH %s ===\n\n", string.upper(playerName))
-    text = text .. string.format("Games Played: %d\n", (playerData.wins or 0) + (playerData.losses or 0))
-    text = text .. string.format("Wins: %d\n", playerData.wins or 0)
-    text = text .. string.format("Losses: %d\n", playerData.losses or 0)
-    
-    local totalGames = (playerData.wins or 0) + (playerData.losses or 0)
-    if totalGames > 0 then
-        local winRate = (playerData.wins or 0) / totalGames * 100
-        text = text .. string.format("Win Rate: %.1f%%\n", winRate)
-    end
-    
-    text = text .. string.format("Gold Won: %s\n", self:FormatGold(playerData.goldWon or 0))
-    text = text .. string.format("Gold Lost: %s\n", self:FormatGold(playerData.goldLost or 0))
-    text = text .. string.format("Net Profit: %s\n", self:FormatGold((playerData.goldWon or 0) - (playerData.goldLost or 0)))
-    
-    if playerData.recentGames and #playerData.recentGames > 0 then
-        text = text .. "\n=== RECENT GAMES ===\n"
-        local displayCount = math.min(#playerData.recentGames, 15) -- Show last 15 games
-        for i = 1, displayCount do
-            local game = playerData.recentGames[i]
-            if game then
-                local resultIcon = (game.result == "Won") and "[W]" or "[L]"
-                local goldDisplay = (game.goldAmount and game.goldAmount > 0) and 
-                    (" (" .. self:FormatGold(game.goldAmount) .. ")") or ""
-                text = text .. string.format("%s %s - %s%s\n", 
-                    resultIcon,
-                    game.date or "Unknown Date",
-                    game.result or "Unknown",
-                    goldDisplay)
-            end
+        text = "No data available for " .. (playerName or "Unknown")
+    else
+        -- Enhanced player history formatting
+        text = string.format("=== HISTORY WITH %s ===\n\n", string.upper(playerName))
+        text = text .. string.format("Games Played: %d\n", (playerData.wins or 0) + (playerData.losses or 0))
+        text = text .. string.format("Wins: %d\n", playerData.wins or 0)
+        text = text .. string.format("Losses: %d\n", playerData.losses or 0)
+        
+        local totalGames = (playerData.wins or 0) + (playerData.losses or 0)
+        if totalGames > 0 then
+            local winRate = (playerData.wins or 0) / totalGames * 100
+            text = text .. string.format("Win Rate: %.1f%%\n", winRate)
         end
         
-        if #playerData.recentGames > 15 then
-            text = text .. string.format("\n... and %d more games\n", #playerData.recentGames - 15)
+        text = text .. string.format("Gold Won: %s\n", self:FormatGold(playerData.goldWon or 0))
+        text = text .. string.format("Gold Lost: %s\n", self:FormatGold(playerData.goldLost or 0))
+        text = text .. string.format("Net Profit: %s\n", self:FormatGold((playerData.goldWon or 0) - (playerData.goldLost or 0)))
+        
+        if playerData.recentGames and #playerData.recentGames > 0 then
+            text = text .. "\n=== RECENT GAMES ===\n"
+            local displayCount = math.min(#playerData.recentGames, 5) -- Show last 5 games only
+            for i = 1, displayCount do
+                local game = playerData.recentGames[i]
+                if game then
+                    local resultIcon = (game.result == "Won") and "[W]" or "[L]"
+                    local goldDisplay = (game.goldAmount and game.goldAmount > 0) and 
+                        (" (" .. self:FormatGold(game.goldAmount) .. ")") or ""
+                    text = text .. string.format("%s %s - %s%s\n", 
+                        resultIcon,
+                        game.date or "Unknown Date",
+                        game.result or "Unknown",
+                        goldDisplay)
+                end
+            end
+            
+            if #playerData.recentGames > 5 then
+                text = text .. string.format("\n... and %d more games\n", #playerData.recentGames - 5)
+            end
+        else
+            text = text .. "\n=== RECENT GAMES ===\nNo games recorded yet."
         end
-    else
-        text = text .. "\n=== RECENT GAMES ===\nNo games recorded yet."
     end
     
-    UI.historyBox:SetText(text)
+    -- Remove the old label and create a new one to force scroll recalculation
+    if UI.historyBox then
+        UI.historyDisplayGroup:ReleaseChildren()
+    end
+    
+    local newHistoryLabel = AceGUI:Create("Label")
+    newHistoryLabel:SetText(text)
+    newHistoryLabel:SetFullWidth(true)
+    newHistoryLabel:SetJustifyV("TOP")
+    newHistoryLabel:SetJustifyH("LEFT")
+    UI.historyDisplayGroup:AddChild(newHistoryLabel)
+    
+    -- Update reference
+    UI.historyBox = newHistoryLabel
+    
+    -- Force scroll frame to recalculate
+    C_Timer.After(0.05, function()
+        if UI.historyScrollFrame then
+            UI.historyScrollFrame:DoLayout()
+        end
+    end)
 end
 
--- Show challenge dialog for addon users
-function DRE:ShowChallengeDialog(sender, roll, wager, challengeText)
-    if not AceGUI then
-        return
-    end
-    
-    -- Create challenge dialog
-    local dialog = AceGUI:Create("Frame")
-    dialog:SetTitle("DeathRoll Challenge")
-    dialog:SetStatusText("Challenge from " .. sender)
-    dialog:SetLayout("Flow")
-    dialog:SetWidth(400)
-    dialog:SetHeight(200)
-    
-    -- Apply scaling
-    if self.db and self.db.profile.ui.scale then
-        dialog.frame:SetScale(self.db.profile.ui.scale)
-    end
-    
-    -- Challenge info
-    local infoText = string.format("%s challenges you to a DeathRoll!\n\nStarting Roll: %d", sender, roll)
-    if wager > 0 then
-        infoText = infoText .. "\nWager: " .. self:FormatGold(wager)
-    else
-        infoText = infoText .. "\nWager: None"
-    end
-    
-    local infoLabel = AceGUI:Create("Label")
-    infoLabel:SetText(infoText)
-    infoLabel:SetFullWidth(true)
-    infoLabel:SetColor(1, 1, 0.8) -- Light yellow text
-    dialog:AddChild(infoLabel)
-    
-    -- Button group
-    local buttonGroup = AceGUI:Create("SimpleGroup")
-    buttonGroup:SetFullWidth(true)
-    buttonGroup:SetLayout("Flow")
-    dialog:AddChild(buttonGroup)
-    
-    -- Accept button
-    local acceptButton = AceGUI:Create("Button")
-    acceptButton:SetText("Accept Challenge")
-    acceptButton:SetWidth(150)
-    acceptButton:SetCallback("OnClick", function()
-        self:SendAddonMessage("ACCEPT", roll .. ":" .. wager, sender)
-        self:ChatPrint("Accepted DeathRoll challenge from " .. sender .. "!")
-        dialog:Hide()
-        -- TODO: Start game logic
-    end)
-    buttonGroup:AddChild(acceptButton)
-    
-    -- Decline button
-    local declineButton = AceGUI:Create("Button")
-    declineButton:SetText("Decline")
-    declineButton:SetWidth(100)
-    declineButton:SetCallback("OnClick", function()
-        self:SendAddonMessage("DECLINE", "", sender)
-        self:ChatPrint("Declined DeathRoll challenge from " .. sender)
-        dialog:Hide()
-    end)
-    buttonGroup:AddChild(declineButton)
-    
-    -- Auto-decline on close
-    dialog:SetCallback("OnClose", function()
-        self:SendAddonMessage("DECLINE", "", sender)
-        self:ChatPrint("Declined DeathRoll challenge from " .. sender)
-    end)
-    
-    -- Play sound notification
-    if self.db and self.db.profile.gameplay.soundEnabled then
-        PlaySound(8959) -- UI alert sound
-    end
-    
-    dialog:Show()
-    
-    self:ChatPrint("Challenge received from " .. sender .. " - Accept or Decline?")
-end
 
 -- Create Spicy Duel RPS section
 function DRE:CreateSpicyDuelSection(container)
@@ -1062,6 +1043,14 @@ Attack = consistent pressure | Defend = blocks & counters | Gamble = swingy chao
     UI.spicyRollButton = rollButton
 end
 
+-- Calculate wager from UI input fields
+function DRE:CalculateWagerFromUI()
+    local gold = tonumber(UI.goldEdit and UI.goldEdit:GetText() or "0") or 0
+    local silver = tonumber(UI.silverEdit and UI.silverEdit:GetText() or "0") or 0  
+    local copper = tonumber(UI.copperEdit and UI.copperEdit:GetText() or "0") or 0
+    return gold * 10000 + silver * 100 + copper
+end
+
 -- Handle game button clicks based on current state
 function DRE:HandleGameButtonClick()
     local gameState = UI.gameState or "WAITING"
@@ -1072,17 +1061,79 @@ function DRE:HandleGameButtonClick()
             -- Reset to WAITING state first to clear previous game
             self:UpdateGameUIState("WAITING")
         end
-        self:StartChallengeFlow()
+        
+        -- Check if we have a recent target roll (challenge to accept)
+        if UI.recentTargetRoll then
+            -- Accept the challenge - start DeathRoll with their roll result
+            local targetName = UnitName("target")
+            if targetName and targetName == UI.recentTargetRoll.playerName then
+                local wager = self:CalculateWagerFromUI()
+                self:DebugPrint("Accepting challenge from " .. targetName .. " with roll " .. UI.recentTargetRoll.maxRoll)
+                self:StartDeathRoll(targetName, UI.recentTargetRoll.maxRoll, wager)
+            else
+                self:ChatPrint("Target changed - please target " .. (UI.recentTargetRoll.playerName or "the challenger") .. " to accept their challenge")
+            end
+        else
+            -- Start a new challenge
+            self:StartChallengeFlow()
+        end
     elseif gameState == "ROLLING" then
         -- Player needs to roll
         self:PerformRoll()
     elseif gameState == "WAITING_FOR_OPPONENT" then
         -- Waiting for opponent, button should be disabled
-        self:Print("Waiting for opponent to roll...")
-    elseif gameState == "WAITING_FOR_ACCEPTANCE" then
-        -- Waiting for challenge acceptance, button should be disabled
-        self:Print("Waiting for " .. (UI.currentTarget or "player") .. " to accept the challenge...")
+        self:ChatPrint("Waiting for opponent to roll...")
     end
+end
+
+
+-- Accept a recent roll detected in chat or use your roll to challenge
+function DRE:AcceptRecentRoll()
+    local rollData = UI.recentTargetRoll
+    if not rollData then
+        self:Print("No recent roll found!")
+        return
+    end
+    
+    local rollOwner = rollData.player
+    local rollResult = rollData.roll
+    local maxRoll = rollData.maxRoll
+    local currentTarget = UnitName("target")
+    local wager = 0 -- Could be made configurable
+    
+    if rollOwner == UnitName("player") then
+        -- You rolled - challenge the current target with your roll
+        if not currentTarget then
+            self:Print("No target selected to challenge!")
+            return
+        end
+        
+        self:ChatPrint("Challenging " .. currentTarget .. " with your roll of " .. rollResult .. " (1-" .. maxRoll .. ")!")
+        
+        -- Start game with your roll as the starting point
+        if rollResult == 1 then
+            self:ChatPrint("You rolled 1 and lost! " .. currentTarget .. " wins!")
+            self:HandleGameEnd(currentTarget, "LOSS", wager, maxRoll)
+        else
+            -- Start the game - you already rolled, now target needs to roll
+            self:StartActualGame(currentTarget, maxRoll, wager, rollResult)
+        end
+    else
+        -- Someone else rolled - accept their challenge
+        self:ChatPrint("Accepting " .. rollOwner .. "'s DeathRoll! They rolled " .. rollResult .. " (1-" .. maxRoll .. ")")
+        
+        -- Start game with their roll as the starting point
+        if rollResult == 1 then
+            self:ChatPrint(rollOwner .. " rolled 1 and lost! You won!")
+            self:HandleGameEnd(rollOwner, "WIN", wager, maxRoll)
+        else
+            -- Start the game - they already rolled, now it's your turn
+            self:StartActualGame(rollOwner, maxRoll, wager, rollResult)
+        end
+    end
+    
+    -- Clear the recent roll data
+    UI.recentTargetRoll = nil
 end
 
 -- Start the challenge flow
@@ -1094,7 +1145,7 @@ function DRE:StartChallengeFlow()
         -- Check if target is yourself (self-dueling)
         if UnitIsUnit("target", "player") then
             target = UnitName("player")
-            self:Print("Self-duel mode activated!")
+            self:ChatPrint("Self-duel mode activated!")
         else
             -- Check if target is a player (not NPC)
             if not UnitIsPlayer("target") then
@@ -1139,8 +1190,8 @@ function DRE:StartChallengeFlow()
     UI.initialRoll = roll
     UI.currentWager = totalWager
     
-    -- Update UI state
-    self:UpdateGameUIState("WAITING_FOR_ACCEPTANCE")
+    -- Skip rolling state since we auto-roll, go straight to waiting for opponent
+    self:UpdateGameUIState("WAITING_FOR_OPPONENT")
     
     -- Start the challenge
     self:StartDeathRoll(target, roll, totalWager)
@@ -1177,6 +1228,7 @@ function DRE:PerformRoll()
 end
 
 -- UpdateGameUIState function moved to Core.lua to avoid scoping issues
+
 
 -- Clean up UI
 function DRE:CleanupUI()

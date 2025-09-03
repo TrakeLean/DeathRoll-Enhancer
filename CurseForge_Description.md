@@ -1,6 +1,22 @@
 # DeathRoll Enhancer
 
-**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, and comprehensive game management. Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
+**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **game record editing**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
+
+## 🆕 What's New in Version 2.1.0
+
+### **🎯 Game Record Editing System**
+- **Fix mistakes instantly** - Edit wager amounts, win/loss results, and initial rolls after games complete
+- **Color-coded interface** - Green for wins, red for losses in selection dropdowns
+- **Professional popup dialog** - Clean interface with separate Gold/Silver/Copper inputs
+- **Proper display format** - Shows "You vs Opponent" instead of confusing formats
+- **Real-time updates** - Statistics automatically recalculate when you make edits
+
+### **🔧 Major Bug Fixes & Improvements**
+- **Settings now work properly** - Debug messages and auto-roll settings respond immediately
+- **Post-duel challenge fix** - No more using opponent's roll data by mistake
+- **Chat message control** - Settings properly control all addon messages
+- **UI organization** - New dedicated Data Management tab for better UX
+- **History display** - Limited to 5 recent games to prevent UI overflow
 
 ![image](https://media.forgecdn.net/attachments/description/954561/description_81534083-99e1-4a0c-8c9e-f59e1eb4122f.png)
 
@@ -38,6 +54,7 @@
 ### **Commands**
 - **`/dr`** or **`/deathroll`** - Open main interface
 - **`/dr config`** - Open configuration panel
+- **`/dr edit`** - **NEW!** Edit recent game records to fix mistakes
 - **`/drh [player]`** - View history with specific player
 
 ### **Interface Navigation**
@@ -55,6 +72,7 @@ Access via `/dr config` for extensive customization:
 - **Fun statistics toggles** - Show only the stats you want
 - **Minimap icon** show/hide and positioning
 - **Font selection** and interface theming
+- **Data Management tab** - **NEW!** Organized controls for editing, statistics, cleanup, and export
 
 ## 🔧 Technical Details
 

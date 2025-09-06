@@ -5,7 +5,11 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(luac:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(git push:*)",
+      "WebSearch",
+      "Bash(tail:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

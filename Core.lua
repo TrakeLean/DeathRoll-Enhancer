@@ -20,7 +20,7 @@ DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
-DRE.version = "2.0.0"
+DRE.version = "2.1.1"
 DRE.author = "EgyptianSheikh"
 
 -- Import libraries with safety checks
@@ -105,8 +105,10 @@ function DRE:OnInitialize()
     -- Initialize database
     self.db = AceDB:New("DeathRollEnhancerDB", defaults, true)
     
-    -- Register addon message prefix for inter-addon communication
-    C_ChatInfo.RegisterAddonMessagePrefix("DeathRollEnh")
+    -- Initialize recent rolls storage for challenge detection
+    self.recentRolls = {}
+    self.maxRecentRolls = 10
+    self.recentRollTimeWindow = 60 -- seconds
     
     -- Register options
     self:SetupOptions()
@@ -129,7 +131,6 @@ function DRE:OnEnable()
     -- Register core events
     self:RegisterEvent("CHAT_MSG_SYSTEM")
     self:RegisterEvent("ADDON_LOADED")
-    self:RegisterEvent("CHAT_MSG_ADDON")
     
     -- Register game-related events (CHAT_MSG_WHISPER for spicy duels)
     self:RegisterEvent("CHAT_MSG_WHISPER")
@@ -137,6 +138,9 @@ function DRE:OnEnable()
     -- Register additional events that might carry roll messages
     self:RegisterEvent("CHAT_MSG_TEXT_EMOTE")
     self:RegisterEvent("CHAT_MSG_EMOTE")
+    
+    -- Register target change event to update button text
+    self:RegisterEvent("PLAYER_TARGET_CHANGED")
     
     self:DebugPrint("Events registered: CHAT_MSG_SYSTEM, ADDON_LOADED, CHAT_MSG_ADDON, CHAT_MSG_WHISPER, CHAT_MSG_TEXT_EMOTE, CHAT_MSG_EMOTE")
     
@@ -508,7 +512,19 @@ function DRE:SetupOptions()
                         get = function() return self.db.profile.gameplay.autoRollFromMoney end,
                         set = function(_, val) 
                             self.db.profile.gameplay.autoRollFromMoney = val
-                            self:Print("Auto-roll setting changed. Close and reopen the main window to see the new UI.")
+                            -- Update the roll input immediately if UI is open
+                            if self.UI and self.UI.rollEdit then
+                                if val then
+                                    local autoRoll = self:CalculateAutoRoll()
+                                    self.UI.rollEdit:SetText(tostring(autoRoll))
+                                    self:Print("Auto-roll enabled - roll input set to: " .. autoRoll)
+                                else
+                                    self.UI.rollEdit:SetText("100")
+                                    self:Print("Auto-roll disabled - roll input reset to: 100")
+                                end
+                            else
+                                self:Print("Auto-roll setting changed to: " .. (val and "enabled" or "disabled"))
+                            end
                         end,
                         order = 5,
                     },
@@ -884,39 +900,7 @@ function DRE:CHAT_MSG_SYSTEM(event, message)
     -- Debug: Show all system messages to help identify roll format
     self:DebugPrint("CHAT_MSG_SYSTEM triggered with message: '" .. (message or "nil") .. "'")
     
-    -- Handle fallback challenge mode (legacy logic for non-addon users)
-    if self.fallbackChallenge then
-        -- Look for roll patterns: "PlayerName rolls 1-100 (42)"
-        local playerName, maxRoll, rollResult = message:match("(%S+) rolls 1%-(%d+) %((%d+)%)")
-        
-        if playerName and rollResult and maxRoll then
-            -- Check if this is from our challenged player
-            if playerName == self.fallbackChallenge.target then
-                local currentRoll = tonumber(rollResult)
-                local expectedRoll = self.fallbackChallenge.roll
-                
-                -- Check if they rolled the expected starting number
-                if tonumber(maxRoll) == expectedRoll then
-                    -- They rolled within the expected range, challenge accepted
-                    self:ChatPrint(playerName .. " accepted! They rolled " .. currentRoll .. " (1-" .. expectedRoll .. ")")
-                    
-                    if currentRoll == 1 then
-                        self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
-                        -- Handle win
-                        self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
-                    else
-                        self:ChatPrint("Challenge accepted! Now you roll 1-" .. currentRoll)
-                        -- Start actual game
-                        self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, currentRoll)
-                    end
-                    self:StopFallbackMode()
-                    return -- Don't process as regular roll if handled as fallback
-                end
-            end
-        end
-    end
-    
-    -- Use unified processing function for regular roll detection
+    -- Use unified processing function for all roll detection
     self:ProcessPotentialRoll(message, nil, "SYSTEM")
 end
 
@@ -924,6 +908,13 @@ function DRE:ADDON_LOADED(event, addonName)
     if addonName == "DeathRollEnhancer" then
         self:UnregisterEvent("ADDON_LOADED")
     end
+end
+
+-- Handle target change to update button text
+function DRE:PLAYER_TARGET_CHANGED(event)
+    self:UpdateChallengeButtonText()
+    -- Also check for recent rolls from the new target
+    self:CheckRecentRollsForChallenge()
 end
 
 -- Additional event handlers to catch rolls
@@ -952,38 +943,144 @@ function DRE:ProcessPotentialRoll(message, sender, eventType)
     if playerName and roll and maxRoll then
         roll = tonumber(roll)
         maxRoll = tonumber(maxRoll)
+        
+        -- Handle "You" as player name for self-rolls
+        if playerName == "You" then
+            playerName = UnitName("player")
+        end
+        
         self:DebugPrint("Detected roll via " .. eventType .. ": " .. playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
         
         self:HandleDetectedRoll(playerName, roll, maxRoll)
+    else
+        self:DebugPrint("Failed to parse roll from message: '" .. (message or "nil") .. "'")
     end
 end
+
+-- Store a recent roll for later challenge detection
+function DRE:StoreRecentRoll(playerName, roll, maxRoll)
+    local currentTime = GetTime()
+    
+    -- Clean up old rolls first
+    self:CleanupOldRolls(currentTime)
+    
+    -- Store the new roll
+    local rollData = {
+        playerName = playerName,
+        roll = roll,
+        maxRoll = maxRoll,
+        timestamp = currentTime
+    }
+    
+    table.insert(self.recentRolls, rollData)
+    
+    -- Limit the number of stored rolls
+    while #self.recentRolls > self.maxRecentRolls do
+        table.remove(self.recentRolls, 1)
+    end
+    
+    self:DebugPrint("Stored recent roll: " .. playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
+    
+    -- Update button text dynamically when new rolls are detected
+    self:UpdateChallengeButtonText()
+end
+
+-- Clean up rolls older than the time window
+function DRE:CleanupOldRolls(currentTime)
+    local cutoffTime = currentTime - self.recentRollTimeWindow
+    
+    for i = #self.recentRolls, 1, -1 do
+        if self.recentRolls[i].timestamp < cutoffTime then
+            table.remove(self.recentRolls, i)
+        end
+    end
+end
+
+-- Check recent rolls for a challenge from the current target
+function DRE:CheckRecentRollsForChallenge()
+    local currentTarget = UnitName("target")
+    if not currentTarget then
+        self:DebugPrint("CheckRecentRollsForChallenge: No target selected")
+        return
+    end
+    
+    -- Check if UI is open and on the right tab
+    local uiOpen = (self.UI and self.UI.mainWindow and self.UI.mainWindow.frame and self.UI.mainWindow.frame:IsVisible())
+    if not uiOpen then
+        self:DebugPrint("CheckRecentRollsForChallenge: UI not open")
+        return
+    end
+    
+    local onCorrectTab = (self.UI.currentTab == "deathroll")
+    if not onCorrectTab then
+        self:DebugPrint("CheckRecentRollsForChallenge: Not on DeathRoll tab")
+        return
+    end
+    
+    self:DebugPrint("CheckRecentRollsForChallenge: Checking for recent roll from " .. currentTarget)
+    
+    -- Clean up old rolls first
+    self:CleanupOldRolls(GetTime())
+    
+    -- Look for the most recent roll from the current target
+    for i = #self.recentRolls, 1, -1 do
+        local rollData = self.recentRolls[i]
+        if rollData.playerName == currentTarget then
+            self:DebugPrint("Found recent roll from target: " .. currentTarget .. " rolled " .. rollData.roll .. " (1-" .. rollData.maxRoll .. ")")
+            self:ShowChallengeNotification(currentTarget, rollData.roll, rollData.maxRoll)
+            return
+        end
+    end
+    
+    self:DebugPrint("No recent roll found from " .. currentTarget)
+end
+
+-- Show challenge notification in the UI
+function DRE:ShowChallengeNotification(playerName, roll, maxRoll)
+    self:DebugPrint("ShowChallengeNotification: " .. playerName .. " challenges you to DeathRoll 1-" .. maxRoll)
+    
+    -- Only show notification if UI is open and on deathroll tab
+    if not (self.UI and self.UI.mainWindow and self.UI.mainWindow.frame and self.UI.mainWindow.frame:IsVisible()) then
+        self:DebugPrint("UI not open, cannot show challenge notification")
+        return
+    end
+    
+    if self.UI.currentTab ~= "deathroll" then
+        self:DebugPrint("Not on deathroll tab, cannot show challenge notification")
+        return
+    end
+    
+    -- Don't show if we already have an active game
+    if self.gameState and self.gameState.isActive then
+        self:DebugPrint("Game already active, not showing challenge notification")
+        return
+    end
+    
+    -- Store the challenge details in UI namespace (consistent with existing code)
+    if not self.UI then
+        self.UI = {}
+    end
+    self.UI.incomingChallenge = {
+        player = playerName,
+        roll = roll,
+        maxRoll = maxRoll
+    }
+    
+    -- Update the UI to show the challenge notification
+end
+
 
 -- Handle detected roll from any event source
 function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
     self:DebugPrint("HandleDetectedRoll called: player=" .. (playerName or "nil") .. ", roll=" .. (roll or "nil") .. ", maxRoll=" .. (maxRoll or "nil"))
     
-    -- Handle fallback mode (watching for challenge acceptance)
-    if self.fallbackChallenge then
-        if playerName == self.fallbackChallenge.target then
-            local expectedRoll = self.fallbackChallenge.roll
-            
-            if maxRoll == expectedRoll then
-                self:ChatPrint(playerName .. " accepted! They rolled " .. roll .. " (1-" .. expectedRoll .. ")")
-                
-                if roll == 1 then
-                    self:ChatPrint(playerName .. " rolled 1 and lost! You won!")
-                    self:HandleGameEnd(playerName, "WIN", self.fallbackChallenge.wager, expectedRoll)
-                else
-                    self:ChatPrint("Challenge accepted! Now you roll 1-" .. roll)
-                    self:StartActualGame(playerName, expectedRoll, self.fallbackChallenge.wager, roll)
-                end
-                self:StopFallbackMode()
-                return
-            end
-        end
+    -- Store this roll in recent rolls (unless it's our own roll)
+    local myName = UnitName("player")
+    if playerName ~= myName then
+        self:StoreRecentRoll(playerName, roll, maxRoll)
     end
     
-    -- Handle active game rolls
+    -- Handle active game rolls first (highest priority)
     if self.gameState and self.gameState.isActive then
         local myName = UnitName("player")
         self:DebugPrint("Game active - checking if roll is relevant (player: " .. myName .. ", target: " .. (self.gameState.target or "nil") .. ")")
@@ -996,10 +1093,124 @@ function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
         else
             self:DebugPrint("Roll not relevant - player: " .. playerName .. ", maxRoll: " .. maxRoll .. ", currentRoll: " .. (self.gameState.currentRoll or "nil"))
         end
+        return -- Don't process further if game is active
+    end
+    
+    -- No active game - check for challenges
+    self:DebugPrint("No active game - checking for challenges")
+    
+    -- Check if this roll is from someone we have targeted (they're challenging us)
+    local currentTarget = UnitName("target")
+    if currentTarget == playerName then
+        self:DebugPrint("Roll detected from our current target - checking for challenge notification")
+        self:CheckTargetedPlayerChallenge(playerName, roll, maxRoll)
     else
-        self:DebugPrint("No active game state")
+        self:DebugPrint("Roll from " .. playerName .. " but our target is " .. tostring(currentTarget))
+        -- Only run auto-challenge if this isn't from our target (to avoid conflicts)
+        self:CheckUIAutoChallenge(playerName, roll, maxRoll)
     end
 end
+
+-- Check if targeted player rolled and show challenge notification
+function DRE:CheckTargetedPlayerChallenge(playerName, roll, maxRoll)
+    self:DebugPrint("CheckTargetedPlayerChallenge: " .. playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
+    
+    -- Only show if UI is open and we have them targeted
+    local uiOpen = (self.UI and self.UI.mainWindow and self.UI.mainWindow.frame and self.UI.mainWindow.frame:IsVisible())
+    self:DebugPrint("UI Open: " .. tostring(uiOpen))
+    if not uiOpen then
+        return -- UI not open
+    end
+    
+    local onCorrectTab = (self.UI.currentTab == "deathroll")
+    self:DebugPrint("On DeathRoll tab: " .. tostring(onCorrectTab))
+    if not onCorrectTab then
+        return -- Not on the right tab
+    end
+    
+    local currentTarget = UnitName("target")
+    local isTargeted = (currentTarget and currentTarget == playerName)
+    self:DebugPrint("Current target: " .. tostring(currentTarget) .. ", Roll from target: " .. tostring(isTargeted))
+    if not isTargeted then
+        return -- This player is not our current target
+    end
+    
+    local gameActive = (self.gameState and self.gameState.isActive)
+    self:DebugPrint("Game already active: " .. tostring(gameActive))
+    if gameActive then
+        return -- Already in a game
+    end
+    
+    self:DebugPrint("All conditions met - showing challenge notification!")
+    -- Show challenge notification in the UI
+    self:ShowChallengeNotification(playerName, roll, maxRoll)
+end
+
+-- Show challenge notification with Accept/Deny buttons
+function DRE:ShowChallengeNotification(playerName, roll, maxRoll)
+    if not self.UI or not self.UI.mainWindow then
+        return
+    end
+    
+    -- Store the challenge data
+    self.UI.incomingChallenge = {
+        player = playerName,
+        roll = roll,
+        maxRoll = maxRoll,
+        timestamp = GetTime()
+    }
+    
+    -- Update the UI to show the challenge
+end
+
+-- Update UI to show incoming challenge notification
+
+-- Check if UI is open and auto-start challenge when target rolls
+function DRE:CheckUIAutoChallenge(playerName, roll, maxRoll)
+    self:DebugPrint("CheckUIAutoChallenge called: player=" .. playerName .. ", roll=" .. roll .. ", maxRoll=" .. maxRoll)
+    
+    -- Check if DeathRoll UI is open and visible
+    local uiOpen = (self.UI and self.UI.mainWindow and self.UI.mainWindow.frame and self.UI.mainWindow.frame:IsVisible())
+    self:DebugPrint("UI Open: " .. tostring(uiOpen))
+    if not uiOpen then
+        return -- UI not open
+    end
+    
+    -- Check if we're on the deathroll tab
+    local onCorrectTab = (self.UI.currentTab == "deathroll")
+    self:DebugPrint("On DeathRoll tab: " .. tostring(onCorrectTab) .. " (current: " .. tostring(self.UI.currentTab) .. ")")
+    if not onCorrectTab then
+        return -- Not on the right tab
+    end
+    
+    -- Check if this player is currently our target
+    local currentTarget = UnitName("target")
+    local isCurrentTarget = (currentTarget and currentTarget == playerName)
+    self:DebugPrint("Current target: " .. tostring(currentTarget) .. ", Is target: " .. tostring(isCurrentTarget))
+    if not isCurrentTarget then
+        return -- Player is not our current target
+    end
+    
+    -- Check if we're already in a game
+    local gameActive = (self.gameState and self.gameState.isActive)
+    self:DebugPrint("Game active: " .. tostring(gameActive))
+    if gameActive then
+        return -- Already in a game
+    end
+    
+    -- Auto-fill the roll field in UI and start challenge
+    self:DebugPrint("All conditions met - starting auto-challenge!")
+    if self.UI.rollEdit then
+        self.UI.rollEdit:SetText(tostring(maxRoll))
+        self:ChatPrint("Auto-detected " .. playerName .. "'s roll (" .. maxRoll .. ") - starting challenge!")
+        
+        -- Immediately start the game with the detected roll
+        self:StartActualGame(currentTarget, maxRoll, 0, maxRoll)
+    else
+        self:DebugPrint("ERROR: UI.rollEdit not found!")
+    end
+end
+
 
 -- Handle whisper messages for spicy duels and fallback challenges
 function DRE:CHAT_MSG_WHISPER(event, message, playerName, languageName, channelName, playerName2, specialFlags, zoneChannelID, channelIndex, channelBaseName, unused, lineID, guid, bnSenderID, isMobile, isSubtitle, hideSenderInLetterbox, supressRaidIcons)
@@ -1028,163 +1239,102 @@ function DRE:CHAT_MSG_WHISPER(event, message, playerName, languageName, channelN
 end
 
 -- Handle addon messages for inter-addon communication
-function DRE:CHAT_MSG_ADDON(event, prefix, message, channel, sender)
-    if prefix ~= "DeathRollEnh" then
-        return
+
+-- Scan recent chat for ANY roll from debug buffer (not just target's)
+function DRE:FindRecentTargetRoll(targetName)
+    if not self.debugChatBuffer then return nil end
+    
+    -- Search through recent debug buffer messages (stored in reverse order)
+    for i = #self.debugChatBuffer, 1, -1 do
+        local entry = self.debugChatBuffer[i]
+        if entry and entry:find("CHAT_MSG_SYSTEM:") then
+            -- Extract the actual message from debug format: "[timestamp] CHAT_MSG_SYSTEM: message"
+            local message = entry:match("CHAT_MSG_SYSTEM: (.+)$")
+            if message then
+                -- Look for roll patterns: "PlayerName rolls 1-100 (42)" or "You roll 1-100 (42)"
+                local playerName, maxRoll, rollResult = message:match("(%S+) rolls? 1%-(%d+) %((%d+)%)")
+                
+                if playerName and maxRoll and rollResult then
+                    -- Convert "You" to actual player name
+                    if playerName == "You" then
+                        playerName = UnitName("player")
+                    end
+                    
+                    -- Return any recent roll, not just from target
+                    -- This allows detection of your own rolls when targeting someone else
+                    return {
+                        player = playerName,
+                        roll = tonumber(rollResult),
+                        maxRoll = tonumber(maxRoll),
+                        message = message
+                    }
+                end
+            end
+        end
     end
     
-    -- Parse addon message
-    local msgType, data = message:match("^([^:]+):(.*)$")
-    if not msgType then
-        return
-    end
-    
-    if msgType == "CHALLENGE" then
-        self:HandleAddonChallenge(sender, data, channel)
-    elseif msgType == "PING" then
-        self:HandleAddonPing(sender, data, channel)
-    elseif msgType == "PONG" then
-        self:HandleAddonPong(sender, data, channel)
-    elseif msgType == "ACCEPT" then
-        self:HandleAddonAccept(sender, data, channel)
-    elseif msgType == "DECLINE" then
-        self:HandleAddonDecline(sender, data, channel)
-    elseif msgType == "SPICYDUEL" then
-        self:HandleSpicyDuelMessage(sender, data)
-    end
+    return nil
 end
 
--- Send addon message to a player
-function DRE:SendAddonMessage(msgType, data, target)
-    local message = msgType .. ":" .. (data or "")
-    local success = C_ChatInfo.SendAddonMessage("DeathRollEnh", message, "WHISPER", target)
-    return success
-end
-
--- Handle addon challenge received
-function DRE:HandleAddonChallenge(sender, data, channel)
-    local roll, wager, challengeText = data:match("^(%d+):(%d+):(.*)$")
-    if roll and wager and challengeText then
-        self:ShowChallengeDialog(sender, tonumber(roll), tonumber(wager), challengeText)
-    end
-end
-
--- Handle addon ping (for detection)
-function DRE:HandleAddonPing(sender, data, channel)
-    -- Respond with pong to confirm we have the addon
-    self:SendAddonMessage("PONG", self.version, sender)
-end
-
--- Handle addon pong (confirms they have addon)
-function DRE:HandleAddonPong(sender, version, channel)
-    -- Mark player as having addon
-    if self.UI and self.UI.pendingChallenge and self.UI.pendingChallenge.target == sender then
-        self.UI.pendingChallenge.hasAddon = true
-        self:DebugPrint(sender .. " has DeathRoll Enhancer (v" .. version .. ") - sending enhanced challenge...")
+-- Update button text with current target and check for recent rolls
+function DRE:UpdateChallengeButtonText()
+    if self.UI and self.UI.gameButton and not (self.gameState and self.gameState.isActive) then
+        local targetName = UnitName("target")
         
-        -- Send addon challenge message with structured data
-        local challenge = self.UI.pendingChallenge
-        local challengeText = challenge.wager > 0 and
-            ("DeathRoll challenge: " .. challenge.roll .. " starting roll for " .. self:FormatGold(challenge.wager)) or
-            ("DeathRoll challenge: " .. challenge.roll .. " starting roll (no wager)")
+        if not targetName then
+            -- No target selected
+            self:SafeUIUpdate(self.UI.gameButton, function()
+                self.UI.gameButton:SetText("Challenge Player to DeathRoll!")
+            end, "gameButton")
+            -- Clear the roll input when no target
+            if self.UI.rollEdit then
+                self.UI.rollEdit:SetText("")
+            end
+            return
+        end
+        
+        -- Check for recent roll from the current target
+        local recentRoll = nil
+        self:CleanupOldRolls(GetTime())
+        
+        for i = #self.recentRolls, 1, -1 do
+            local rollData = self.recentRolls[i]
+            if rollData.playerName == targetName then
+                recentRoll = rollData
+                break
+            end
+        end
+        
+        if recentRoll then
+            -- Target has done a roll - show challenge button
+            local buttonText = targetName .. " rolled " .. recentRoll.roll .. " from " .. recentRoll.maxRoll .. " - Accept challenge!"
+            self:SafeUIUpdate(self.UI.gameButton, function()
+                self.UI.gameButton:SetText(buttonText)
+            end, "gameButton")
             
-        self:SendAddonMessage("CHALLENGE", 
-            challenge.roll .. ":" .. challenge.wager .. ":" .. challengeText, 
-            sender)
-    end
-end
-
--- Check if addon response received, otherwise assume no addon
-function DRE:CheckAddonResponse(target)
-    if not self.UI or not self.UI.pendingChallenge or self.UI.pendingChallenge.target ~= target then
-        return
-    end
-    
-    local challenge = self.UI.pendingChallenge
-    
-    if challenge.hasAddon then
-        -- They have the addon, enhanced challenge already sent
-        self:ChatPrint("Waiting for " .. target .. "'s response to enhanced challenge...")
-    else
-        -- No addon detected, send natural challenge and watch for rolls
-        self:DebugPrint(target .. " doesn't have the addon - sending natural challenge...")
-        
-        -- Send natural challenge message
-        local message
-        if challenge.wager > 0 then
-            local wagerText = self:FormatGold(challenge.wager)
-            message = "I challenge you to a DeathRoll! Starting at " .. challenge.roll .. " for " .. wagerText .. "!"
+            -- Set the roll input to their ROLL RESULT (not maxRoll)
+            if self.UI.rollEdit then
+                self.UI.rollEdit:SetText(tostring(recentRoll.roll))
+            end
+            
+            -- Store the recent roll data for button click handling
+            self.UI.recentTargetRoll = recentRoll
+            
+            self:DebugPrint("Button updated for challenge from " .. targetName .. " with roll " .. recentRoll.roll .. " (1-" .. recentRoll.maxRoll .. ")")
         else
-            message = "I challenge you to a DeathRoll! Starting at " .. challenge.roll .. " (no wager)"
+            -- No qualifying recent roll - show generic challenge button
+            self:SafeUIUpdate(self.UI.gameButton, function()
+                self.UI.gameButton:SetText("Challenge " .. targetName .. " to DeathRoll!")
+            end, "gameButton")
+            
+            -- Clear the roll input for normal challenges
+            if self.UI.rollEdit then
+                self.UI.rollEdit:SetText("")
+            end
+            
+            -- Clear any stored roll data
+            self.UI.recentTargetRoll = nil
         end
-        
-        SendChatMessage(message, "WHISPER", nil, target)
-        self:StartFallbackMode(challenge)
-    end
-end
-
--- Start fallback mode for non-addon users  
-function DRE:StartFallbackMode(challenge)
-    self:DebugPrint("Fallback mode: Watching " .. challenge.target .. " for /roll " .. challenge.roll)
-    
-    -- Store the fallback challenge for monitoring
-    self.fallbackChallenge = challenge
-    self.fallbackChallenge.startTime = GetTime()
-    self.fallbackChallenge.timeout = 60 -- 60 second timeout
-    
-    -- NOTE: Natural whisper message is already sent by CheckAddonResponse, no need to send again
-    
-    -- Register for system messages to watch for rolls
-    if not self.watchingFallbackRolls then
-        self:RegisterEvent("CHAT_MSG_SYSTEM")
-        self.watchingFallbackRolls = true
-    end
-    
-    -- Start timeout timer
-    C_Timer.After(self.fallbackChallenge.timeout, function()
-        if self.fallbackChallenge and self.fallbackChallenge.target == challenge.target then
-            self:ChatPrint("Challenge to " .. challenge.target .. " timed out (no response)")
-            self:StopFallbackMode()
-        end
-    end)
-end
-
--- Stop fallback mode
-function DRE:StopFallbackMode()
-    self.fallbackChallenge = nil
-    if self.watchingFallbackRolls then
-        self:UnregisterEvent("CHAT_MSG_SYSTEM")
-        self.watchingFallbackRolls = false
-    end
-end
-
--- Handle system messages for fallback roll watching
--- NOTE: This function was merged with the primary CHAT_MSG_SYSTEM handler above to avoid conflicts
-
--- Handle addon accept response
-function DRE:HandleAddonAccept(sender, data, channel)
-    local roll, wager = data:match("^(%d+):(%d+)$")
-    if roll and wager then
-        roll = tonumber(roll)
-        wager = tonumber(wager)
-        self:ChatPrint(sender .. " accepted your DeathRoll challenge!")
-        
-        -- Start the actual game
-        self:StartActualGame(sender, roll, wager)
-    end
-end
-
--- Handle addon decline response  
-function DRE:HandleAddonDecline(sender, data, channel)
-    self:ChatPrint(sender .. " declined your DeathRoll challenge.")
-    
-    -- Clear challenge state
-    if self.UI and self.UI.pendingChallenge then
-        self.UI.pendingChallenge = nil
-    end
-    
-    if self.UI and self.UI.statusLabel then
-        self.UI.statusLabel:SetText("Ready to roll!")
     end
 end
 
@@ -1282,7 +1432,7 @@ function DRE:DebugPrint(message)
     self:AddToDebugBuffer("DEBUG", message)
     
     -- Print to chat if enabled
-    if true or (self.db and self.db.profile.gameplay.debugMessages) then
+    if (self.db and self.db.profile.gameplay.debugMessages) then
         self:Print("[DEBUG] " .. message)
     end
 end
@@ -1356,34 +1506,19 @@ function DRE:StartDeathRoll(target, roll, wager)
         end
     end
     
-    self:ChatPrint("Challenging " .. target .. " to a DeathRoll...")
+    self:ChatPrint("Challenging " .. target .. " to DeathRoll - rolling now!")
     
-    -- Start the hybrid challenge process (addon detection + challenge)
-    self:SendChallenge(challenge)
-end
-
--- Send challenge using hybrid detection system
-function DRE:SendChallenge(challenge)
-    -- Store challenge data for timeout handling
-    if self.UI then
-        self.UI.pendingChallenge = {
-            target = challenge.target,
-            roll = challenge.roll,
-            wager = challenge.wager,
-            timestamp = GetTime(),
-            hasAddon = false
-        }
-    end
+    -- Start the game and immediately perform our roll
+    self:StartActualGame(target, roll, wager, roll)
     
-    -- First, try to detect if target has addon by sending ping
-    self:SendAddonMessage("PING", self.version, challenge.target)
-    self:DebugPrint("Checking if " .. challenge.target .. " has DeathRoll Enhancer addon...")
-    
-    -- Set up 3-second timeout to check if they have addon
-    C_Timer.After(3, function()
-        self:CheckAddonResponse(challenge.target)
+    -- Automatically perform our first roll
+    C_Timer.After(0.1, function()
+        if self.gameState and self.gameState.isActive then
+            self:PerformRoll()
+        end
     end)
 end
+
 
 -- Create reset confirmation popup
 StaticPopupDialogs["DEATHROLL_RESET_CONFIRM"] = {
@@ -1424,13 +1559,6 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
     
     self:DebugPrint("Game state initialized - isActive: " .. tostring(self.gameState.isActive) .. ", currentRoll: " .. self.gameState.currentRoll)
     
-    -- Clear fallback challenge since we're starting the actual game
-    self.fallbackChallenge = nil
-    
-    -- Clear pending challenge
-    if self.UI and self.UI.pendingChallenge then
-        self.UI.pendingChallenge = nil
-    end
     
     self:ChatPrint("DeathRoll game started with " .. target .. "!")
     
@@ -1449,10 +1577,7 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
     end
     
     -- Ensure system messages are registered to track rolls
-    if not self.watchingFallbackRolls then
-        self:RegisterEvent("CHAT_MSG_SYSTEM")
-        self.watchingFallbackRolls = true
-    end
+    self:RegisterEvent("CHAT_MSG_SYSTEM")
 end
 
 -- Handle game end
@@ -1488,19 +1613,30 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll)
     
     -- Clean up game state
     self.gameState = nil
-    self.fallbackChallenge = nil
     
-    -- Clean up event watching
-    if self.watchingFallbackRolls then
-        self:UnregisterEvent("CHAT_MSG_SYSTEM") 
-        self.watchingFallbackRolls = false
-    end
-    
+    -- Clear recent roll data so button returns to normal after game
     if self.UI then
-        self.UI.pendingChallenge = nil
+        self.UI.recentTargetRoll = nil
         self.UI.isGameActive = false
         self.UI.currentTarget = nil
+        
+        -- Clear roll and wager input fields
+        if self.UI.rollEdit then
+            self.UI.rollEdit:SetText("")
+        end
+        if self.UI.goldEdit then
+            self.UI.goldEdit:SetText("")
+        end
+        if self.UI.silverEdit then
+            self.UI.silverEdit:SetText("")
+        end
+        if self.UI.copperEdit then
+            self.UI.copperEdit:SetText("")
+        end
     end
+    
+    -- Update button text to clear any challenge text
+    self:UpdateChallengeButtonText()
     
     -- Update UI state to game over
     if self.UpdateGameUIState then
@@ -1655,14 +1791,8 @@ function DRE:HandleSpicyRoll(stance)
     self.spicyDuel.myStance = stance
     self.spicyDuel.myRoll = roll
     
-    -- Send stance and roll to opponent via addon message or whisper
-    local message = "SPICY_STANCE:" .. stance .. ":" .. roll
-    if self:SendAddonMessage("SPICYDUEL", message, self.spicyDuel.target) then
-        self:DebugPrint("Sent spicy stance via addon message")
-    else
-        -- Fallback to whisper
-        SendChatMessage("My stance: " .. stance .. " (roll: " .. roll .. ")", "WHISPER", nil, self.spicyDuel.target)
-    end
+    -- Send stance and roll to opponent via whisper
+    SendChatMessage("My stance: " .. stance .. " (roll: " .. roll .. ")", "WHISPER", nil, self.spicyDuel.target)
     
     local stanceName = stance == "attack" and "Attack" or stance == "defend" and "Defend" or "Gamble"
     self:UpdateSpicyGameState("Round " .. self.spicyDuel.round .. ": You chose " .. stanceName .. " and rolled " .. roll .. ". Waiting for opponent...")
@@ -1864,18 +1994,17 @@ function DRE:UpdateGameUIState(state)
     end
         
         if state == "WAITING" then
+            -- Get current target name
+            local targetName = UnitName("target")
+            local buttonText = targetName and ("Challenge " .. targetName .. " to DeathRoll!") or "Challenge Player to DeathRoll!"
+            
             self:SafeUIUpdate(self.UI.gameButton, function()
-                self.UI.gameButton:SetText("Challenge to DeathRoll!")
+                self.UI.gameButton:SetText(buttonText)
                 self.UI.gameButton:SetDisabled(false)
             end, "gameButton")
             
-            self:UpdateRollHistoryStatus("Ready to start! Target someone and click Challenge to DeathRoll!", true)
+            self:UpdateRollHistoryStatus("Ready to start! Target someone and click Challenge!", true)
             
-        elseif state == "WAITING_FOR_ACCEPTANCE" then
-            local target = self.UI.currentTarget or "player"
-            self.UI.gameButton:SetText("Waiting for " .. target .. " to accept...")
-            self.UI.gameButton:SetDisabled(true)
-            self:UpdateRollHistoryStatus("Challenge sent to " .. target .. "\nWaiting for acceptance...", true)
             
         elseif state == "ROLLING" then
             local rollRange = self.gameState and self.gameState.currentRoll or 100
@@ -1902,7 +2031,7 @@ function DRE:UpdateGameUIState(state)
             -- Don't update history status - the roll result will appear in history soon
             
         elseif state == "GAME_OVER" then
-            self.UI.gameButton:SetText("Challenge to DeathRoll!")
+            self.UI.gameButton:SetText("Challenge Player to DeathRoll!")
             self.UI.gameButton:SetDisabled(false)
             -- Don't update roll history - let the win/loss message persist
             -- Don't auto-reset to WAITING - let the user manually start a new game

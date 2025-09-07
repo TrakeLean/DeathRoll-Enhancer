@@ -1,46 +1,121 @@
-# DeathRoll Enhancer
+# DeathRoll Enhancer v2.1.2 - Bintes Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
+![Version](https://img.shields.io/badge/Version-2.1.2-brightgreen)
+![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
-Transform your DeathRoll experience in World of Warcraft with **DeathRoll Enhancer**. This addon adds a sleek UI for DeathRoll games, making it easy to initiate games, track rolls, store win/loss records, and add an extra layer of excitement with emote reactions. Now featuring **win/loss tracking** against specific opponents!
+**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, and comprehensive game management. Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
 
-## Features
+## 🎲 Core Features
 
-- **User-Friendly UI:** Initiate DeathRoll games with a simple command (/deathroll).
-- **Targeted Roll Tracking:** Only rolls from the dueling player are tracked, ensuring fairness.
-- **Win/Loss Tracking:** Track your DeathRoll history against other players and view your win/loss records.
-- **Emote Reactions:** Enjoy emote reactions for both winning and losing.
-- **Roll History:** Easily view your DeathRoll history for any player with the `/deathrollhistory` command.
+### **Professional Interface**
+- **Modern AceGUI design** with clean, scalable interface
+- **Resizable & moveable window** with persistent positioning
+- **Tabbed interface** - DeathRoll, Statistics, and History tabs
+- **Smart challenge detection** - Automatically detects opponent rolls and shows "PlayerName rolled 56 from 1000 - Accept challenge!"
 
-## What's New
+### **Advanced Statistics & Tracking**
+- **Comprehensive player history** - Win/loss records per opponent
+- **Gold tracking** - Track winnings, losses, and net profit with detailed breakdowns
+- **Streak tracking** - Current and best winning/losing streaks
+- **Fun statistics** - Most frequent opponent, biggest win/loss, win rates, and more
+- **Recent game history** - View last 15 games with each player
 
-- **Win/Loss Tracking:** Your results against each player are now saved and can be viewed at any time.
-- **Persistent Database:** Win/loss records and initial roll values are stored between sessions using WoW's SavedVariables system.
-- **Roll Validation:** Only rolls from the specific dueling player are accepted, preventing any interference from others.
-- **History Viewing:** Use `/deathrollhistory [player]` to view your win/loss record against any player. If no name is provided, it will show the history for your current target.
+### **Smart Game Management**
+- **Automatic roll detection** - Recognizes opponent rolls in chat
+- **Challenge acceptance** - One-click accept with pre-filled roll values  
+- **Wager system** - Gold/Silver/Copper inputs with smart calculations
+- **Self-duel mode** - Practice against yourself
+- **Cross-version compatibility** - Works on Classic Era, TBC, Wrath, Cata, and Retail
 
-## How to Use
+## 🚀 Quick Start
 
-1. Type `/deathroll` to open the DeathRoll UI.
-2. Input the desired roll number.
-3. Target a player and initiate the roll. The target's roll result will be displayed, and you can proceed with your roll.
-4. Emote reactions will automatically trigger based on the outcome.
-5. To check your win/loss history against a player, type `/deathrollhistory [player]`. If no player is provided, the history for your current target will be shown.
+1. Type `/dr` or `/deathroll` to open the interface
+2. Target your opponent (or yourself for practice)
+3. Set your starting roll and optional wager
+4. Click "Challenge to DeathRoll!" and start playing
 
-## Emote Reactions
+## 📋 Commands
 
-- **Winning:** Choose from a list of happy emotes like CHEER, LAUGH, and VICTORY.
-- **Losing:** Express yourself with sad emotes such as CRY, SIGH, and SURRENDER.
+- **`/dr`** or **`/deathroll`** - Open main interface
+- **`/dr config`** - Open configuration panel  
+- **`/drh [player]`** - View history with specific player
 
-## Example
+## 🎨 Interface Navigation
 
-After initiating a DeathRoll game with a player:
-- If you win, a happy emote will be triggered (like cheering).
-- If you lose, a sad emote will play (like crying).
-- Your result (win/loss) will be saved in your history, and you can view it anytime with `/deathrollhistory`.
+- **DeathRoll Tab** - Start games and view live progress
+- **Statistics Tab** - Review your performance and fun stats
+- **History Tab** - Browse detailed game history per player
+- **Minimap Icon** - Quick access and customizable positioning
 
-## Credits
+## ⚙️ Configuration Options
 
-DeathRoll Enhancer is developed by EgyptianSheikh.
+Access via `/dr config` for extensive customization:
+- **UI scaling and positioning** with reset functions
+- **Auto-emote settings** for win/loss reactions  
+- **Sound notifications** for game events
+- **Fun statistics toggles** - Show only the stats you want
+- **Minimap icon** show/hide and positioning
+- **Font selection** and interface theming
+
+## 🔧 Technical Details
+
+- **Built with Ace3** for rock-solid stability and performance
+- **LibSharedMedia integration** for consistent UI theming
+- **Persistent data storage** with automatic backup/restore
+- **Debug system** for troubleshooting (can be enabled in advanced settings)
+- **Memory efficient** with smart data management
+
+## 🆕 What's New in v2.1.2 - Bintes Edition
+
+### Bug Fixes
+- Fixed post-game challenge button displaying opponent's last roll after game completion
+- Challenge button now properly returns to normal state when games end
+- Fixed addon loading order issues that caused method errors
+- Improved game state cleanup to prevent UI confusion after duels
+
+### Previous Updates (v2.1.1)
+- Fixed challenge acceptance display to show actual roll value and original range
+- Enhanced UI status text to show "Bintes Edition"
+- Improved challenge notification clarity
+
+## 🎭 Emote System
+
+- **Winning reactions** - CHEER, LAUGH, VICTORY, and more
+- **Losing reactions** - CRY, SIGH, SURRENDER, and others
+- **Fully customizable** - Enable/disable or choose specific emotes
+- **Context-aware** - Different emotes for different situations
+
+## 💰 Advanced Gold Tracking
+
+- **Real-time calculations** - See your profit/loss as you play
+- **Per-player breakdowns** - Know exactly how much you've won/lost against each opponent  
+- **Streak monitoring** - Track hot and cold streaks
+- **Historical analysis** - View trends over time
+
+## 📊 Statistics Dashboard
+
+View detailed analytics including:
+- Total games played and win percentage
+- Gold won, lost, and net profit
+- Current and best streaks
+- Most/least profitable opponents
+- Biggest single wins and losses
+- Average wager amounts
+
+## 🛠️ Developer Information
+
+**Author:** EgyptianSheikh  
+**Framework:** Ace3  
+**Dependencies:** LibSharedMedia-3.0, LibDBIcon-1.0  
+**License:** GPL v3  
+
+## 📖 Version History
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history and all changes.
+
+---
+
+*Experience DeathRoll like never before with professional-grade tracking, statistics, and management tools!*

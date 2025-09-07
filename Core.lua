@@ -20,7 +20,7 @@ DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
-DRE.version = "2.1.1"
+DRE.version = "2.1.2"
 DRE.author = "EgyptianSheikh"
 
 -- Import libraries with safety checks
@@ -1619,6 +1619,16 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll)
         self.UI.recentTargetRoll = nil
         self.UI.isGameActive = false
         self.UI.currentTarget = nil
+        
+        -- Remove recent rolls from the game opponent to prevent challenge button confusion
+        if opponent then
+            for i = #self.recentRolls, 1, -1 do
+                local rollData = self.recentRolls[i]
+                if rollData.playerName == opponent then
+                    table.remove(self.recentRolls, i)
+                end
+            end
+        end
         
         -- Clear roll and wager input fields
         if self.UI.rollEdit then

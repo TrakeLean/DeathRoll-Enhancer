@@ -1,5 +1,19 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.1.2 - Bintes Edition
+
+### Bug Fixes
+- Fixed post-game challenge button displaying opponent's last roll after game completion
+- Challenge button now properly returns to normal state when games end
+- Improved game state cleanup to prevent UI confusion after duels
+
+### Technical Improvements  
+- Fixed addon loading order issues that caused `AddGameToHistory` method not found errors
+- Updated all module files to use proper Ace3 addon registration instead of global namespace access
+- Enhanced game end cleanup to clear opponent roll data from recent rolls array
+
+---
+
 ## Version 2.1.1 - Bintes Edition
 
 ### Bug Fixes

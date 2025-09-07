@@ -2,7 +2,7 @@
 -- AceGUI-based user interface components
 
 local addonName, addonTable = ...
-local DRE = _G.DeathRollEnhancer
+local DRE = LibStub("AceAddon-3.0"):GetAddon("DeathRollEnhancer")
 if not DRE then return end
 
 local AceGUI = LibStub("AceGUI-3.0", true)

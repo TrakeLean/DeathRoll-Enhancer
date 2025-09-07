@@ -9,7 +9,10 @@
       "Bash(git push:*)",
       "WebSearch",
       "Bash(tail:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git pull:*)",
+      "Bash(git merge:*)",
+      "Bash(git fetch:*)"
     ],
     "deny": [],
     "ask": []

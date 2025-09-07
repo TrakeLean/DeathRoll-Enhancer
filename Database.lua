@@ -2,7 +2,7 @@
 -- Database management using AceDB
 
 local addonName, addonTable = ...
-local DRE = _G.DeathRollEnhancer
+local DRE = LibStub("AceAddon-3.0"):GetAddon("DeathRollEnhancer")
 if not DRE then return end
 
 -- Database functions are now handled by AceDB in Core.lua

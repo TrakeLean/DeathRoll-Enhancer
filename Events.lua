@@ -3,7 +3,7 @@
 -- Event handling is centralized in Core.lua
 
 local addonName, addonTable = ...
-local DRE = _G.DeathRollEnhancer
+local DRE = LibStub("AceAddon-3.0"):GetAddon("DeathRollEnhancer")
 if not DRE then return end
 
 -- Chat message patterns for parsing various DeathRoll-related messages

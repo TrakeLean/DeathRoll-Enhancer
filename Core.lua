@@ -20,7 +20,7 @@ DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
-DRE.version = "2.1.2"
+DRE.version = "2.1.3"
 DRE.author = "EgyptianSheikh"
 
 -- Import libraries with safety checks

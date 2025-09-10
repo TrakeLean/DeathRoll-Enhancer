@@ -1,5 +1,21 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.1.3 - Database Fix Edition
+
+### Critical Fix
+- **Added missing Database.lua file** - This critical file was accidentally excluded from the addon distribution
+  - Contains essential database management functions required for saving game history and statistics
+  - Previous downloads from CurseForge were missing this file, causing silent failures in data persistence
+  - All database functionality now works correctly (game history, statistics, gold tracking, etc.)
+  - Users who experienced issues with data not saving should now have full functionality
+
+### Technical Details
+- Database.lua contains helper functions for player history management, statistics calculation, and data export
+- The file was incorrectly excluded due to confusion with user data files
+- SavedVariables system now functions properly for persistent data storage across game sessions
+
+---
+
 ## Version 2.1.2 - Bintes Edition
 
 ### Bug Fixes

@@ -20,7 +20,7 @@ DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
-DRE.version = "2.1.3"
+DRE.version = "2.1.4"
 DRE.author = "EgyptianSheikh"
 
 -- Import libraries with safety checks
@@ -437,12 +437,15 @@ function DRE:SlashCommand(input)
         self:Print("No pending challenge to accept")
     elseif input == "decline" then
         self:Print("No pending challenge to decline")
+    elseif input == "edit" then
+        self:ShowEditGameDialog()
     else
         self:Print("Usage: /dr or /deathroll - Opens the main window")
         self:Print("       /dr config - Opens configuration")
         self:Print("       /dr debug - Show debug chat buffer")
         self:Print("       /dr accept - Accept pending challenge")
         self:Print("       /dr decline - Decline pending challenge")
+        self:Print("       /dr edit - Edit recent game records")
     end
 end
 
@@ -650,6 +653,15 @@ function DRE:SetupOptions()
                             frame:Show()
                         end,
                         order = 14,
+                    },
+                    editGame = {
+                        name = "Edit Game Records",
+                        desc = "Open dialog to edit recent game records",
+                        type = "execute",
+                        func = function() 
+                            self:ShowEditGameDialog()
+                        end,
+                        order = 15,
                     },
                 },
             },
@@ -1520,6 +1532,215 @@ function DRE:StartDeathRoll(target, roll, wager)
 end
 
 
+-- Show dialog to edit recent game records
+function DRE:ShowEditGameDialog()
+    -- Close existing dialog if open
+    if self.editGameFrame then
+        self.editGameFrame:Hide()
+        self.editGameFrame = nil
+    end
+    
+    local recentGames = self:GetRecentGamesForEditing(15)
+    
+    if #recentGames == 0 then
+        self:Print("No recent game records found to edit!")
+        return
+    end
+    
+    -- Create frame
+    local frame = AceGUI:Create("Frame")
+    frame:SetTitle("Edit Game Record")
+    frame:SetLayout("Flow")
+    frame:SetWidth(500)
+    frame:SetHeight(400)
+    
+    -- Store reference for refreshing
+    self.editGameFrame = frame
+    frame:SetCallback("OnClose", function(widget)
+        self.editGameFrame = nil
+        widget:Hide()
+    end)
+    
+    -- Build dropdown options (ensure newest first ordering)
+    local gameList = {}
+    local gameMap = {}
+    
+    -- Debug: Print the order we receive games in
+    self:DebugPrint("Edit dialog game order:")
+    for i, gameData in ipairs(recentGames) do
+        local game = gameData.game
+        self:DebugPrint(string.format("[%d] %s vs %s: %s - %s (timestamp: %s)", 
+            i, UnitName("player") or "You", gameData.playerName, game.result or "Unknown", 
+            game.date or "Unknown Date", tostring(gameData.timestamp or 0)))
+    end
+    
+    for i, gameData in ipairs(recentGames) do
+        local game = gameData.game
+        local myName = UnitName("player") or "You"
+        
+        -- Create display text for dropdown
+        local resultText = game.result or "Unknown"
+        local goldText = ""
+        if game.goldAmount and game.goldAmount > 0 then
+            goldText = " (" .. self:FormatGold(game.goldAmount) .. ")"
+        end
+        
+        local dateText = game.date or "Unknown Date"
+        local displayText = string.format("[%d] %s vs %s: %s%s - %s", 
+            i, myName, gameData.playerName, resultText, goldText, dateText)
+        
+        local key = "game_" .. string.format("%02d", i)  -- Zero-pad to ensure proper sorting
+        gameList[key] = displayText
+        gameMap[key] = gameData
+    end
+    
+    -- Game selection dropdown
+    local gameDropdown = AceGUI:Create("Dropdown")
+    gameDropdown:SetLabel("Select Game to Edit:")
+    gameDropdown:SetList(gameList)
+    gameDropdown:SetWidth(450)
+    frame:AddChild(gameDropdown)
+    
+    -- Container for editing UI (will be created dynamically)
+    local selectedGameGroup = AceGUI:Create("SimpleGroup")
+    selectedGameGroup:SetLayout("Flow")
+    selectedGameGroup:SetFullWidth(true)
+    frame:AddChild(selectedGameGroup)
+    
+    -- Function to create editing UI for selected game
+    local function createEditUI(gameData)
+        selectedGameGroup:ReleaseChildren()
+        
+        if not gameData then return end
+        
+        local game = gameData.game
+        local playerName = gameData.playerName
+        
+        -- Game info header
+        local infoLabel = AceGUI:Create("Label")
+        infoLabel:SetText(string.format("Editing game vs %s from %s:", playerName, game.date or "Unknown Date"))
+        infoLabel:SetFullWidth(true)
+        selectedGameGroup:AddChild(infoLabel)
+        
+        -- Result dropdown
+        local resultDropdown = AceGUI:Create("Dropdown")
+        resultDropdown:SetLabel("Result:")
+        resultDropdown:SetList({win = "Won", lost = "Lost"})
+        resultDropdown:SetValue(game.result == "Won" and "win" or "lost")
+        resultDropdown:SetWidth(150)
+        selectedGameGroup:AddChild(resultDropdown)
+        
+        -- Gold input
+        local goldInput = AceGUI:Create("EditBox")
+        goldInput:SetLabel("Gold:")
+        local currentGold = game.goldAmount or 0
+        local gold = math.floor(currentGold / 10000)
+        goldInput:SetText(tostring(gold))
+        goldInput:SetWidth(80)
+        selectedGameGroup:AddChild(goldInput)
+        
+        -- Silver input  
+        local silverInput = AceGUI:Create("EditBox")
+        silverInput:SetLabel("Silver:")
+        local silver = math.floor((currentGold % 10000) / 100)
+        silverInput:SetText(tostring(silver))
+        silverInput:SetWidth(80)
+        selectedGameGroup:AddChild(silverInput)
+        
+        -- Copper input
+        local copperInput = AceGUI:Create("EditBox")
+        copperInput:SetLabel("Copper:")
+        local copper = currentGold % 100
+        copperInput:SetText(tostring(copper))
+        copperInput:SetWidth(80)
+        selectedGameGroup:AddChild(copperInput)
+        
+        -- Starting roll input
+        local rollInput = AceGUI:Create("EditBox")
+        rollInput:SetLabel("Starting Roll:")
+        rollInput:SetText(tostring(game.startingRoll or 0))
+        rollInput:SetWidth(100)
+        selectedGameGroup:AddChild(rollInput)
+        
+        -- Button container for save and delete buttons
+        local buttonGroup = AceGUI:Create("SimpleGroup")
+        buttonGroup:SetLayout("Flow")
+        buttonGroup:SetFullWidth(true)
+        selectedGameGroup:AddChild(buttonGroup)
+        
+        -- Save button
+        local saveButton = AceGUI:Create("Button")
+        saveButton:SetText("Save Changes")
+        saveButton:SetWidth(150)
+        saveButton:SetCallback("OnClick", function()
+            local newResult = resultDropdown:GetValue() == "win" and "Won" or "Lost"
+            local gold = tonumber(goldInput:GetText()) or 0
+            local silver = tonumber(silverInput:GetText()) or 0
+            local copper = tonumber(copperInput:GetText()) or 0
+            local newGoldAmount = gold * 10000 + silver * 100 + copper
+            local newInitialRoll = tonumber(rollInput:GetText()) or 0
+            
+            local success, message = self:EditGameRecord(playerName, gameData.gameIndex, newResult, newGoldAmount, newInitialRoll)
+            
+            if success then
+                self:Print(message)
+                frame:Hide()
+                -- Update UI if it's open
+                if self.UpdateStatsDisplay then
+                    self:UpdateStatsDisplay()
+                end
+            else
+                self:Print("Failed to update: " .. message)
+            end
+        end)
+        buttonGroup:AddChild(saveButton)
+        
+        -- Delete button
+        local deleteButton = AceGUI:Create("Button")
+        deleteButton:SetText("Delete Game")
+        deleteButton:SetWidth(150)
+        deleteButton:SetCallback("OnClick", function()
+            -- Show confirmation dialog with parameters
+            local popup = StaticPopup_Show("DEATHROLL_DELETE_GAME_CONFIRM")
+            if popup then
+                popup.data = playerName
+                popup.data2 = gameData.gameIndex
+            end
+        end)
+        buttonGroup:AddChild(deleteButton)
+    end
+    
+    -- Update edit UI when dropdown selection changes
+    gameDropdown:SetCallback("OnValueChanged", function(widget, event, key)
+        local selectedGameData = gameMap[key]
+        if selectedGameData then
+            createEditUI(selectedGameData)
+        end
+    end)
+    
+    -- Initialize with first game (newest)
+    if recentGames[1] then
+        local firstKey = "game_01"  -- Match the zero-padded format
+        gameDropdown:SetValue(firstKey)
+        createEditUI(gameMap[firstKey])
+    end
+    
+    frame:Show()
+end
+
+-- Refresh the edit dialog after a game is deleted
+function DRE:RefreshEditDialog()
+    if self.editGameFrame then
+        -- Simply reopen the dialog to refresh the list
+        self.editGameFrame:Hide()
+        self.editGameFrame = nil
+        -- Small delay to ensure proper cleanup
+        C_Timer.After(0.1, function()
+            self:ShowEditGameDialog()
+        end)
+    end
+end
+
 -- Create reset confirmation popup
 StaticPopupDialogs["DEATHROLL_RESET_CONFIRM"] = {
     text = "Are you sure you want to reset ALL DeathRoll data?\n\nThis will permanently delete:\n- All game history\n- All statistics\n- All player records\n\nThis action cannot be undone!",
@@ -1528,6 +1749,37 @@ StaticPopupDialogs["DEATHROLL_RESET_CONFIRM"] = {
     OnAccept = function()
         if DRE and DRE.ResetAllData then
             DRE:ResetAllData()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- Create delete game confirmation popup
+StaticPopupDialogs["DEATHROLL_DELETE_GAME_CONFIRM"] = {
+    text = "Are you sure you want to delete this game record?\n\nThis will permanently remove:\n- The game from your history\n- Associated win/loss and gold statistics\n\nThis action cannot be undone!",
+    button1 = "Yes, Delete Game",
+    button2 = "Cancel",
+    OnAccept = function(self)
+        if DRE and DRE.DeleteGameRecord and self.data and self.data2 then
+            local playerName = self.data
+            local gameIndex = self.data2
+            local success, message = DRE:DeleteGameRecord(playerName, gameIndex)
+            if success then
+                DRE:Print(message)
+                -- Update UI if it's open
+                if DRE.UpdateStatsDisplay then
+                    DRE:UpdateStatsDisplay()
+                end
+                -- Refresh the edit dialog with updated data
+                if DRE.RefreshEditDialog then
+                    DRE:RefreshEditDialog()
+                end
+            else
+                DRE:Print("Failed to delete game: " .. message)
+            end
         end
     end,
     timeout = 0,

@@ -1,5 +1,37 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.1.4 - Bintes EDITion
+
+### New Features
+- **Edit Game Records** - Complete game record editing functionality
+  - Modify win/loss results for any previous game
+  - Edit gold amounts (separate gold/silver/copper inputs) 
+  - Change starting roll values for recorded games
+  - Access via `/dr edit` command or settings menu
+- **Delete Game Records** - Remove unwanted game entries
+  - Safe deletion with confirmation dialog
+  - Automatic statistics recalculation after deletion
+  - Maintains data integrity by updating win/loss counters
+- **Enhanced Game Management Interface**
+  - Professional AceGUI dialog with dropdown game selection
+  - Real-time dropdown refresh after deletions
+  - Improved date sorting (newest games first) 
+  - Clear game identification with player, result, gold, and date
+
+### Technical Improvements
+- **WoW-Compatible Date Sorting** - Fixed `os.time()` compatibility issue with WoW's restricted Lua environment
+- **Database Functions** - Added `GetRecentGamesForEditing()`, `EditGameRecord()`, and `DeleteGameRecord()`
+- **UI State Management** - Proper dialog cleanup and refresh after record modifications
+- **Statistics Integrity** - Automatic counter updates when records are modified or deleted
+
+### User Experience
+- **Slash Command** - `/dr edit` for quick access to game editing
+- **Settings Integration** - "Edit Game Records" button in Data Management section
+- **Debug Output** - Optional debug information showing game order and timestamps
+- **Error Handling** - Comprehensive validation and user-friendly error messages
+
+---
+
 ## Version 2.1.3 - Database Fix Edition
 
 ### Critical Fix

@@ -298,3 +298,216 @@ function DRE:ExportData()
     
     return serialize(exportData)
 end
+
+-- Find and return the most recent game record for editing
+function DRE:GetLastGameRecord()
+    if not self.db or not self.db.profile.history then
+        return nil
+    end
+    
+    local latestGame = nil
+    local latestPlayer = nil
+    local latestTime = 0
+    
+    -- Find the most recent game across all players
+    for playerName, playerData in pairs(self.db.profile.history) do
+        if playerData.recentGames and #playerData.recentGames > 0 then
+            local game = playerData.recentGames[1] -- Most recent is first
+            local gameTime = game.timestamp or 0
+            
+            if gameTime > latestTime then
+                latestTime = gameTime
+                latestGame = game
+                latestPlayer = playerName
+            end
+        end
+    end
+    
+    return latestGame, latestPlayer
+end
+
+-- Get all recent games for editing (last 50 games across all players)
+function DRE:GetRecentGamesForEditing(limit)
+    limit = limit or 50
+    
+    if not self.db or not self.db.profile.history then
+        return {}
+    end
+    
+    local allGames = {}
+    
+    -- Collect all games with player and game info
+    for playerName, playerData in pairs(self.db.profile.history) do
+        if playerData.recentGames and #playerData.recentGames > 0 then
+            for gameIndex, game in ipairs(playerData.recentGames) do
+                table.insert(allGames, {
+                    playerName = playerName,
+                    gameIndex = gameIndex,
+                    game = game,
+                    timestamp = game.timestamp or 0
+                })
+            end
+        end
+    end
+    
+    -- Sort by timestamp (newest first) - handle missing timestamps and date fields
+    table.sort(allGames, function(a, b) 
+        local aTime = a.timestamp or 0
+        local bTime = b.timestamp or 0
+        
+        -- If timestamp is 0 or missing, try to parse the date field
+        if aTime == 0 and a.game.date then
+            local year, month, day, hour, min = a.game.date:match("(%d+)-(%d+)-(%d+) (%d+):(%d+)")
+            if year then
+                -- Use simple date comparison string instead of os.time (which isn't available in WoW)
+                -- Format: YYYYMMDDHHMM for easy numeric comparison
+                aTime = tonumber(string.format("%04d%02d%02d%02d%02d", 
+                    tonumber(year), tonumber(month), tonumber(day), 
+                    tonumber(hour) or 0, tonumber(min) or 0))
+            end
+        end
+        
+        if bTime == 0 and b.game.date then
+            local year, month, day, hour, min = b.game.date:match("(%d+)-(%d+)-(%d+) (%d+):(%d+)")
+            if year then
+                -- Use simple date comparison string instead of os.time (which isn't available in WoW)
+                -- Format: YYYYMMDDHHMM for easy numeric comparison
+                bTime = tonumber(string.format("%04d%02d%02d%02d%02d", 
+                    tonumber(year), tonumber(month), tonumber(day), 
+                    tonumber(hour) or 0, tonumber(min) or 0))
+            end
+        end
+        
+        -- If still equal, maintain original order
+        if aTime == bTime then
+            return false
+        end
+        return aTime > bTime
+    end)
+    
+    -- Limit results
+    local result = {}
+    for i = 1, math.min(limit, #allGames) do
+        table.insert(result, allGames[i])
+    end
+    
+    -- Debug info
+    if DRE and DRE.DebugPrint then
+        DRE:DebugPrint("GetRecentGamesForEditing: Found " .. #allGames .. " total games, returning " .. #result .. " (limit: " .. limit .. ")")
+    end
+    
+    return result
+end
+
+-- Edit a specific game record by player and game index
+function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, newInitialRoll)
+    if not self.db or not self.db.profile.history or not playerName then
+        return false, "No data available"
+    end
+    
+    local playerData = self.db.profile.history[playerName]
+    if not playerData or not playerData.recentGames or #playerData.recentGames == 0 then
+        return false, "No recent games found for " .. playerName
+    end
+    
+    if gameIndex < 1 or gameIndex > #playerData.recentGames then
+        return false, "Invalid game index"
+    end
+    
+    local oldGame = playerData.recentGames[gameIndex]
+    local oldResult = oldGame.result
+    local oldGoldAmount = oldGame.goldAmount or 0
+    
+    -- Update the game record
+    oldGame.result = newResult
+    oldGame.goldAmount = newGoldAmount or 0
+    if newInitialRoll then
+        oldGame.startingRoll = newInitialRoll
+    end
+    
+    -- Update player's win/loss counters based on the change
+    if oldResult ~= newResult then
+        if oldResult == "Won" then
+            -- Was a win, now changing
+            playerData.wins = (playerData.wins or 1) - 1
+            playerData.goldWon = (playerData.goldWon or oldGoldAmount) - oldGoldAmount
+        elseif oldResult == "Lost" then
+            -- Was a loss, now changing  
+            playerData.losses = (playerData.losses or 1) - 1
+            playerData.goldLost = (playerData.goldLost or oldGoldAmount) - oldGoldAmount
+        end
+        
+        if newResult == "Won" then
+            -- Now it's a win
+            playerData.wins = (playerData.wins or 0) + 1
+            playerData.goldWon = (playerData.goldWon or 0) + (newGoldAmount or 0)
+        elseif newResult == "Lost" then
+            -- Now it's a loss
+            playerData.losses = (playerData.losses or 0) + 1
+            playerData.goldLost = (playerData.goldLost or 0) + (newGoldAmount or 0)
+        end
+        
+        -- Ensure counters don't go negative
+        playerData.wins = math.max(0, playerData.wins or 0)
+        playerData.losses = math.max(0, playerData.losses or 0)
+        playerData.goldWon = math.max(0, playerData.goldWon or 0)
+        playerData.goldLost = math.max(0, playerData.goldLost or 0)
+    elseif oldGoldAmount ~= (newGoldAmount or 0) then
+        -- Same result, different gold amount
+        local goldDiff = (newGoldAmount or 0) - oldGoldAmount
+        if newResult == "Won" then
+            playerData.goldWon = (playerData.goldWon or 0) + goldDiff
+            playerData.goldWon = math.max(0, playerData.goldWon)
+        elseif newResult == "Lost" then
+            playerData.goldLost = (playerData.goldLost or 0) + goldDiff
+            playerData.goldLost = math.max(0, playerData.goldLost)
+        end
+    end
+    
+    return true, "Game record updated successfully"
+end
+
+-- Delete a specific game record by player and game index
+function DRE:DeleteGameRecord(playerName, gameIndex)
+    if not self.db or not self.db.profile.history or not playerName then
+        return false, "No data available"
+    end
+    
+    local playerData = self.db.profile.history[playerName]
+    if not playerData or not playerData.recentGames or #playerData.recentGames == 0 then
+        return false, "No recent games found for " .. playerName
+    end
+    
+    if gameIndex < 1 or gameIndex > #playerData.recentGames then
+        return false, "Invalid game index"
+    end
+    
+    local gameToDelete = playerData.recentGames[gameIndex]
+    local result = gameToDelete.result
+    local goldAmount = gameToDelete.goldAmount or 0
+    
+    -- Update player's win/loss counters
+    if result == "Won" then
+        playerData.wins = math.max(0, (playerData.wins or 1) - 1)
+        playerData.goldWon = math.max(0, (playerData.goldWon or goldAmount) - goldAmount)
+    elseif result == "Lost" then
+        playerData.losses = math.max(0, (playerData.losses or 1) - 1)
+        playerData.goldLost = math.max(0, (playerData.goldLost or goldAmount) - goldAmount)
+    end
+    
+    -- Remove the game from the list
+    table.remove(playerData.recentGames, gameIndex)
+    
+    -- If player has no more games, optionally remove them entirely
+    if #playerData.recentGames == 0 and (playerData.wins or 0) == 0 and (playerData.losses or 0) == 0 then
+        self.db.profile.history[playerName] = nil
+        return true, "Game deleted and player record removed (no remaining games)"
+    end
+    
+    return true, "Game record deleted successfully"
+end
+
+-- Compatibility function - edit the most recent game record
+function DRE:EditLastGame(playerName, newResult, newGoldAmount, newInitialRoll)
+    return self:EditGameRecord(playerName, 1, newResult, newGoldAmount, newInitialRoll)
+end

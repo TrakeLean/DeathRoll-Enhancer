@@ -13,7 +13,17 @@
       "Bash(git pull:*)",
       "Bash(git merge:*)",
       "Bash(git fetch:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(find:*)",
+      "Bash(git log:*)",
+      "Bash(zip:*)",
+      "Bash(tar:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(powershell:*)",
+      "Bash(copy Core.lua Database.lua DeathRollEnhancer.toc Events.lua Minimap.lua UI.lua DeathRollEnhancer)"
     ],
     "deny": [],
     "ask": []

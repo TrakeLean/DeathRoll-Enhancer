@@ -1,7 +1,7 @@
-# DeathRoll Enhancer v2.1.4 - Bintes Edition
+# DeathRoll Enhancer v2.1.5 - Bintes Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.1.4-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.1.5-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, and comprehensive game management. Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.

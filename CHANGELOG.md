@@ -1,5 +1,25 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.1.5 - Gold Tracking Fix Edition
+
+### Bug Fixes
+- **Critical Gold Tracking Synchronization Bug** - Fixed desynchronization between individual player gold totals and global gold tracking
+  - `DeleteGameRecord()` now properly updates global `goldTracking.totalWon` and `goldTracking.totalLost`
+  - `EditGameRecord()` now properly synchronizes global tracking for both result changes and gold amount modifications
+  - Prevents data corruption when deleting or editing games through the settings menu
+- **Data Recovery Function** - Added `RecalculateGoldTracking()` to repair existing corrupted data
+  - Recalculates global totals from individual player data
+  - Accessible via new `/dr fixgold` command
+  - One-time fix for users affected by the synchronization bug
+
+### New Features  
+- **Gold Tracking Repair Command** - `/dr fixgold` command to fix corrupted global gold totals
+  - Automatically recalculates `totalWon` and `totalLost` from individual player records
+  - Provides feedback showing old vs new corrected values
+  - Essential for users who experienced the synchronization bug
+
+---
+
 ## Version 2.1.4 - Bintes EDITion
 
 ### New Features

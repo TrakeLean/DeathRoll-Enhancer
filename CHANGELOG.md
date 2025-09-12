@@ -11,6 +11,12 @@
   - Recalculates global totals from individual player data
   - Accessible via new `/dr fixgold` command
   - One-time fix for users affected by the synchronization bug
+- **Negative Net Profit Display** - Fixed `FormatGold()` function to properly display negative amounts
+  - Net Profit now correctly shows negative values (e.g., "-15g 50s") when you have a net loss
+  - Applies to all gold displays throughout the addon (main stats, minimap tooltip, player history)
+- **Average Wager Decimal Fix** - Rounded down average wager calculations to remove decimal places
+  - High Roller and Cheapskate stats now show clean copper amounts without decimals
+  - Changed from "1g 66s 55.5555555555c avg wager" to "1g 66s 55c avg wager"
 
 ### New Features  
 - **Gold Tracking Repair Command** - `/dr fixgold` command to fix corrupted global gold totals

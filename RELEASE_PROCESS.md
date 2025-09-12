@@ -16,18 +16,26 @@
   - Breaking changes (if any)
 
 ### 3. Create Version Archive
-1. move all the important files to a new folder named `DeathRollEnhancer`
-1.1 Core, Database, DeatehRollEnhancer, Events, Minimap, UI, Media.
-2. Create a zip archive of the `DeathRollEnhancer` folder using PowerShell: 
+1. Create a temporary folder named `DeathRollEnhancer`
+2. Copy all the important files to the `DeathRollEnhancer` folder:
+   - Core.lua, Database.lua, UI.lua, Events.lua, Minimap.lua
+   - DeathRollEnhancer.toc
+   - Media folder (contains textures/icons)
+3. Create a zip archive of the entire `DeathRollEnhancer` folder using PowerShell: 
    ```powershell
-   Compress-Archive -Path .\DeathRollEnhancer\* -DestinationPath .\versions\DeathRollEnhancer_VX.X.X_-_Edition_Name.zip
-```
-    - Replace `VX.X.X` with the new version number
-    - Replace `Edition_Name` with a descriptive name (e.g., "Bintes EDITion", "Gold Tracking Fix Edition")
+   Compress-Archive -Path .\DeathRollEnhancer -DestinationPath .\versions\DeathRollEnhancer VX.X.X - Edition Name.zip -Force
+   ```
+   - Replace `VX.X.X` with the new version number
+   - Replace `Edition_Name` with a descriptive name (e.g., "Bintes EDITion", "Gold Tracking Fix Edition")
+4. Clean up the temporary folder:
+   ```powershell
+   Remove-Item -Recurse -Force .\DeathRollEnhancer
+   ```
 
 ### 4. Verify Archive
 - Check that the zip file was created in the `versions/` folder
-- Verify it contains all .lua and .toc files
+- **Important**: When extracted, the zip should create a `DeathRollEnhancer` folder containing all the addon files
+- This allows users to extract directly to their `Interface/AddOns/` folder
 
 ### 5. Push to GitHub
 Commit and push all changes to the repository:

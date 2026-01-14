@@ -1,11 +1,98 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.2.0 - TBC Compatibility & Bug Fix Edition
+
+### TBC Compatibility
+- **Full TBC Classic Support** - Added C_Timer shim for TBC/Classic compatibility
+  - Implements `C_Timer.After()` fallback using frame OnUpdate pattern
+  - Zero performance impact on retail (uses native C_Timer when available)
+  - Works seamlessly across all WoW versions (Classic Era, TBC, Wrath, Cata, Retail)
+
+### Critical Bug Fixes
+- **Race Condition in Roll Detection** - Fixed duplicate roll processing
+  - Implemented roll deduplication system with unique roll IDs
+  - Added 5-second expiry cache for processed rolls
+  - Prevents same roll from being handled multiple times by different event handlers
+  - Fixed pattern matching to use anchored regex (prevents partial matches)
+- **Game State Validation** - Fixed crashes from invalid game states
+  - Added comprehensive validation in `HandleGameRoll()`
+  - Validates game state existence and required fields before processing
+  - Added player name validation and parameter checking
+  - Prevents nil reference errors during game execution
+- **Concurrent Game Prevention** - Fixed ability to start multiple games
+  - Added active game check at start of `StartDeathRoll()`
+  - Returns error message if game already in progress
+  - Prevents overlapping game state corruption
+
+### UI & Safety Fixes
+- **UI Safety Guards** - Comprehensive nil checks throughout UI code
+  - Added validation in `UpdateChallengeButtonText()` before UI access
+  - Added `pcall()` wrapper in `AddRollToHistory()` for safe text updates
+  - Fixed potential crashes when UI closed during active operations
+  - All UI components validated before access
+- **Timer Race Condition** - Fixed roll detection timeout
+  - Changed timeout from 3.0s to 3.2s to account for 0.1s roll delay
+  - Prevents false positive timeout detections
+- **UI Scale Desync** - Fixed double-scaling and flickering
+  - Scale now applied correctly before AceGUI restoration
+  - Added comparison check to prevent redundant scale operations
+  - Eliminated scale flickering on window open
+- **Target Change During Game** - Fixed UI confusion
+  - Added active game check in `PLAYER_TARGET_CHANGED` handler
+  - Prevents button updates during active games
+
+### Database & Validation Fixes
+- **Database Counter Corruption** - Fixed negative counter values
+  - Changed initialization pattern from `(value or 1)` to `(value or 0)`
+  - Applied `math.max(0, ...)` before subtraction operations
+  - Prevents negative win/loss/gold counters in all scenarios
+- **Date Parsing Validation** - Fixed crashes from malformed dates
+  - Added complete date validation with `parseDateToNumber()`
+  - Validates year (2000-2100), month (1-12), day (1-31), hour/minute ranges
+  - Strict regex matching for date format (YYYY-MM-DD HH:MM)
+  - Prevents crashes from corrupted date strings
+- **Input Sanitization** - Fixed database corruption from invalid input
+  - Added validation for gold (0-999,999), silver (0-99), copper (0-99)
+  - Added validation for starting roll (0-999,999)
+  - Prevents invalid currency values in edit dialog
+- **Player Name Validation** - Improved validation logic
+  - Added check for pure whitespace/symbol names
+  - Prevents names like "---" or "   " from passing validation
+  - Enforces reasonable character requirements
+
+### Memory & Performance Fixes
+- **Memory Leak Prevention** - Fixed recent rolls memory leak
+  - Added `ClearRecentRollsForPlayer()` function
+  - Automatic cleanup when games start/end
+  - Prevents unbounded growth of recent rolls array
+- **Infinite Loop Protection** - Added iteration limits
+  - Bounds checking in `StoreRecentRoll()` with max iteration counter
+  - Safety fallback if `maxRecentRolls` becomes negative
+  - Debug warnings if iteration limits reached
+
+### Cleanup & Error Handling
+- **Proper State Cleanup** - Enhanced `OnDisable()` cleanup
+  - Clears active game state on logout/disable
+  - Cleans up spicy duel state
+  - Clears UI references to prevent memory leaks
+- **Enhanced Debug Logging** - Improved error visibility
+  - Added debug messages for all error conditions
+  - More descriptive error messages throughout
+  - Better troubleshooting information
+
+### Files Modified
+- **Core.lua** - 13 major changes (TBC compat, validation, safety)
+- **UI.lua** - 4 major changes (timer fix, validation, scale management)
+- **Database.lua** - 3 major changes (counter fixes, date validation)
+
+---
+
 ## Version 2.1.6 - Bintes Edition
 
 ### Bug Fixes
 - [Add your changes here]
 
-### New Features  
+### New Features
 - [Add your changes here]
 
 ---

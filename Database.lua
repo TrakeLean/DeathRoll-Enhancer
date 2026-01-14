@@ -329,13 +329,13 @@ end
 -- Get all recent games for editing (last 50 games across all players)
 function DRE:GetRecentGamesForEditing(limit)
     limit = limit or 50
-    
+
     if not self.db or not self.db.profile.history then
         return {}
     end
-    
+
     local allGames = {}
-    
+
     -- Collect all games with player and game info
     for playerName, playerData in pairs(self.db.profile.history) do
         if playerData.recentGames and #playerData.recentGames > 0 then
@@ -349,35 +349,54 @@ function DRE:GetRecentGamesForEditing(limit)
             end
         end
     end
-    
+
+    -- Helper function to safely parse date strings
+    local function parseDateToNumber(dateStr)
+        if not dateStr or type(dateStr) ~= "string" then
+            return 0
+        end
+
+        local year, month, day, hour, min = dateStr:match("^(%d%d%d%d)%-(%d%d)%-(%d%d) (%d%d):(%d%d)$")
+        if not year then
+            return 0
+        end
+
+        -- Validate ranges
+        year = tonumber(year)
+        month = tonumber(month)
+        day = tonumber(day)
+        hour = tonumber(hour) or 0
+        min = tonumber(min) or 0
+
+        if not year or not month or not day then
+            return 0
+        end
+
+        -- Basic validation
+        if year < 2000 or year > 2100 then return 0 end
+        if month < 1 or month > 12 then return 0 end
+        if day < 1 or day > 31 then return 0 end
+        if hour < 0 or hour > 23 then return 0 end
+        if min < 0 or min > 59 then return 0 end
+
+        -- Format: YYYYMMDDHHMM for easy numeric comparison
+        return year * 100000000 + month * 1000000 + day * 10000 + hour * 100 + min
+    end
+
     -- Sort by timestamp (newest first) - handle missing timestamps and date fields
-    table.sort(allGames, function(a, b) 
+    table.sort(allGames, function(a, b)
         local aTime = a.timestamp or 0
         local bTime = b.timestamp or 0
-        
+
         -- If timestamp is 0 or missing, try to parse the date field
-        if aTime == 0 and a.game.date then
-            local year, month, day, hour, min = a.game.date:match("(%d+)-(%d+)-(%d+) (%d+):(%d+)")
-            if year then
-                -- Use simple date comparison string instead of os.time (which isn't available in WoW)
-                -- Format: YYYYMMDDHHMM for easy numeric comparison
-                aTime = tonumber(string.format("%04d%02d%02d%02d%02d", 
-                    tonumber(year), tonumber(month), tonumber(day), 
-                    tonumber(hour) or 0, tonumber(min) or 0))
-            end
+        if aTime == 0 and a.game and a.game.date then
+            aTime = parseDateToNumber(a.game.date)
         end
-        
-        if bTime == 0 and b.game.date then
-            local year, month, day, hour, min = b.game.date:match("(%d+)-(%d+)-(%d+) (%d+):(%d+)")
-            if year then
-                -- Use simple date comparison string instead of os.time (which isn't available in WoW)
-                -- Format: YYYYMMDDHHMM for easy numeric comparison
-                bTime = tonumber(string.format("%04d%02d%02d%02d%02d", 
-                    tonumber(year), tonumber(month), tonumber(day), 
-                    tonumber(hour) or 0, tonumber(min) or 0))
-            end
+
+        if bTime == 0 and b.game and b.game.date then
+            bTime = parseDateToNumber(b.game.date)
         end
-        
+
         -- If still equal, maintain original order
         if aTime == bTime then
             return false
@@ -404,39 +423,39 @@ function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, new
     if not self.db or not self.db.profile.history or not playerName then
         return false, "No data available"
     end
-    
+
     local playerData = self.db.profile.history[playerName]
     if not playerData or not playerData.recentGames or #playerData.recentGames == 0 then
         return false, "No recent games found for " .. playerName
     end
-    
+
     if gameIndex < 1 or gameIndex > #playerData.recentGames then
         return false, "Invalid game index"
     end
-    
+
     local oldGame = playerData.recentGames[gameIndex]
     local oldResult = oldGame.result
     local oldGoldAmount = oldGame.goldAmount or 0
-    
+
     -- Update the game record
     oldGame.result = newResult
     oldGame.goldAmount = newGoldAmount or 0
     if newInitialRoll then
         oldGame.startingRoll = newInitialRoll
     end
-    
+
     -- Update player's win/loss counters based on the change
     if oldResult ~= newResult then
         if oldResult == "Won" then
             -- Was a win, now changing
-            playerData.wins = (playerData.wins or 1) - 1
-            playerData.goldWon = (playerData.goldWon or oldGoldAmount) - oldGoldAmount
+            playerData.wins = math.max(0, (playerData.wins or 0) - 1)
+            playerData.goldWon = math.max(0, (playerData.goldWon or 0) - oldGoldAmount)
         elseif oldResult == "Lost" then
-            -- Was a loss, now changing  
-            playerData.losses = (playerData.losses or 1) - 1
-            playerData.goldLost = (playerData.goldLost or oldGoldAmount) - oldGoldAmount
+            -- Was a loss, now changing
+            playerData.losses = math.max(0, (playerData.losses or 0) - 1)
+            playerData.goldLost = math.max(0, (playerData.goldLost or 0) - oldGoldAmount)
         end
-        
+
         if newResult == "Won" then
             -- Now it's a win
             playerData.wins = (playerData.wins or 0) + 1
@@ -446,8 +465,8 @@ function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, new
             playerData.losses = (playerData.losses or 0) + 1
             playerData.goldLost = (playerData.goldLost or 0) + (newGoldAmount or 0)
         end
-        
-        -- Ensure counters don't go negative
+
+        -- Ensure counters don't go negative (redundant but safe)
         playerData.wins = math.max(0, playerData.wins or 0)
         playerData.losses = math.max(0, playerData.losses or 0)
         playerData.goldWon = math.max(0, playerData.goldWon or 0)

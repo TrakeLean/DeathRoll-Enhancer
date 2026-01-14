@@ -63,27 +63,34 @@ function DRE:ShowMainWindow()
     frame:SetStatusTable(self.db.profile.ui.frameStatus)
     frame:EnableResize(true)
     
-    -- Apply scaling AFTER AceGUI status table is set up
-    -- This ensures the scale is applied consistently
-    local scaleValue = (self.db and self.db.profile.ui.scale) or 0.9
-    frame.frame:SetScale(scaleValue)
-    
     -- For first-time users, ensure correct dimensions immediately (no timer)
     if not self.db.profile.ui.frameStatus.width and not self.db.profile.ui.frameStatus.height then
         -- This is likely first time opening - ensure proper sizing immediately
         frame:SetWidth(400)
         frame:SetHeight(300)
-        self:DebugPrint("Applied first-time window dimensions immediately after scale")
+        self:DebugPrint("Applied first-time window dimensions")
     end
-    
-    -- Debug hook - ensure scale is maintained when AceGUI restores status
+
+    -- Apply scaling AFTER dimensions are set but BEFORE AceGUI restoration
+    local scaleValue = (self.db and self.db.profile.ui.scale) or 0.9
+    frame.frame:SetScale(scaleValue)
+    self:DebugPrint("Applied initial scale: " .. scaleValue)
+
+    -- Hook ApplyStatus to maintain scale after position/size restoration
     local originalApplyStatus = frame.ApplyStatus
     frame.ApplyStatus = function(self_frame)
+        -- Temporarily store current scale
+        local currentScale = self_frame.frame:GetScale()
+
+        -- Apply position/size restoration
         originalApplyStatus(self_frame)
-        -- Reapply scale after status restoration
-        local scaleValue = (self.db and self.db.profile.ui.scale) or 0.9
-        self_frame.frame:SetScale(scaleValue)
-        self:DebugPrint("Frame status applied (position/size restored) - scale reapplied: " .. scaleValue)
+
+        -- Reapply scale to prevent double-scaling
+        local savedScale = (DRE.db and DRE.db.profile.ui.scale) or 0.9
+        if math.abs(currentScale - savedScale) > 0.01 then  -- Only reapply if different
+            self_frame.frame:SetScale(savedScale)
+            DRE:DebugPrint("Frame status applied - scale corrected to: " .. savedScale)
+        end
     end
     
     -- Position/size restoration is now handled by AceGUI status table
@@ -301,16 +308,38 @@ end
 
 -- Add a roll entry to the history display
 function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
-    if not UI.rollHistoryBox or not UI.rollHistory then
+    -- Validate UI components exist
+    if not self.UI then
         return
     end
-    
+
+    if not UI.rollHistoryBox or not UI.rollHistory then
+        self:DebugPrint("AddRollToHistory: UI components not ready")
+        return
+    end
+
+    -- Validate parameters
+    if not playerName or not roll or not maxRoll then
+        self:DebugPrint("AddRollToHistory: Invalid parameters")
+        return
+    end
+
+    if maxRoll <= 0 then
+        self:DebugPrint("AddRollToHistory: Invalid maxRoll value")
+        return
+    end
+
     local myName = UnitName("player")
+    if not myName then
+        self:DebugPrint("AddRollToHistory: Could not get player name")
+        return
+    end
+
     local displayName = playerName
     local isMe = (playerName == myName)
-    
+
     -- For self-duels, alternate the color but keep the same name
-    if isSelfDuel then
+    if isSelfDuel and rollCount then
         displayName = myName
         if (rollCount % 2) == 1 then
             isMe = true
@@ -318,28 +347,32 @@ function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
             isMe = false
         end
     end
-    
+
     -- Calculate loss probability (chance of rolling 1)
     local lossChance = (1 / maxRoll) * 100
-    
+
     -- Create colored entry
     local colorCode = isMe and "|cff00ff00" or "|cffff6666" -- Green for player, red for opponent
     local resetColor = "|r"
-    
-    local entry = string.format("%s%s%s rolled %d (1-%d) - %.3f%% chance of losing", 
+
+    local entry = string.format("%s%s%s rolled %d (1-%d) - %.3f%% chance of losing",
         colorCode, displayName, resetColor, roll, maxRoll, lossChance)
-    
+
     -- Add to history array
     table.insert(UI.rollHistory, 1, entry) -- Insert at beginning
-    
+
     -- Keep only last 3 entries for compact display
     if #UI.rollHistory > 3 then
         table.remove(UI.rollHistory, 4)
     end
-    
-    -- Update display with compact format
+
+    -- Update display with compact format (with nil guard)
     local historyText = table.concat(UI.rollHistory, "\n")
-    UI.rollHistoryBox:SetText(historyText)
+    if UI.rollHistoryBox then
+        pcall(function()
+            UI.rollHistoryBox:SetText(historyText)
+        end)
+    end
 end
 
 -- Update roll history with game status messages (for non-game states only)
@@ -1235,23 +1268,24 @@ function DRE:PerformRoll()
         self:Print("No active game!")
         return
     end
-    
+
     local rollRange = self.gameState.currentRoll
     if not rollRange or rollRange < 1 then
         self:Print("Invalid roll range!")
         return
     end
-    
+
     -- Update UI to show we're waiting for the roll result
     self:UpdateGameUIState("WAITING_FOR_ROLL_RESULT")
-    
+
     -- Perform the roll using WoW's built-in roll system with a small delay
     C_Timer.After(0.1, function()
         RandomRoll(1, rollRange)
     end)
-    
+
     -- Fallback timeout to reset UI if roll detection fails (especially for self-duels)
-    C_Timer.After(3, function()
+    -- Account for the 0.1s delay before the roll
+    C_Timer.After(3.2, function()
         if self.UI and self.UI.gameState == "WAITING_FOR_ROLL_RESULT" then
             self:DebugPrint("Roll detection timeout - resetting UI to ROLLING state")
             self:UpdateGameUIState("ROLLING")

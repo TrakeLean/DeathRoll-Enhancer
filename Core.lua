@@ -15,12 +15,30 @@ end
 -- Initialize addon with Ace3
 local DRE = LibStub("AceAddon-3.0"):NewAddon("DeathRollEnhancer", "AceConsole-3.0", "AceEvent-3.0")
 
+-- TBC Compatibility: C_Timer shim for older WoW versions
+if not C_Timer then
+    C_Timer = {
+        After = function(duration, callback)
+            -- Fallback implementation using frame OnUpdate for TBC/Classic
+            local waitFrame = CreateFrame("Frame")
+            local elapsed = 0
+            waitFrame:SetScript("OnUpdate", function(self, delta)
+                elapsed = elapsed + delta
+                if elapsed >= duration then
+                    callback()
+                    self:SetScript("OnUpdate", nil)
+                end
+            end)
+        end
+    }
+end
+
 -- Debug chat buffer to track messages
 DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
-DRE.version = "2.1.6"
+DRE.version = "2.2.0"
 DRE.author = "EgyptianSheikh"
 
 -- Utility: safe trim for user input (WoW Lua doesn't provide string:trim())
@@ -110,23 +128,27 @@ local defaults = {
 function DRE:OnInitialize()
     -- Initialize database
     self.db = AceDB:New("DeathRollEnhancerDB", defaults, true)
-    
+
     -- Initialize recent rolls storage for challenge detection
     self.recentRolls = {}
     self.maxRecentRolls = 10
     self.recentRollTimeWindow = 60 -- seconds
-    
+
+    -- Initialize processed rolls cache to prevent duplicate processing
+    self.processedRolls = {}
+    self.processedRollsExpiry = 5 -- seconds to remember a processed roll
+
     -- Register options
     self:SetupOptions()
-    
+
     -- Register slash commands
     self:RegisterChatCommand("deathroll", "SlashCommand")
     self:RegisterChatCommand("dr", "SlashCommand")
     self:RegisterChatCommand("drh", "HistoryCommand")
     self:RegisterChatCommand("deathrollhistory", "HistoryCommand")
-    
+
     self:Print("DeathRoll Enhancer v" .. self.version .. " loaded!")
-    
+
     -- Test debug buffer
     self:AddToDebugBuffer("SYSTEM", "Addon loaded and debug buffer initialized")
 end
@@ -157,6 +179,25 @@ function DRE:OnEnable()
 end
 
 function DRE:OnDisable()
+    -- Cleanup active game state
+    if self.gameState and self.gameState.isActive then
+        self:DebugPrint("OnDisable: Cleaning up active game state")
+        self.gameState = nil
+    end
+
+    -- Cleanup spicy duel state
+    if self.spicyDuel and self.spicyDuel.isActive then
+        self:DebugPrint("OnDisable: Cleaning up active spicy duel state")
+        self.spicyDuel = nil
+    end
+
+    -- Clear UI references
+    if self.UI then
+        self.UI.recentTargetRoll = nil
+        self.UI.incomingChallenge = nil
+        self.UI.isGameActive = false
+    end
+
     -- Cleanup
     self:UnregisterAllEvents()
 end
@@ -938,9 +979,12 @@ end
 
 -- Handle target change to update button text
 function DRE:PLAYER_TARGET_CHANGED(event)
-    self:UpdateChallengeButtonText()
-    -- Also check for recent rolls from the new target
-    self:CheckRecentRollsForChallenge()
+    -- Don't update button during active games to prevent confusion
+    if not (self.gameState and self.gameState.isActive) then
+        self:UpdateChallengeButtonText()
+        -- Also check for recent rolls from the new target
+        self:CheckRecentRollsForChallenge()
+    end
 end
 
 -- Additional event handlers to catch rolls
@@ -956,40 +1000,79 @@ function DRE:CHAT_MSG_EMOTE(event, message, sender)
     self:ProcessPotentialRoll(message, sender, "EMOTE")
 end
 
--- Unified roll processing function
+-- Unified roll processing function with deduplication
 function DRE:ProcessPotentialRoll(message, sender, eventType)
     if not message then return end
-    
+
     -- Try multiple roll patterns to catch different formats
     local playerName, roll, maxRoll = message:match("^(.+) rolls (%d+) %(1%-(%d+)%)$")  -- Standard pattern
     if not playerName then
-        playerName, maxRoll, roll = message:match("(%S+) rolls 1%-(%d+) %((%d+)%)")  -- Alternative pattern
+        playerName, maxRoll, roll = message:match("^(%S+) rolls 1%-(%d+) %((%d+)%)$")  -- Alternative pattern (anchored)
     end
-    
+
     if playerName and roll and maxRoll then
         roll = tonumber(roll)
         maxRoll = tonumber(maxRoll)
-        
+
         -- Handle "You" as player name for self-rolls
         if playerName == "You" then
             playerName = UnitName("player")
         end
-        
+
+        -- Create unique roll identifier
+        local rollId = string.format("%s:%d:%d:%.2f", playerName, roll, maxRoll, math.floor(GetTime() * 100) / 100)
+
+        -- Check if we've already processed this roll
+        if self:IsRollAlreadyProcessed(rollId) then
+            self:DebugPrint("Skipping duplicate roll: " .. rollId)
+            return
+        end
+
+        -- Mark roll as processed
+        self:MarkRollAsProcessed(rollId)
+
         self:DebugPrint("Detected roll via " .. eventType .. ": " .. playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
-        
+
         self:HandleDetectedRoll(playerName, roll, maxRoll)
     else
         self:DebugPrint("Failed to parse roll from message: '" .. (message or "nil") .. "'")
     end
 end
 
+-- Check if a roll has already been processed (deduplication)
+function DRE:IsRollAlreadyProcessed(rollId)
+    if not self.processedRolls then
+        self.processedRolls = {}
+        return false
+    end
+
+    local currentTime = GetTime()
+
+    -- Clean up expired entries
+    for id, timestamp in pairs(self.processedRolls) do
+        if currentTime - timestamp > (self.processedRollsExpiry or 5) then
+            self.processedRolls[id] = nil
+        end
+    end
+
+    return self.processedRolls[rollId] ~= nil
+end
+
+-- Mark a roll as processed
+function DRE:MarkRollAsProcessed(rollId)
+    if not self.processedRolls then
+        self.processedRolls = {}
+    end
+    self.processedRolls[rollId] = GetTime()
+end
+
 -- Store a recent roll for later challenge detection
 function DRE:StoreRecentRoll(playerName, roll, maxRoll)
     local currentTime = GetTime()
-    
+
     -- Clean up old rolls first
     self:CleanupOldRolls(currentTime)
-    
+
     -- Store the new roll
     local rollData = {
         playerName = playerName,
@@ -997,27 +1080,61 @@ function DRE:StoreRecentRoll(playerName, roll, maxRoll)
         maxRoll = maxRoll,
         timestamp = currentTime
     }
-    
-    table.insert(self.recentRolls, rollData)
-    
-    -- Limit the number of stored rolls
-    while #self.recentRolls > self.maxRecentRolls do
-        table.remove(self.recentRolls, 1)
+
+    if not self.recentRolls then
+        self.recentRolls = {}
     end
-    
+
+    table.insert(self.recentRolls, rollData)
+
+    -- Limit the number of stored rolls (with bounds checking to prevent infinite loops)
+    local maxRolls = self.maxRecentRolls or 10
+    if maxRolls < 1 then
+        maxRolls = 10  -- Safety fallback
+    end
+
+    -- Limit iterations to prevent infinite loop
+    local iterations = 0
+    local maxIterations = #self.recentRolls + 10  -- Extra buffer for safety
+    while #self.recentRolls > maxRolls and iterations < maxIterations do
+        table.remove(self.recentRolls, 1)
+        iterations = iterations + 1
+    end
+
+    if iterations >= maxIterations then
+        self:DebugPrint("WARNING: Hit max iterations in StoreRecentRoll cleanup - possible corruption")
+    end
+
     self:DebugPrint("Stored recent roll: " .. playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
-    
+
     -- Update button text dynamically when new rolls are detected
     self:UpdateChallengeButtonText()
 end
 
 -- Clean up rolls older than the time window
 function DRE:CleanupOldRolls(currentTime)
-    local cutoffTime = currentTime - self.recentRollTimeWindow
-    
+    if not self.recentRolls then
+        self.recentRolls = {}
+        return
+    end
+
+    local cutoffTime = currentTime - (self.recentRollTimeWindow or 60)
+
     for i = #self.recentRolls, 1, -1 do
-        if self.recentRolls[i].timestamp < cutoffTime then
+        if self.recentRolls[i] and self.recentRolls[i].timestamp and self.recentRolls[i].timestamp < cutoffTime then
             table.remove(self.recentRolls, i)
+        end
+    end
+end
+
+-- Clear recent rolls for a specific player (e.g., when game starts/ends)
+function DRE:ClearRecentRollsForPlayer(playerName)
+    if not self.recentRolls or not playerName then return end
+
+    for i = #self.recentRolls, 1, -1 do
+        if self.recentRolls[i] and self.recentRolls[i].playerName == playerName then
+            table.remove(self.recentRolls, i)
+            self:DebugPrint("Cleared recent roll for " .. playerName)
         end
     end
 end
@@ -1304,63 +1421,99 @@ end
 
 -- Update button text with current target and check for recent rolls
 function DRE:UpdateChallengeButtonText()
-    if self.UI and self.UI.gameButton and not (self.gameState and self.gameState.isActive) then
-        local targetName = UnitName("target")
-        
-        if not targetName then
-            -- No target selected
-            self:SafeUIUpdate(self.UI.gameButton, function()
+    -- Validate UI exists and is ready
+    if not self.UI then
+        self:DebugPrint("UpdateChallengeButtonText: UI not initialized")
+        return
+    end
+
+    -- Don't update during active games
+    if self.gameState and self.gameState.isActive then
+        self:DebugPrint("UpdateChallengeButtonText: Game active, skipping update")
+        return
+    end
+
+    -- Validate game button exists
+    if not self.UI.gameButton then
+        self:DebugPrint("UpdateChallengeButtonText: gameButton not found")
+        return
+    end
+
+    local targetName = UnitName("target")
+
+    if not targetName then
+        -- No target selected
+        self:SafeUIUpdate(self.UI.gameButton, function()
+            if self.UI and self.UI.gameButton then
                 self.UI.gameButton:SetText("Challenge Player to DeathRoll!")
-            end, "gameButton")
-            -- Clear the roll input when no target
-            if self.UI.rollEdit then
-                self.UI.rollEdit:SetText("")
             end
-            return
+        end, "gameButton")
+        -- Clear the roll input when no target
+        if self.UI.rollEdit then
+            self:SafeUIUpdate(self.UI.rollEdit, function()
+                if self.UI and self.UI.rollEdit then
+                    self.UI.rollEdit:SetText("")
+                end
+            end, "rollEdit")
         end
-        
-        -- Check for recent roll from the current target
-        local recentRoll = nil
-        self:CleanupOldRolls(GetTime())
-        
+        return
+    end
+
+    -- Check for recent roll from the current target
+    local recentRoll = nil
+    self:CleanupOldRolls(GetTime())
+
+    if self.recentRolls then
         for i = #self.recentRolls, 1, -1 do
             local rollData = self.recentRolls[i]
-            if rollData.playerName == targetName then
+            if rollData and rollData.playerName == targetName then
                 recentRoll = rollData
                 break
             end
         end
-        
-        if recentRoll then
-            -- Target has done a roll - show challenge button
-            local buttonText = targetName .. " rolled " .. recentRoll.roll .. " from " .. recentRoll.maxRoll .. " - Accept challenge!"
-            self:SafeUIUpdate(self.UI.gameButton, function()
+    end
+
+    if recentRoll then
+        -- Target has done a roll - show challenge button
+        local buttonText = targetName .. " rolled " .. recentRoll.roll .. " from " .. recentRoll.maxRoll .. " - Accept challenge!"
+        self:SafeUIUpdate(self.UI.gameButton, function()
+            if self.UI and self.UI.gameButton then
                 self.UI.gameButton:SetText(buttonText)
-            end, "gameButton")
-            
-            -- Set the roll input to their ROLL RESULT (not maxRoll)
-            if self.UI.rollEdit then
-                self.UI.rollEdit:SetText(tostring(recentRoll.roll))
             end
-            
-            -- Store the recent roll data for button click handling
-            self.UI.recentTargetRoll = recentRoll
-            
-            self:DebugPrint("Button updated for challenge from " .. targetName .. " with roll " .. recentRoll.roll .. " (1-" .. recentRoll.maxRoll .. ")")
-        else
-            -- No qualifying recent roll - show generic challenge button
-            self:SafeUIUpdate(self.UI.gameButton, function()
-                self.UI.gameButton:SetText("Challenge " .. targetName .. " to DeathRoll!")
-            end, "gameButton")
-            
-            -- Clear the roll input for normal challenges
-            if self.UI.rollEdit then
-                self.UI.rollEdit:SetText("")
-            end
-            
-            -- Clear any stored roll data
-            self.UI.recentTargetRoll = nil
+        end, "gameButton")
+
+        -- Set the roll input to their ROLL RESULT (not maxRoll)
+        if self.UI.rollEdit then
+            self:SafeUIUpdate(self.UI.rollEdit, function()
+                if self.UI and self.UI.rollEdit then
+                    self.UI.rollEdit:SetText(tostring(recentRoll.roll))
+                end
+            end, "rollEdit")
         end
+
+        -- Store the recent roll data for button click handling
+        self.UI.recentTargetRoll = recentRoll
+
+        self:DebugPrint("Button updated for challenge from " .. targetName .. " with roll " .. recentRoll.roll .. " (1-" .. recentRoll.maxRoll .. ")")
+    else
+        -- No qualifying recent roll - show generic challenge button
+        self:SafeUIUpdate(self.UI.gameButton, function()
+            if self.UI and self.UI.gameButton then
+                self.UI.gameButton:SetText("Challenge " .. targetName .. " to DeathRoll!")
+            end
+        end, "gameButton")
+
+        -- Clear the roll input for normal challenges
+        if self.UI.rollEdit then
+            self:SafeUIUpdate(self.UI.rollEdit, function()
+                if self.UI and self.UI.rollEdit then
+                    self.UI.rollEdit:SetText("")
+                end
+            end, "rollEdit")
+        end
+
+        -- Clear any stored roll data
+        self.UI.recentTargetRoll = nil
     end
 end
 
@@ -1465,12 +1618,18 @@ end
 
 -- Main function to start a DeathRoll challenge (called from UI)
 function DRE:StartDeathRoll(target, roll, wager)
+    -- Check for active game first to prevent concurrent games
+    if self.gameState and self.gameState.isActive then
+        self:Print("A game is already in progress! Finish the current game first.")
+        return
+    end
+
     -- Validate inputs
     if not target or target == "" then
         self:Print("Invalid target player!")
         return
     end
-    
+
     -- Validate that target is a real player name (basic check)
     local playerName = UnitName("player")
     if target ~= playerName then
@@ -1480,38 +1639,38 @@ function DRE:StartDeathRoll(target, roll, wager)
             self:Print("Invalid player name: " .. target)
             return
         end
-        
-        -- Basic character validation (letters, some special characters)
-        if not target:match("^[%a%s'-]+$") then
+
+        -- Basic character validation (letters, some special characters, no pure whitespace/symbols)
+        if not target:match("^[%a%s'-]+$") or target:match("^[%s'-]+$") then
             self:Print("Invalid player name format: " .. target)
             return
         end
     end
-    
+
     if not roll or roll < 2 then
         self:Print("Roll must be at least 2!")
         return
     end
-    
+
     if not wager or wager < 0 then
         self:Print("Invalid wager amount!")
         return
     end
-    
+
     -- Check for self-dueling
     if target == playerName then
         self:Print("Starting self-duel! You'll play against yourself.")
-        
+
         -- Start the actual game immediately for self-dueling
         self:StartActualGame(target, roll, wager)
-        
+
         -- Update UI state to rolling
         if self.UpdateGameUIState then
             self:UpdateGameUIState("ROLLING")
         end
         return
     end
-    
+
     -- Create challenge object for other players
     local challenge = {
         target = target,
@@ -1519,24 +1678,24 @@ function DRE:StartDeathRoll(target, roll, wager)
         wager = wager,
         timestamp = time()
     }
-    
+
     -- Update UI state
     if self.UI then
         self.UI.isGameActive = true
         self.UI.gameState = "ROLLING"
         if self.UI.statusLabel then
-            local statusText = wager > 0 and 
+            local statusText = wager > 0 and
                 string.format("Challenging %s: %d starting roll, %s wager", target, roll, self:FormatGold(wager)) or
                 string.format("Challenging %s: %d starting roll, no wager", target, roll)
             self.UI.statusLabel:SetText(statusText)
         end
     end
-    
+
     self:ChatPrint("Challenging " .. target .. " to DeathRoll - rolling now!")
-    
+
     -- Start the game and immediately perform our roll
     self:StartActualGame(target, roll, wager, roll)
-    
+
     -- Automatically perform our first roll
     C_Timer.After(0.1, function()
         if self.gameState and self.gameState.isActive then
@@ -1691,11 +1850,30 @@ function DRE:ShowEditGameDialog()
             local gold = tonumber(goldInput:GetText()) or 0
             local silver = tonumber(silverInput:GetText()) or 0
             local copper = tonumber(copperInput:GetText()) or 0
-            local newGoldAmount = gold * 10000 + silver * 100 + copper
             local newInitialRoll = tonumber(rollInput:GetText()) or 0
-            
+
+            -- Validate inputs
+            if gold < 0 or gold > 999999 then
+                self:Print("Gold must be between 0 and 999,999!")
+                return
+            end
+            if silver < 0 or silver > 99 then
+                self:Print("Silver must be between 0 and 99!")
+                return
+            end
+            if copper < 0 or copper > 99 then
+                self:Print("Copper must be between 0 and 99!")
+                return
+            end
+            if newInitialRoll < 0 or newInitialRoll > 999999 then
+                self:Print("Starting roll must be between 0 and 999,999!")
+                return
+            end
+
+            local newGoldAmount = gold * 10000 + silver * 100 + copper
+
             local success, message = self:EditGameRecord(playerName, gameData.gameIndex, newResult, newGoldAmount, newInitialRoll)
-            
+
             if success then
                 self:Print(message)
                 frame:Hide()
@@ -1806,9 +1984,9 @@ StaticPopupDialogs["DEATHROLL_DELETE_GAME_CONFIRM"] = {
 function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
     local myName = UnitName("player")
     local isSelfDuel = (target == myName)
-    
+
     self:DebugPrint("Starting actual game: target=" .. target .. ", initialRoll=" .. initialRoll .. ", currentRoll=" .. (currentRoll or initialRoll) .. ", isSelfDuel=" .. tostring(isSelfDuel))
-    
+
     -- Initialize game state
     self.gameState = {
         isActive = true,
@@ -1817,8 +1995,13 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
         currentRoll = currentRoll or initialRoll,
         wager = wager or 0,
         playerTurn = true,
-        rollCount = isSelfDuel and 0 or nil  -- Initialize roll counter for self-duels
+        rollCount = isSelfDuel and 0 or 0  -- Initialize roll counter for all games
     }
+
+    -- Clear recent rolls for the opponent to prevent button confusion
+    if target ~= myName then
+        self:ClearRecentRollsForPlayer(target)
+    end
     
     -- Clear previous game's roll history to start fresh
     self:ClearRollHistory()
@@ -1928,12 +2111,32 @@ end
 -- Handle ongoing game rolls
 function DRE:HandleGameRoll(playerName, roll, maxRoll)
     self:DebugPrint("HandleGameRoll called: player=" .. (playerName or "nil") .. ", roll=" .. (roll or "nil") .. ", maxRoll=" .. (maxRoll or "nil") .. ", gameState.isActive=" .. tostring(self.gameState and self.gameState.isActive or false))
-    
+
+    -- Validate game state exists and is active
     if not self.gameState or not self.gameState.isActive then
+        self:DebugPrint("No active game state, ignoring roll")
         return
     end
-    
+
+    -- Validate game state has required fields
+    if not self.gameState.target or not self.gameState.currentRoll or not self.gameState.initialRoll then
+        self:DebugPrint("Game state missing required fields, aborting")
+        self.gameState = nil
+        return
+    end
+
+    -- Validate parameters
+    if not playerName or not roll or not maxRoll then
+        self:DebugPrint("Invalid parameters passed to HandleGameRoll")
+        return
+    end
+
     local myName = UnitName("player")
+    if not myName then
+        self:DebugPrint("Could not get player name")
+        return
+    end
+
     local isSelfDuel = (self.gameState.target == myName)
     
     -- Only process rolls from the player if it's a regular duel or self-duel

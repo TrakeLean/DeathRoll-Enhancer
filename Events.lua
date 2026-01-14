@@ -84,10 +84,15 @@ end
 -- Helper function to detect challenge messages
 function DRE:IsDeathRollChallenge(message)
     if not message then return false end
-    
     local lowerMessage = message:lower()
-    return lowerMessage:find(self.CHAT_PATTERNS.DEATHROLL_CHALLENGE) or 
-           lowerMessage:find(self.CHAT_PATTERNS.DEATHROLL_CHALLENGE_ALT)
+    -- Use simple lowercase substring checks to avoid pattern case-class issues
+    if lowerMessage:find("challenge.* you to a deathroll") then
+        return true
+    end
+    if lowerMessage:find("i challenge you to a deathroll") then
+        return true
+    end
+    return false
 end
 
 -- Validation helper for wager amounts

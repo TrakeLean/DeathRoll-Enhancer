@@ -20,8 +20,14 @@ DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
-DRE.version = "2.1.5"
+DRE.version = "2.1.6"
 DRE.author = "EgyptianSheikh"
+
+-- Utility: safe trim for user input (WoW Lua doesn't provide string:trim())
+function DRE:Trim(s)
+    if not s then return "" end
+    return s:match("^%s*(.-)%s*$")
+end
 
 -- Import libraries with safety checks
 local AceGUI = LibStub("AceGUI-3.0", true)
@@ -426,7 +432,7 @@ end
 
 -- Slash command handlers
 function DRE:SlashCommand(input)
-    if not input or input:trim() == "" then
+    if not input or self:Trim(input) == "" then
         self:ShowMainWindow()
     elseif input == "config" or input == "options" then
         self:OpenOptions()
@@ -458,7 +464,7 @@ function DRE:SlashCommand(input)
 end
 
 function DRE:HistoryCommand(input)
-    local target = input and input:trim() or ""
+    local target = input and self:Trim(input) or ""
     if target == "" then
         target = UnitName("target")
     end

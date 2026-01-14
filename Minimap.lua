@@ -12,7 +12,7 @@ local LDB = LibStub("LibDataBroker-1.1", true)
 local minimapLDB = {
     type = "data source",
     text = "DeathRoll",
-    icon = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo",
+    icon = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo.tga",
     OnClick = function(frame, button)
         if button == "LeftButton" then
             DRE:ShowMainWindow()
@@ -136,7 +136,7 @@ function DRE:HandleMinimapSlashCommand(args)
         return
     end
     
-    local command = args:lower():trim()
+    local command = DRE and DRE.Trim and DRE:Trim(args and args:lower() or "") or (args and args:lower() or "")
     
     if command == "show" then
         self.db.profile.minimap.hide = false

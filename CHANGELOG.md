@@ -1,5 +1,15 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.1.6 - Bintes Edition
+
+### Bug Fixes
+- [Add your changes here]
+
+### New Features  
+- [Add your changes here]
+
+---
+
 ## Version 2.1.5 - Gold Tracking Fix Edition
 
 ### Bug Fixes

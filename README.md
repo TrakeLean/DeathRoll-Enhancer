@@ -1,12 +1,37 @@
-# DeathRoll Enhancer v2.2.0 - Bintes Edition
+# DeathRoll Enhancer v2.2.0 - TBC Compatibility & Bug Fix Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
 ![Version](https://img.shields.io/badge/Version-2.2.0-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
-**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, and comprehensive game management. Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
+**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **full TBC Classic support**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
+
+## 🆕 What's New in Version 2.2.0
+
+### **🎯 TBC Classic Support**
+- **Full TBC compatibility** - Now works seamlessly on TBC Classic servers (Interface: 20505)
+- **C_Timer shim** - Automatic compatibility layer for older WoW versions
+- **Zero performance impact** - Uses native API when available
+- **Universal compatibility** - One addon works across all WoW versions
+
+### **🐛 Major Bug Fixes (20+ Issues Resolved)**
+- **Race condition fixes** - No more duplicate roll detection with new deduplication system
+- **UI crash prevention** - Comprehensive nil guards prevent UI-related crashes
+- **Database protection** - Fixed counter corruption and negative value issues
+- **Game state validation** - Enhanced checks prevent mid-game crashes
+- **Memory leak fixes** - Proper cleanup of recent rolls and game states
+- **Input validation** - Prevents database corruption from invalid data entry
+
+### **🛡️ Stability Improvements**
+- **Enhanced error handling** - Better debug logging throughout
+- **Proper cleanup** - Game state cleared on logout/disable
+- **Infinite loop protection** - Iteration limits on all loops
+- **Concurrent game prevention** - Only one game at a time
+- **Timer fixes** - Corrected race conditions in roll detection
+
+![image](https://media.forgecdn.net/attachments/1311/246/img1.png)
 
 ## 🎲 Core Features
 
@@ -15,6 +40,7 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 - **Resizable & moveable window** with persistent positioning
 - **Tabbed interface** - DeathRoll, Statistics, and History tabs
 - **Smart challenge detection** - Automatically detects opponent rolls and shows "PlayerName rolled 56 from 1000 - Accept challenge!"
+- **Real-time game progress** with colored player names and win probability
 
 ### **Advanced Statistics & Tracking**
 - **Comprehensive player history** - Win/loss records per opponent
@@ -22,10 +48,11 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 - **Streak tracking** - Current and best winning/losing streaks
 - **Fun statistics** - Most frequent opponent, biggest win/loss, win rates, and more
 - **Recent game history** - View last 15 games with each player
+- **Game record editing** - Fix mistakes with full edit/delete capabilities
 
 ### **Smart Game Management**
 - **Automatic roll detection** - Recognizes opponent rolls in chat
-- **Challenge acceptance** - One-click accept with pre-filled roll values  
+- **Challenge acceptance** - One-click accept with pre-filled roll values
 - **Wager system** - Gold/Silver/Copper inputs with smart calculations
 - **Self-duel mode** - Practice against yourself
 - **Cross-version compatibility** - Works on Classic Era, TBC, Wrath, Cata, and Retail
@@ -40,7 +67,9 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 ## 📋 Commands
 
 - **`/dr`** or **`/deathroll`** - Open main interface
-- **`/dr config`** - Open configuration panel  
+- **`/dr config`** - Open configuration panel
+- **`/dr edit`** - Edit recent game records to fix mistakes
+- **`/dr fixgold`** - Recalculate gold tracking totals
 - **`/drh [player]`** - View history with specific player
 
 ## 🎨 Interface Navigation
@@ -54,32 +83,22 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 
 Access via `/dr config` for extensive customization:
 - **UI scaling and positioning** with reset functions
-- **Auto-emote settings** for win/loss reactions  
+- **Auto-emote settings** for win/loss reactions
 - **Sound notifications** for game events
+- **Chat message control** - Toggle informational messages
+- **Debug mode** - Enable detailed logging for troubleshooting
 - **Fun statistics toggles** - Show only the stats you want
 - **Minimap icon** show/hide and positioning
-- **Font selection** and interface theming
+- **Data management** - Edit games, clean old data, export statistics
 
 ## 🔧 Technical Details
 
 - **Built with Ace3** for rock-solid stability and performance
 - **LibSharedMedia integration** for consistent UI theming
 - **Persistent data storage** with automatic backup/restore
-- **Debug system** for troubleshooting (can be enabled in advanced settings)
+- **Comprehensive error handling** with debug system
 - **Memory efficient** with smart data management
-
-## 🆕 What's New in v2.1.2 - Bintes Edition
-
-### Bug Fixes
-- Fixed post-game challenge button displaying opponent's last roll after game completion
-- Challenge button now properly returns to normal state when games end
-- Fixed addon loading order issues that caused method errors
-- Improved game state cleanup to prevent UI confusion after duels
-
-### Previous Updates (v2.1.1)
-- Fixed challenge acceptance display to show actual roll value and original range
-- Enhanced UI status text to show "Bintes Edition"
-- Improved challenge notification clarity
+- **TBC compatible** with automatic fallback for older APIs
 
 ## 🎭 Emote System
 
@@ -91,9 +110,10 @@ Access via `/dr config` for extensive customization:
 ## 💰 Advanced Gold Tracking
 
 - **Real-time calculations** - See your profit/loss as you play
-- **Per-player breakdowns** - Know exactly how much you've won/lost against each opponent  
+- **Per-player breakdowns** - Know exactly how much you've won/lost against each opponent
 - **Streak monitoring** - Track hot and cold streaks
 - **Historical analysis** - View trends over time
+- **Repair function** - `/dr fixgold` to fix any data inconsistencies
 
 ## 📊 Statistics Dashboard
 
@@ -104,18 +124,40 @@ View detailed analytics including:
 - Most/least profitable opponents
 - Biggest single wins and losses
 - Average wager amounts
+- Nemesis and favorite opponent tracking
+
+## 🏆 Perfect For
+
+- **TBC Classic players** looking for the best DeathRoll addon
+- **Serious DeathRoll players** who want comprehensive tracking
+- **Gold-making enthusiasts** monitoring their gambling profits
+- **Statistics lovers** who enjoy detailed performance analytics
+- **Casual players** who want a better DeathRoll experience
+- **Guild events** and organized DeathRoll tournaments
 
 ## 🛠️ Developer Information
 
-**Author:** EgyptianSheikh  
-**Framework:** Ace3  
-**Dependencies:** LibSharedMedia-3.0, LibDBIcon-1.0  
-**License:** GPL v3  
+**Author:** EgyptianSheikh
+**Framework:** Ace3
+**Dependencies:** LibSharedMedia-3.0, LibDBIcon-1.0
+**License:** GPL v3
 
 ## 📖 Version History
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and all changes.
 
+### Recent Updates
+
+**v2.2.0** - TBC Compatibility & Bug Fix Edition
+- Full TBC Classic support with C_Timer shim
+- 20+ bug fixes including race conditions and UI crashes
+- Enhanced stability and error handling
+
+**v2.1.x** - Gold Tracking & Edit Features
+- Game record editing system
+- Gold tracking repair function
+- Database integrity improvements
+
 ---
 
-*Experience DeathRoll like never before with professional-grade tracking, statistics, and management tools!*
+*Experience DeathRoll like never before with professional-grade tracking, statistics, and management tools - now with full TBC Classic support!*

@@ -1,8 +1,32 @@
 # DeathRoll Enhancer
 
-**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, and comprehensive game management. Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
+**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
 
 ![image](https://media.forgecdn.net/attachments/description/954561/description_81534083-99e1-4a0c-8c9e-f59e1eb4122f.png)
+
+## What's New in Version 2.3.1
+
+- **TOC compatibility update** - Advertise multi-version Interface support to prevent "out of date" flags across Classic/TBC/Wrath/Cata/Retail
+
+
+## 🆕 What's New in Version 2.3.0
+
+### **💬 Whisper-Based Challenge System**
+- **Seamless challenge notifications** - Addon users automatically notify opponents via whisper
+- **Popup dialog** - Clean WoW-style popup shows challenger name, roll, and wager
+- **One-click accept** - Opens UI and pre-fills all challenge values
+- **Configurable thresholds** - Set minimum roll value to filter spam (default: 100)
+- **Fully toggleable** - Enable/disable sending and receiving challenges independently
+- **Works alongside manual play** - Still functions normally with players who don't have the addon
+
+### **📊 Improved Fun Statistics**
+- **Organized sections** - Stats now grouped into "Player Relationships", "Gold & Money", and "Luck & Streaks"
+- **Matches settings layout** - Same order and structure as the settings tab
+- **Cleaner display** - Easier to scan and understand your gambling stats
+
+### **🐛 Bug Fixes**
+- **Starting roll field fix** - Fixed starting rolls showing as 0 in edit game records
+- **Field name consistency** - Unified `initialRoll` field across all operations
 
 ## 🎲 Core Features
 
@@ -21,10 +45,12 @@
 - **Unlimited history** - Never lose track of your DeathRoll career
 
 ### **Smart Game Management**
+- **Whisper-based challenges** - Seamless notifications between addon users
 - **Target validation** - Only accepts rolls from your selected opponent
 - **Self-duel support** - Play against yourself with proper turn tracking
 - **Automatic emote reactions** - Celebrate wins and commiserate losses
 - **Wager support** - Track gold, silver, and copper bets
+- **Game record editing** - Fix mistakes with full edit/delete capabilities
 - **Cross-version compatibility** - Works on Classic Era, TBC, Wrath, Cata, and Retail
 
 ## 🎮 How to Use
@@ -38,6 +64,8 @@
 ### **Commands**
 - **`/dr`** or **`/deathroll`** - Open main interface
 - **`/dr config`** - Open configuration panel
+- **`/dr edit`** - Edit recent game records to fix mistakes
+- **`/dr fixgold`** - Recalculate gold tracking totals
 - **`/drh [player]`** - View history with specific player
 
 ### **Interface Navigation**
@@ -49,12 +77,14 @@
 ## ⚙️ Configuration Options
 
 Access via `/dr config` for extensive customization:
+- **Challenge system settings** - Toggle popups, whispers, and set minimum roll threshold
 - **UI scaling and positioning** with reset functions
-- **Auto-emote settings** for win/loss reactions  
+- **Auto-emote settings** for win/loss reactions
 - **Sound notifications** for game events
 - **Fun statistics toggles** - Show only the stats you want
 - **Minimap icon** show/hide and positioning
 - **Font selection** and interface theming
+- **Data management** - Edit games, clean old data, export statistics
 
 ## 🔧 Technical Details
 

@@ -23,7 +23,9 @@
       "Bash(mv:*)",
       "Bash(rm:*)",
       "Bash(powershell:*)",
-      "Bash(copy Core.lua Database.lua DeathRollEnhancer.toc Events.lua Minimap.lua UI.lua DeathRollEnhancer)"
+      "Bash(copy Core.lua Database.lua DeathRollEnhancer.toc Events.lua Minimap.lua UI.lua DeathRollEnhancer)",
+      "Bash(ls:*)",
+      "Bash(unzip:*)"
     ],
     "deny": [],
     "ask": []

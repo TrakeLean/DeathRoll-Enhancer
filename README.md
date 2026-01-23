@@ -1,35 +1,35 @@
-# DeathRoll Enhancer v2.2.0 - TBC Compatibility & Bug Fix Edition
+# DeathRoll Enhancer v2.3.1 - TOC Compatibility Update
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.2.0-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.3.1-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
-**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **full TBC Classic support**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
+**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
 
-## 🆕 What's New in Version 2.2.0
+## What's New in Version 2.3.1
 
-### **🎯 TBC Classic Support**
-- **Full TBC compatibility** - Now works seamlessly on TBC Classic servers (Interface: 20505)
-- **C_Timer shim** - Automatic compatibility layer for older WoW versions
-- **Zero performance impact** - Uses native API when available
-- **Universal compatibility** - One addon works across all WoW versions
+- **TOC compatibility update** - Advertise multi-version Interface support to prevent "out of date" flags across Classic/TBC/Wrath/Cata/Retail
 
-### **🐛 Major Bug Fixes (20+ Issues Resolved)**
-- **Race condition fixes** - No more duplicate roll detection with new deduplication system
-- **UI crash prevention** - Comprehensive nil guards prevent UI-related crashes
-- **Database protection** - Fixed counter corruption and negative value issues
-- **Game state validation** - Enhanced checks prevent mid-game crashes
-- **Memory leak fixes** - Proper cleanup of recent rolls and game states
-- **Input validation** - Prevents database corruption from invalid data entry
+## 🆕 What's New in Version 2.3.0
 
-### **🛡️ Stability Improvements**
-- **Enhanced error handling** - Better debug logging throughout
-- **Proper cleanup** - Game state cleared on logout/disable
-- **Infinite loop protection** - Iteration limits on all loops
-- **Concurrent game prevention** - Only one game at a time
-- **Timer fixes** - Corrected race conditions in roll detection
+### **💬 Whisper-Based Challenge System**
+- **Seamless challenge notifications** - Addon users automatically notify opponents via whisper
+- **Popup dialog** - Clean WoW-style popup shows challenger name, roll, and wager
+- **One-click accept** - Opens UI and pre-fills all challenge values
+- **Configurable thresholds** - Set minimum roll value to filter spam (default: 100)
+- **Fully toggleable** - Enable/disable sending and receiving challenges independently
+- **Works alongside manual play** - Still functions normally with players who don't have the addon
+
+### **📊 Improved Fun Statistics**
+- **Organized sections** - Stats now grouped into "Player Relationships", "Gold & Money", and "Luck & Streaks"
+- **Matches settings layout** - Same order and structure as the settings tab
+- **Cleaner display** - Easier to scan and understand your gambling stats
+
+### **🐛 Bug Fixes**
+- **Starting roll field fix** - Fixed starting rolls showing as 0 in edit game records
+- **Field name consistency** - Unified `initialRoll` field across all operations
 
 ![image](https://media.forgecdn.net/attachments/1311/246/img1.png)
 

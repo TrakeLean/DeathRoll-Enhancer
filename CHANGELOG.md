@@ -1,5 +1,70 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.3.1 - TOC Compatibility Update
+
+### Compatibility
+- **Interface version list** - Added a multi-version `## Interface` list to avoid "out of date" warnings across Classic/TBC/Wrath/Cata/Retail
+
+---
+
+## Version 2.3.0 - Challenge System Update
+
+### New Features
+- **Whisper-Based Challenge System** - Seamless challenge notifications between addon users
+  - Automatic whisper sent when you start a challenge (toggleable in settings)
+  - Popup dialog appears when another addon user challenges you
+  - Shows challenger name, roll value, and wager amount in clean WoW-style popup
+  - Accept button opens UI and pre-fills challenge values
+  - Decline button politely declines the challenge
+  - 30-second auto-timeout on challenge popups
+  - Works alongside manual challenges for players without the addon
+
+### Challenge System Settings
+- **Enable Challenge Popups** - Toggle receiving challenge popups (default: ON)
+- **Send Challenge Whispers** - Toggle auto-whisper when you challenge (default: ON)
+- **Minimum Roll Threshold** - Set minimum roll value to show popups (default: 100, range: 2-10,000)
+  - Prevents spam from low-value test rolls
+  - Configurable to match your preferred gameplay style
+
+### UI Improvements
+- **Fun Statistics Organization** - Fun Stats now organized in sections
+  - "Player Relationships" section (Most Played With, Wins/Losses, Nemesis, Victim)
+  - "Gold & Money" section (Gold Mine, Money Sink, Biggest Win/Loss, High Roller, Cheapskate)
+  - "Luck & Streaks" section (Lucky/Unlucky Players, Daredevil, Conservative)
+  - Matches the exact order and grouping from settings tab
+  - Cleaner, more intuitive stats display
+
+### Bug Fixes
+- **Starting Roll Field Display** - Fixed starting roll showing 0 for all values in edit game records
+  - Unified field name to `initialRoll` across all save/edit/display operations
+  - Historical data compatibility maintained
+
+---
+
+## Version 2.2.1 - Statistics Fix Hotfix
+
+### Statistics Bug Fixes
+- **Fun Statistics Win Rate Display** - Fixed incorrect 0% and 100% win rate displays
+  - Changed initialization for nemesis/luckyPlayer from 0 to -1 (allows 0% to be selected)
+  - Changed initialization for victim/unluckyPlayer from 1 to 2 (allows 100% to be selected)
+  - Now correctly displays all win rate percentages including edge cases (0% and 100%)
+- **Streak Calculation Bug** - Fixed incorrect current streak values
+  - Added `RecalculateStreaks()` function to recalculate streaks from complete game history
+  - Integrated streak recalculation into `/dr fixgold` command
+  - Streaks now replay entire game history in chronological order for accuracy
+  - Fixes cases where streak showed incorrect values (e.g., showing loss streak when recent games were wins)
+- **Starting Roll Field Inconsistency** - Fixed initialRoll not displaying in edit game records
+  - Unified field name to `initialRoll` across all save/edit/display operations
+  - Fixed Fun Stats daredevil/conservative calculations to use correct field name
+  - Starting rolls now display correctly in edit game records dialog
+
+### Improvements
+- **Enhanced /dr fixgold Command** - Now recalculates both gold totals AND streaks
+  - Use this command to fix any statistics inconsistencies
+  - Automatically replays entire game history to ensure accuracy
+
+---
+
 ## Version 2.2.0 - TBC Compatibility & Bug Fix Edition
 
 ### TBC Compatibility

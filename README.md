@@ -137,7 +137,7 @@ View detailed analytics including:
 
 ## 🛠️ Developer Information
 
-**Author:** EgyptianSheikh
+**Author:** 0xTrk
 **Framework:** Ace3
 **Dependencies:** LibSharedMedia-3.0, LibDBIcon-1.0
 **License:** GPL v3

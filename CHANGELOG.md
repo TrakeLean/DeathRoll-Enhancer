@@ -2,8 +2,21 @@
 
 ## Version 2.3.1 - TOC Compatibility Update
 
-### Compatibility
-- **Interface version list** - Added a multi-version `## Interface` list to avoid "out of date" warnings across Classic/TBC/Wrath/Cata/Retail
+### Compatibility Fixes
+- **Added Mists of Pandaria Classic support** - Added interface version 50503 to support MoP Classic (5.5.3)
+- **Removed outdated retail interface** - Removed interface 110207 (old retail version)
+- **Changed Dependencies to OptionalDeps** - Fixed "out of date" cascade failures from Ace3/LibSharedMedia/LibDBIcon
+  - Prevents addon from being marked outdated when dependency libraries haven't updated their TOCs
+  - Libraries still load in correct order and function identically
+  - Common pattern used by major addons like DBM and WeakAuras
+
+### Supported WoW Versions
+- **120001, 120000** - Retail (The War Within 11.0.7 / Midnight)
+- **11508** - Classic Era (1.15.8)
+- **20505** - TBC Classic Anniversary (2.5.5)
+- **30403** - Wrath Classic (3.4.3)
+- **40402** - Cataclysm Classic (4.4.2)
+- **50503** - Mists of Pandaria Classic (5.5.3)
 
 ---
 

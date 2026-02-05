@@ -39,7 +39,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 DRE.version = "2.3.1"
-DRE.author = "EgyptianSheikh"
+DRE.author = "0xTrk"
 
 -- Utility: safe trim for user input (WoW Lua doesn't provide string:trim())
 function DRE:Trim(s)

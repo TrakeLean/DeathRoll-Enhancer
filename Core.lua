@@ -38,7 +38,7 @@ DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
-DRE.version = "2.3.1"
+DRE.version = "2.3.2"
 DRE.author = "0xTrk"
 
 -- Utility: safe trim for user input (WoW Lua doesn't provide string:trim())
@@ -95,6 +95,7 @@ local defaults = {
             enabled = true,
             sendWhisper = true,
             minRollThreshold = 100,
+            trackWagerByTrade = false,
         },
         history = {},
         goldTracking = {
@@ -164,6 +165,7 @@ function DRE:OnEnable()
     -- Register core events
     self:RegisterEvent("CHAT_MSG_SYSTEM")
     self:RegisterEvent("ADDON_LOADED")
+    self:RegisterEvent("UI_INFO_MESSAGE")
     
     -- Register game-related events (CHAT_MSG_WHISPER for spicy duels)
     self:RegisterEvent("CHAT_MSG_WHISPER")
@@ -175,7 +177,13 @@ function DRE:OnEnable()
     -- Register target change event to update button text
     self:RegisterEvent("PLAYER_TARGET_CHANGED")
     
-    self:DebugPrint("Events registered: CHAT_MSG_SYSTEM, ADDON_LOADED, CHAT_MSG_ADDON, CHAT_MSG_WHISPER, CHAT_MSG_TEXT_EMOTE, CHAT_MSG_EMOTE")
+    -- Register trade events for optional wager tracking
+    self:RegisterEvent("TRADE_SHOW")
+    self:RegisterEvent("TRADE_MONEY_CHANGED")
+    self:RegisterEvent("TRADE_ACCEPT_UPDATE")
+    self:RegisterEvent("TRADE_CLOSED")
+    
+    self:DebugPrint("Events registered: CHAT_MSG_SYSTEM, ADDON_LOADED, UI_INFO_MESSAGE, CHAT_MSG_WHISPER, CHAT_MSG_TEXT_EMOTE, CHAT_MSG_EMOTE, PLAYER_TARGET_CHANGED, TRADE_*")
     
     -- Initialize modules
     self:InitializeUI()
@@ -239,6 +247,120 @@ function DRE:CalculateAutoRoll()
     end
 
     return rollValue
+end
+
+function DRE:IsTradeWagerModeEnabled()
+    return self.db
+        and self.db.profile
+        and self.db.profile.challengeSystem
+        and self.db.profile.challengeSystem.trackWagerByTrade == true
+end
+
+function DRE:NormalizeTrackedPlayerName(name)
+    if not name or name == "" then
+        return nil
+    end
+
+    local cleanName = tostring(name)
+    cleanName = self:Trim(cleanName)
+    cleanName = cleanName:gsub("[%*%(%)]+", "")
+    cleanName = cleanName:match("^([^%s]+)") or cleanName
+    cleanName = cleanName:match("^([^-]+)") or cleanName
+
+    if cleanName == "" then
+        return nil
+    end
+
+    return cleanName
+end
+
+function DRE:CaptureTradeState(resetState)
+    self.tradeTracking = self.tradeTracking or {}
+
+    if resetState then
+        self.tradeTracking.partner = nil
+        self.tradeTracking.myGold = 0
+        self.tradeTracking.theirGold = 0
+    end
+
+    local partner = nil
+    if TradeFrameRecipientNameText and TradeFrameRecipientNameText.GetText then
+        partner = TradeFrameRecipientNameText:GetText()
+    end
+
+    if (not partner or partner == "") and UnitExists and UnitExists("NPC") then
+        partner = UnitName("NPC")
+    end
+
+    self.tradeTracking.partner = self:NormalizeTrackedPlayerName(partner) or self.tradeTracking.partner
+    self.tradeTracking.myGold = tonumber(GetPlayerTradeMoney()) or self.tradeTracking.myGold or 0
+    self.tradeTracking.theirGold = tonumber(GetTargetTradeMoney()) or self.tradeTracking.theirGold or 0
+    self.tradeTracking.lastUpdated = time()
+
+    self:DebugPrint(string.format(
+        "Trade state updated: partner=%s, myGold=%d, theirGold=%d",
+        self.tradeTracking.partner or "unknown",
+        self.tradeTracking.myGold or 0,
+        self.tradeTracking.theirGold or 0
+    ))
+end
+
+function DRE:HandleTrackedTradeCompletion()
+    local pending = self.pendingTradeWager
+    if not pending then
+        return
+    end
+
+    if (time() - (pending.recordedAt or 0)) > 300 then
+        self:DebugPrint("Clearing expired pending trade wager")
+        self.pendingTradeWager = nil
+        return
+    end
+
+    local tradeState = self.tradeTracking or {}
+    local pendingPlayer = self:NormalizeTrackedPlayerName(pending.playerName)
+    local tradePartner = self:NormalizeTrackedPlayerName(tradeState.partner)
+
+    if not pendingPlayer or not tradePartner or pendingPlayer ~= tradePartner then
+        self:DebugPrint("Completed trade does not match the pending tracked wager")
+        return
+    end
+
+    local tradeAmount = 0
+    if pending.result == "Won" then
+        tradeAmount = tonumber(tradeState.theirGold) or 0
+    elseif pending.result == "Lost" then
+        tradeAmount = tonumber(tradeState.myGold) or 0
+    end
+
+    if tradeAmount <= 0 then
+        self:DebugPrint("Completed trade matched the pending game but did not include gold on the expected side")
+        return
+    end
+
+    local success, message = self:UpdateGameWagerByTimestamp(pending.playerName, pending.recordedAt, tradeAmount)
+    if not success then
+        self:Print("Trade tracked, but the wager could not be updated: " .. (message or "unknown error"))
+        return
+    end
+
+    if self.UpdateStatsDisplay then
+        self:UpdateStatsDisplay()
+    end
+
+    if self.UI and self.UI.currentTab == "history" and self.UpdateHistoryDisplay and self.UI.historyDropdown and self.UI.historyDropdown.GetValue then
+        local selectedPlayer = self.UI.historyDropdown:GetValue()
+        if selectedPlayer then
+            self:UpdateHistoryDisplay(selectedPlayer)
+        end
+    end
+
+    if self.UpdateRollHistoryStatus then
+        self:UpdateRollHistoryStatus("Trade wager recorded vs " .. pending.playerName .. " (" .. self:FormatGold(tradeAmount) .. ")", false)
+    end
+
+    self:Print("Tracked trade updated the wager for your last game vs " .. pending.playerName .. ".")
+    self.pendingTradeWager = nil
 end
 
 -- Challenge System: Send whisper challenge to opponent
@@ -611,9 +733,17 @@ function DRE:SlashCommand(input)
         self:Print("Debug command triggered - dumping buffer...")
         self:DumpDebugBuffer()
     elseif input == "accept" then
-        self:Print("No pending challenge to accept")
+        if self.pendingChallenge then
+            self:AcceptChallenge()
+        else
+            self:Print("No pending challenge to accept")
+        end
     elseif input == "decline" then
-        self:Print("No pending challenge to decline")
+        if self.pendingChallenge then
+            self:DeclineChallenge()
+        else
+            self:Print("No pending challenge to decline")
+        end
     elseif input == "edit" then
         self:ShowEditGameDialog()
     elseif input == "fixgold" then
@@ -623,6 +753,8 @@ function DRE:SlashCommand(input)
         else
             self:Print("Failed to fix gold tracking: " .. message)
         end
+    elseif input == "size" or input == "windowsize" then
+        self:PrintCurrentWindowSize()
     else
         self:Print("Usage: /dr or /deathroll - Opens the main window")
         self:Print("       /dr config - Opens configuration")
@@ -631,6 +763,7 @@ function DRE:SlashCommand(input)
         self:Print("       /dr decline - Decline pending challenge")
         self:Print("       /dr edit - Edit recent game records")
         self:Print("       /dr fixgold - Recalculate gold tracking totals")
+        self:Print("       /dr size - Show current window size")
     end
 end
 
@@ -693,29 +826,6 @@ function DRE:SetupOptions()
                         set = function(_, val) self.db.profile.gameplay.trackGold = val end,
                         order = 4,
                     },
-                    autoRollFromMoney = {
-                        name = "Auto-Roll from Money",
-                        desc = "Automatically set roll number based on your total money (gold + silver + copper) mod 999,999",
-                        type = "toggle",
-                        get = function() return self.db.profile.gameplay.autoRollFromMoney end,
-                        set = function(_, val) 
-                            self.db.profile.gameplay.autoRollFromMoney = val
-                            -- Update the roll input immediately if UI is open
-                            if self.UI and self.UI.rollEdit then
-                                if val then
-                                    local autoRoll = self:CalculateAutoRoll()
-                                    self.UI.rollEdit:SetText(tostring(autoRoll))
-                                    self:Print("Auto-roll enabled - roll input set to: " .. autoRoll)
-                                else
-                                    self.UI.rollEdit:SetText("100")
-                                    self:Print("Auto-roll disabled - roll input reset to: 100")
-                                end
-                            else
-                                self:Print("Auto-roll setting changed to: " .. (val and "enabled" or "disabled"))
-                            end
-                        end,
-                        order = 5,
-                    },
                     chatMessages = {
                         name = "Chat Messages",
                         desc = "Show informational messages in chat (challenge status, responses, timeouts, etc.)",
@@ -752,6 +862,14 @@ function DRE:SetupOptions()
                         get = function() return self.db.profile.challengeSystem.sendWhisper end,
                         set = function(_, val) self.db.profile.challengeSystem.sendWhisper = val end,
                         order = 5.82,
+                    },
+                    trackWagerByTrade = {
+                        name = "Track Wager From Completed Trade",
+                        desc = "Hide manual wager inputs in the main window and update the wager from the next successful gold trade with your opponent.",
+                        type = "toggle",
+                        get = function() return self.db.profile.challengeSystem.trackWagerByTrade end,
+                        set = function(_, val) self.db.profile.challengeSystem.trackWagerByTrade = val end,
+                        order = 5.825,
                     },
                     minRollThreshold = {
                         name = "Minimum Roll for Popups",
@@ -794,7 +912,7 @@ function DRE:SetupOptions()
                     },
                     resetSize = {
                         name = "Reset Window Size",
-                        desc = "Reset the DeathRoll window to default size (400x300)",
+                        desc = "Reset the DeathRoll window to default size (400x311)",
                         type = "execute",
                         func = function() self:ResetWindowSize() end,
                         order = 8.5,
@@ -1059,6 +1177,9 @@ function DRE:UpdateUIScale()
     if DRE.UI and DRE.UI.mainWindow and DRE.UI.mainWindow.frame then
         local scale = self.db.profile.ui.scale or 0.9
         DRE.UI.mainWindow.frame:SetScale(scale)
+        if self.QueueLayoutRefresh then
+            self:QueueLayoutRefresh()
+        end
     end
 end
 
@@ -1077,7 +1198,7 @@ function DRE:ResetWindowPosition()
         self.UI.mainWindow.frame:ClearAllPoints()
         self.UI.mainWindow.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
         self.UI.mainWindow:SetWidth(400)
-        self.UI.mainWindow:SetHeight(300)
+        self.UI.mainWindow:SetHeight(311)
     end
     
     self:Print("Window position and size reset to defaults")
@@ -1093,10 +1214,66 @@ function DRE:ResetWindowSize()
     -- Also resize the currently open window if it exists
     if self.UI and self.UI.mainWindow then
         self.UI.mainWindow:SetWidth(400)
-        self.UI.mainWindow:SetHeight(300)
+        self.UI.mainWindow:SetHeight(311)
     end
     
-    self:Print("Window size reset to default (400x300)")
+    self:Print("Window size reset to default (400x311)")
+end
+
+function DRE:PrintCurrentWindowSize()
+    local savedWidth = nil
+    local savedHeight = nil
+    if self.db and self.db.profile and self.db.profile.ui and self.db.profile.ui.frameStatus then
+        savedWidth = self.db.profile.ui.frameStatus.width
+        savedHeight = self.db.profile.ui.frameStatus.height
+    end
+
+    local liveWidth = nil
+    local liveHeight = nil
+    local scale = (self.db and self.db.profile and self.db.profile.ui and self.db.profile.ui.scale) or 0.9
+
+    if self.UI and self.UI.mainWindow then
+        if self.UI.mainWindow.GetWidth and self.UI.mainWindow.GetHeight then
+            liveWidth = self.UI.mainWindow:GetWidth()
+            liveHeight = self.UI.mainWindow:GetHeight()
+        end
+
+        if self.UI.mainWindow.frame and self.UI.mainWindow.frame.GetScale then
+            scale = self.UI.mainWindow.frame:GetScale() or scale
+        end
+    end
+
+    if liveWidth and liveHeight then
+        local effectiveWidth = math.floor((liveWidth or 0) * scale + 0.5)
+        local effectiveHeight = math.floor((liveHeight or 0) * scale + 0.5)
+
+        self:Print(string.format(
+            "Current window size: %.0f x %.0f (scale %.2f, effective %.0f x %.0f)",
+            liveWidth,
+            liveHeight,
+            scale,
+            effectiveWidth,
+            effectiveHeight
+        ))
+    else
+        local fallbackWidth = savedWidth or 400
+        local fallbackHeight = savedHeight or 311
+
+        self:Print(string.format(
+            "Window is not open. Saved size: %.0f x %.0f (scale %.2f)",
+            fallbackWidth,
+            fallbackHeight,
+            scale
+        ))
+    end
+
+    if savedWidth or savedHeight then
+        self:Print(string.format(
+            "Saved AceGUI size: %.0f x %.0f",
+            savedWidth or 400,
+            savedHeight or 300
+        ))
+    end
 end
 
 -- Module initialization methods (actual implementations are in separate files)
@@ -1148,6 +1325,34 @@ function DRE:PLAYER_TARGET_CHANGED(event)
         -- Also check for recent rolls from the new target
         self:CheckRecentRollsForChallenge()
     end
+end
+
+function DRE:TRADE_SHOW(event)
+    self:CaptureTradeState(true)
+end
+
+function DRE:TRADE_MONEY_CHANGED(event)
+    self:CaptureTradeState(false)
+end
+
+function DRE:TRADE_ACCEPT_UPDATE(event)
+    self:CaptureTradeState(false)
+end
+
+function DRE:TRADE_CLOSED(event)
+    if self.tradeTracking then
+        self.tradeTracking.closedAt = time()
+    end
+end
+
+function DRE:UI_INFO_MESSAGE(event, messageType, message)
+    local infoMessage = message or messageType
+    if infoMessage ~= ERR_TRADE_COMPLETE then
+        return
+    end
+
+    self:DebugPrint("Successful trade detected")
+    self:HandleTrackedTradeCompletion()
 end
 
 -- Additional event handlers to catch rolls
@@ -1341,41 +1546,6 @@ function DRE:CheckRecentRollsForChallenge()
     self:DebugPrint("No recent roll found from " .. currentTarget)
 end
 
--- Show challenge notification in the UI
-function DRE:ShowChallengeNotification(playerName, roll, maxRoll)
-    self:DebugPrint("ShowChallengeNotification: " .. playerName .. " challenges you to DeathRoll 1-" .. maxRoll)
-    
-    -- Only show notification if UI is open and on deathroll tab
-    if not (self.UI and self.UI.mainWindow and self.UI.mainWindow.frame and self.UI.mainWindow.frame:IsVisible()) then
-        self:DebugPrint("UI not open, cannot show challenge notification")
-        return
-    end
-    
-    if self.UI.currentTab ~= "deathroll" then
-        self:DebugPrint("Not on deathroll tab, cannot show challenge notification")
-        return
-    end
-    
-    -- Don't show if we already have an active game
-    if self.gameState and self.gameState.isActive then
-        self:DebugPrint("Game already active, not showing challenge notification")
-        return
-    end
-    
-    -- Store the challenge details in UI namespace (consistent with existing code)
-    if not self.UI then
-        self.UI = {}
-    end
-    self.UI.incomingChallenge = {
-        player = playerName,
-        roll = roll,
-        maxRoll = maxRoll
-    }
-    
-    -- Update the UI to show the challenge notification
-end
-
-
 -- Handle detected roll from any event source
 function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
     self:DebugPrint("HandleDetectedRoll called: player=" .. (playerName or "nil") .. ", roll=" .. (roll or "nil") .. ", maxRoll=" .. (maxRoll or "nil"))
@@ -1452,12 +1622,30 @@ function DRE:CheckTargetedPlayerChallenge(playerName, roll, maxRoll)
     self:ShowChallengeNotification(playerName, roll, maxRoll)
 end
 
--- Show challenge notification with Accept/Deny buttons
+-- Store an incoming challenge for the active DeathRoll UI
 function DRE:ShowChallengeNotification(playerName, roll, maxRoll)
-    if not self.UI or not self.UI.mainWindow then
+    self:DebugPrint("ShowChallengeNotification: " .. tostring(playerName) .. " challenges you to DeathRoll 1-" .. tostring(maxRoll))
+
+    if not self.UI then
+        self:DebugPrint("UI not initialized, cannot show challenge notification")
         return
     end
-    
+
+    if not (self.UI.mainWindow and self.UI.mainWindow.frame and self.UI.mainWindow.frame:IsVisible()) then
+        self:DebugPrint("UI not open, cannot show challenge notification")
+        return
+    end
+
+    if self.UI.currentTab ~= "deathroll" then
+        self:DebugPrint("Not on deathroll tab, cannot show challenge notification")
+        return
+    end
+
+    if self.gameState and self.gameState.isActive then
+        self:DebugPrint("Game already active, not showing challenge notification")
+        return
+    end
+
     -- Store the challenge data
     self.UI.incomingChallenge = {
         player = playerName,
@@ -1466,7 +1654,7 @@ function DRE:ShowChallengeNotification(playerName, roll, maxRoll)
         timestamp = GetTime()
     }
     
-    -- Update the UI to show the challenge
+    -- The button text refresh logic reads from UI state when needed.
 end
 
 -- Update UI to show incoming challenge notification
@@ -1629,14 +1817,6 @@ function DRE:UpdateChallengeButtonText()
                 self.UI.gameButton:SetText("Challenge Player to DeathRoll!")
             end
         end, "gameButton")
-        -- Clear the roll input when no target
-        if self.UI.rollEdit then
-            self:SafeUIUpdate(self.UI.rollEdit, function()
-                if self.UI and self.UI.rollEdit then
-                    self.UI.rollEdit:SetText("")
-                end
-            end, "rollEdit")
-        end
         return
     end
 
@@ -1683,15 +1863,6 @@ function DRE:UpdateChallengeButtonText()
                 self.UI.gameButton:SetText("Challenge " .. targetName .. " to DeathRoll!")
             end
         end, "gameButton")
-
-        -- Clear the roll input for normal challenges
-        if self.UI.rollEdit then
-            self:SafeUIUpdate(self.UI.rollEdit, function()
-                if self.UI and self.UI.rollEdit then
-                    self.UI.rollEdit:SetText("")
-                end
-            end, "rollEdit")
-        end
 
         -- Clear any stored roll data
         self.UI.recentTargetRoll = nil
@@ -1798,7 +1969,7 @@ function DRE:DebugPrint(message)
 end
 
 -- Main function to start a DeathRoll challenge (called from UI)
-function DRE:StartDeathRoll(target, roll, wager)
+function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade)
     -- Check for active game first to prevent concurrent games
     if self.gameState and self.gameState.isActive then
         self:Print("A game is already in progress! Finish the current game first.")
@@ -1843,7 +2014,7 @@ function DRE:StartDeathRoll(target, roll, wager)
         self:Print("Starting self-duel! You'll play against yourself.")
 
         -- Start the actual game immediately for self-dueling
-        self:StartActualGame(target, roll, wager)
+        self:StartActualGame(target, roll, wager, nil, trackWagerByTrade)
 
         -- Update UI state to rolling
         if self.UpdateGameUIState then
@@ -1857,6 +2028,7 @@ function DRE:StartDeathRoll(target, roll, wager)
         target = target,
         roll = roll,
         wager = wager,
+        trackWagerByTrade = trackWagerByTrade == true,
         timestamp = time()
     }
 
@@ -1875,7 +2047,7 @@ function DRE:StartDeathRoll(target, roll, wager)
     self:ChatPrint("Challenging " .. target .. " to DeathRoll - rolling now!")
 
     -- Start the game and immediately perform our roll
-    self:StartActualGame(target, roll, wager, roll)
+    self:StartActualGame(target, roll, wager, roll, trackWagerByTrade)
 
     -- Automatically perform our first roll
     C_Timer.After(0.1, function()
@@ -2195,7 +2367,7 @@ StaticPopupDialogs["DEATHROLL_DELETE_GAME_CONFIRM"] = {
 }
 
 -- Start the actual DeathRoll game
-function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
+function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWagerByTrade)
     local myName = UnitName("player")
     local isSelfDuel = (target == myName)
 
@@ -2208,6 +2380,7 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
         initialRoll = initialRoll,
         currentRoll = currentRoll or initialRoll,
         wager = wager or 0,
+        trackWagerByTrade = trackWagerByTrade == true,
         playerTurn = true,
         rollCount = isSelfDuel and 0 or 0  -- Initialize roll counter for all games
     }
@@ -2244,10 +2417,20 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll)
 end
 
 -- Handle game end
-function DRE:HandleGameEnd(loser, result, wager, initialRoll)
+function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
     local playerName = UnitName("player")
     local won = (result == "WIN")
-    local opponent = self.gameState and self.gameState.target or "Unknown"
+    local opponent = (options and options.opponent) or (self.gameState and self.gameState.target) or "Unknown"
+    local shouldTrackTrade = false
+    local recordedPlayerName = nil
+    local recordedResult = nil
+    local recordedAt = nil
+
+    if options and options.trackWagerByTrade ~= nil then
+        shouldTrackTrade = options.trackWagerByTrade == true
+    elseif self.gameState then
+        shouldTrackTrade = self.gameState.trackWagerByTrade == true
+    end
     
     if won then
         self:Print("You WON the DeathRoll!")
@@ -2267,11 +2450,27 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll)
     -- Record the game result
     if loser and loser ~= playerName then
         -- We won against the loser
-        self:AddGameToHistory(loser, "Won", wager or 0, initialRoll or 0)
+        recordedPlayerName = loser
+        recordedResult = "Won"
+        recordedAt = self:AddGameToHistory(loser, recordedResult, wager or 0, initialRoll or 0)
     elseif loser == playerName then
         -- We lost to the target
         local target = self.gameState and self.gameState.target or "Unknown"
-        self:AddGameToHistory(target, "Lost", wager or 0, initialRoll or 0)
+        if options and options.opponent then
+            target = options.opponent
+        end
+        recordedPlayerName = target
+        recordedResult = "Lost"
+        recordedAt = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0)
+    end
+
+    if shouldTrackTrade and recordedPlayerName and recordedPlayerName ~= playerName and recordedPlayerName ~= "Unknown" then
+        self.pendingTradeWager = {
+            playerName = recordedPlayerName,
+            result = recordedResult,
+            recordedAt = recordedAt or time()
+        }
+        self:Print("Waiting for a completed gold trade with " .. recordedPlayerName .. " to record the wager.")
     end
     
     -- Clean up game state
@@ -2284,7 +2483,7 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll)
         self.UI.currentTarget = nil
         
         -- Remove recent rolls from the game opponent to prevent challenge button confusion
-        if opponent then
+        if opponent and self.recentRolls then
             for i = #self.recentRolls, 1, -1 do
                 local rollData = self.recentRolls[i]
                 if rollData.playerName == opponent then

@@ -18,10 +18,155 @@ UI.isGameActive = false
 UI.playerRoll = nil
 UI.opponentRoll = nil
 UI.gameState = "WAITING" -- WAITING, ROLLING, FINISHED
+UI.rollHistory = {}
 
 -- Initialize UI system
 function DRE:InitializeUI()
     self.UI = self.UI or {}
+end
+
+function DRE:UpdateMainTabLayout()
+    if not (self.UI and self.UI.tabGroup and self.UI.tabGroup.tabs) then
+        return
+    end
+
+    local tabGroup = self.UI.tabGroup
+    local tabCount = #tabGroup.tabs
+    if tabCount == 0 then
+        return
+    end
+
+    local availableWidth = 0
+    if tabGroup.border and tabGroup.border.GetWidth then
+        availableWidth = tabGroup.border:GetWidth() or 0
+    end
+    if availableWidth <= 0 and self.UI.mainWindow and self.UI.mainWindow.frame then
+        availableWidth = self.UI.mainWindow.frame:GetWidth() or 0
+    end
+    if availableWidth <= 0 and tabGroup.frame and tabGroup.frame.GetWidth then
+        availableWidth = tabGroup.frame:GetWidth() or 0
+    end
+    if availableWidth <= 0 then
+        return
+    end
+
+    local tabWidth = math.floor((availableWidth - 28) / tabCount)
+    if tabWidth < 90 then
+        return
+    end
+
+    for _, tab in ipairs(tabGroup.tabs) do
+        if tab and tab.SetWidth then
+            tab:SetWidth(tabWidth)
+        end
+        if tab and tab.frame and tab.frame.SetWidth then
+            tab.frame:SetWidth(tabWidth)
+        end
+        if tab and tab.text and tab.text.SetWidth then
+            tab.text:SetWidth(tabWidth - 20)
+            tab.text:SetJustifyH("CENTER")
+        end
+    end
+end
+
+function DRE:EnsureRollHistoryPanel()
+    -- Roll history is rendered inside the main window.
+end
+
+function DRE:ShowRollHistoryPanel()
+    -- Roll history is rendered inside the main window.
+end
+
+function DRE:HideRollHistoryPanel()
+    -- Roll history is rendered inside the main window.
+end
+
+function DRE:UpdateRollHistoryPanelVisibility()
+    -- Roll history is rendered inside the main window.
+end
+
+function DRE:ReleaseEmbeddedRollHistory()
+    if UI.rollHistoryScroll then
+        UI.rollHistoryScroll:Hide()
+        UI.rollHistoryScroll:ClearAllPoints()
+    end
+
+    if UI.rollHistoryContent then
+        UI.rollHistoryContent:Hide()
+    end
+
+    if UI.rollHistoryBox then
+        UI.rollHistoryBox:Hide()
+    end
+end
+
+function DRE:UpdateRollHistoryPanelLayout()
+    if not (UI.rollHistoryGroup and UI.rollHistoryScroll and UI.rollHistoryContent and UI.rollHistoryBox) then
+        return
+    end
+
+    local contentFrame = UI.rollHistoryGroup.content or UI.rollHistoryGroup.frame
+    if not contentFrame then
+        return
+    end
+
+    local scrollWidth = math.max(160, contentFrame:GetWidth() or 0)
+    local textWidth = math.max(154, scrollWidth - 6)
+    local scrollHeight = math.max(UI.rollHistoryScroll:GetHeight() or 0, contentFrame:GetHeight() or 0)
+
+    UI.rollHistoryBox:SetWidth(textWidth)
+    UI.rollHistoryContent:SetWidth(scrollWidth)
+
+    local textHeight = UI.rollHistoryBox:GetStringHeight() or 0
+    UI.rollHistoryContent:SetHeight(math.max(scrollHeight, textHeight + 4))
+end
+
+function DRE:RefreshVisibleUILayout()
+    if not UI.mainWindow then
+        return
+    end
+
+    if UI.mainWindow.DoLayout then
+        UI.mainWindow:DoLayout()
+    end
+
+    if UI.tabGroup and UI.tabGroup.DoLayout then
+        UI.tabGroup:DoLayout()
+    end
+
+    if UI.settingsContent and UI.settingsContent.DoLayout then
+        UI.settingsContent:DoLayout()
+    end
+
+    if UI.settingsScroll and UI.settingsScroll.DoLayout then
+        UI.settingsScroll:DoLayout()
+    end
+
+    self:UpdateMainTabLayout()
+    self:UpdateGameSectionLayout()
+    self:UpdateHistorySectionLayout()
+end
+
+function DRE:QueueLayoutRefresh()
+    if not UI.mainWindow then
+        return
+    end
+
+    UI.layoutRefreshToken = (UI.layoutRefreshToken or 0) + 1
+    local refreshToken = UI.layoutRefreshToken
+
+    self:RefreshVisibleUILayout()
+
+    local function runDeferredRefresh()
+        if not (self and self.UI and self.UI.mainWindow and self.UI.layoutRefreshToken == refreshToken) then
+            return
+        end
+
+        self:RefreshVisibleUILayout()
+    end
+
+    C_Timer.After(0, runDeferredRefresh)
+    C_Timer.After(0.05, runDeferredRefresh)
 end
 
 
@@ -34,6 +179,8 @@ function DRE:ShowMainWindow()
     
     if UI.mainWindow then
         UI.mainWindow:Show()
+        self:UpdateMainTabLayout()
+        self:UpdateRollHistoryPanelVisibility()
         -- Check for recent rolls when reopening UI
         self:CheckRecentRollsForChallenge()
         return
@@ -42,8 +189,9 @@ function DRE:ShowMainWindow()
     -- Create main window frame (initially hidden to prevent flash)
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("DeathRoll Enhancer")
-    frame:SetStatusText("v" .. self.version .. " - Bintes EDITion")
+    frame:SetStatusText("v" .. self.version .. " - SKEM Edition")
     frame:SetCallback("OnClose", function(widget)
+        self:HideRollHistoryPanel()
         widget:Hide()
     end)
     
@@ -52,7 +200,7 @@ function DRE:ShowMainWindow()
     
     -- Set default dimensions first
     frame:SetWidth(400)
-    frame:SetHeight(300)
+    frame:SetHeight(311)
     frame:SetLayout("Fill")
     
     -- Set up AceGUI status table (this will override defaults if saved values exist)
@@ -67,7 +215,7 @@ function DRE:ShowMainWindow()
     if not self.db.profile.ui.frameStatus.width and not self.db.profile.ui.frameStatus.height then
         -- This is likely first time opening - ensure proper sizing immediately
         frame:SetWidth(400)
-        frame:SetHeight(300)
+        frame:SetHeight(311)
         self:DebugPrint("Applied first-time window dimensions")
     end
 
@@ -91,6 +239,8 @@ function DRE:ShowMainWindow()
             self_frame.frame:SetScale(savedScale)
             DRE:DebugPrint("Frame status applied - scale corrected to: " .. savedScale)
         end
+
+        DRE:QueueLayoutRefresh()
     end
     
     -- Position/size restoration is now handled by AceGUI status table
@@ -105,19 +255,44 @@ function DRE:ShowMainWindow()
     tabGroup:SetTabs({
         {text="DeathRoll", value="deathroll"},
         {text="Statistics", value="statistics"}, 
-        {text="History", value="history"}
+        {text="History", value="history"},
+        {text="Settings", value="settings"}
     })
     tabGroup:SetCallback("OnGroupSelected", function(container, event, group)
+        self:ReleaseEmbeddedRollHistory()
         container:ReleaseChildren()
         -- Clear UI references when switching tabs to prevent cross-contamination
         UI.statsLabel = nil
         UI.streakLabel = nil
         UI.funStatsLabel = nil
         UI.rollHistoryBox = nil
-        UI.rollHistory = {}
+        UI.rollHistoryScroll = nil
+        UI.rollHistoryContent = nil
         UI.historyBox = nil
+        UI.historyScroll = nil
         UI.historyDropdown = nil
+        UI.settingsScroll = nil
+        UI.settingsContent = nil
+        UI.tradeWagerHelp = nil
         -- Clear challenge UI references too
+        UI.gameContainer = nil
+        UI.gameGroup = nil
+        UI.gameControlsGroup = nil
+        UI.rollHistoryGroup = nil
+        UI.rollInputGroup = nil
+        UI.wagerGroup = nil
+        UI.wagerHeader = nil
+        UI.goldPairGroup = nil
+        UI.silverPairGroup = nil
+        UI.copperPairGroup = nil
+        UI.goldUnitLabel = nil
+        UI.silverUnitLabel = nil
+        UI.copperUnitLabel = nil
+        UI.autoRollButton = nil
+        UI.historyGroup = nil
+        UI.historyControlsGroup = nil
+        UI.historyDisplayGroup = nil
+        UI.rollEdit = nil
         UI.gameButton = nil
         UI.goldEdit = nil
         UI.silverEdit = nil
@@ -134,7 +309,11 @@ function DRE:ShowMainWindow()
             self:CreateStatsSection(container)
         elseif group == "history" then
             self:CreateHistorySection(container)
+        elseif group == "settings" then
+            self:CreateSettingsSection(container)
         end
+
+        self:UpdateRollHistoryPanelVisibility()
     end)
     tabGroup:SelectTab("deathroll") -- Default to DeathRoll tab
     
@@ -143,6 +322,18 @@ function DRE:ShowMainWindow()
     
     -- Show the frame AFTER all setup is complete to prevent flash
     frame:Show()
+
+    frame.frame:HookScript("OnSizeChanged", function()
+        self:RefreshVisibleUILayout()
+        C_Timer.After(0, function()
+            self:RefreshVisibleUILayout()
+        end)
+    end)
+
+    C_Timer.After(0, function()
+        self:QueueLayoutRefresh()
+        self:UpdateRollHistoryPanelVisibility()
+    end)
     
     -- Check for recent rolls when first opening UI
     self:CheckRecentRollsForChallenge()
@@ -150,46 +341,45 @@ end
 
 -- Create game control section
 function DRE:CreateGameSection(container)
-    local gameGroup = AceGUI:Create("ScrollFrame")
+    local gameGroup = AceGUI:Create("SimpleGroup")
     gameGroup:SetFullWidth(true)
     gameGroup:SetFullHeight(true)
-    gameGroup:SetLayout("Flow")
+    gameGroup:SetLayout("List")
     container:AddChild(gameGroup)
+
+    local controlsGroup = AceGUI:Create("SimpleGroup")
+    controlsGroup:SetFullWidth(true)
+    controlsGroup:SetLayout("List")
+    gameGroup:AddChild(controlsGroup)
     
     -- Header
     local header = AceGUI:Create("Heading")
     header:SetText("Start DeathRoll")
     header:SetFullWidth(true)
-    gameGroup:AddChild(header)
+    controlsGroup:AddChild(header)
     
     -- Target info display
     local targetInfo = AceGUI:Create("Label")
     targetInfo:SetText("Target someone in-game, then click Challenge!")
     targetInfo:SetFullWidth(true)
     targetInfo:SetColor(0.8, 0.8, 0.8)
-    gameGroup:AddChild(targetInfo)
+    controlsGroup:AddChild(targetInfo)
     
-    -- Roll amount section
     local rollGroup = AceGUI:Create("SimpleGroup")
     rollGroup:SetFullWidth(true)
     rollGroup:SetLayout("Flow")
-    gameGroup:AddChild(rollGroup)
-    
+    controlsGroup:AddChild(rollGroup)
+
     local rollLabel = AceGUI:Create("Label")
     rollLabel:SetText("Roll:")
-    rollLabel:SetWidth(80)
+    rollLabel:SetWidth(34)
     rollGroup:AddChild(rollLabel)
-    
+
     local rollEdit = AceGUI:Create("EditBox")
     rollEdit:SetLabel("")
-    rollEdit:SetWidth(120)
+    rollEdit:SetWidth(90)
     
-    -- Set initial roll value based on auto-roll setting
-    local initialRoll = "100"
-    if self.db and self.db.profile.gameplay.autoRollFromMoney then
-        initialRoll = tostring(self:CalculateAutoRoll())
-    end
-    rollEdit:SetText(initialRoll)
+    rollEdit:SetText("100")
     
     rollEdit:SetMaxLetters(6) -- Limit to 6 digits
     rollEdit:SetCallback("OnTextChanged", function(widget, event, text)
@@ -204,78 +394,134 @@ function DRE:CreateGameSection(container)
         end
     end)
     rollGroup:AddChild(rollEdit)
+
+    local autoRollButton = AceGUI:Create("Button")
+    autoRollButton:SetText("Use My Gold")
+    autoRollButton:SetWidth(110)
+    autoRollButton:SetCallback("OnClick", function()
+        local autoRoll = self:CalculateAutoRoll()
+        rollEdit:SetText(tostring(autoRoll))
+        self:DebugPrint("Roll input set from money: " .. autoRoll)
+    end)
+    rollGroup:AddChild(autoRollButton)
     
     -- Store roll edit reference
     UI.rollEdit = rollEdit
     
-    -- Wager section
-    local wagerGroup = AceGUI:Create("SimpleGroup")
-    wagerGroup:SetFullWidth(true)
-    wagerGroup:SetLayout("Flow")
-    gameGroup:AddChild(wagerGroup)
-    
-    local wagerLabel = AceGUI:Create("Label")
-    wagerLabel:SetText("Wager:")
-    wagerLabel:SetWidth(80)
-    wagerGroup:AddChild(wagerLabel)
-    
-    local goldEdit = AceGUI:Create("EditBox")
-    goldEdit:SetLabel("Gold")
-    goldEdit:SetWidth(60)
-    goldEdit:SetText("") -- Start empty
-    goldEdit:SetMaxLetters(6) -- Reasonable gold limit
-    goldEdit:DisableButton(true) -- Remove the "Okay" button
-    
-    goldEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        local numericText = text:gsub("[^0-9]", "")
-        if numericText ~= text then
-            widget:SetText(numericText)
-        end
-    end)
-    
-    wagerGroup:AddChild(goldEdit)
-    
-    local silverEdit = AceGUI:Create("EditBox")
-    silverEdit:SetLabel("Silver")
-    silverEdit:SetWidth(60)
-    silverEdit:SetText("") -- Start empty
-    silverEdit:SetMaxLetters(2) -- Silver max 99
-    silverEdit:DisableButton(true) -- Remove the "Okay" button
-    
-    silverEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        local numericText = text:gsub("[^0-9]", "")
-        if numericText ~= text then
-            widget:SetText(numericText)
-        end
-        -- Limit silver to 99
-        local num = tonumber(numericText)
-        if num and num > 99 then
-            widget:SetText("99")
-        end
-    end)
-    
-    wagerGroup:AddChild(silverEdit)
-    
-    local copperEdit = AceGUI:Create("EditBox")
-    copperEdit:SetLabel("Copper")
-    copperEdit:SetWidth(60)
-    copperEdit:SetText("") -- Start empty
-    copperEdit:SetMaxLetters(2) -- Copper max 99
-    copperEdit:DisableButton(true) -- Remove the "Okay" button
-    
-    copperEdit:SetCallback("OnTextChanged", function(widget, event, text)
-        local numericText = text:gsub("[^0-9]", "")
-        if numericText ~= text then
-            widget:SetText(numericText)
-        end
-        -- Limit copper to 99
-        local num = tonumber(numericText)
-        if num and num > 99 then
-            widget:SetText("99")
-        end
-    end)
-    
-    wagerGroup:AddChild(copperEdit)
+    local goldEdit = nil
+    local silverEdit = nil
+    local copperEdit = nil
+    local tradeWagerHelp = nil
+    local wagerGroup = nil
+    local wagerHeader = nil
+    local goldPairGroup = nil
+    local silverPairGroup = nil
+    local copperPairGroup = nil
+    local goldUnitLabel = nil
+    local silverUnitLabel = nil
+    local copperUnitLabel = nil
+
+    if self:IsTradeWagerModeEnabled() then
+        tradeWagerHelp = AceGUI:Create("Label")
+        tradeWagerHelp:SetText("Wager tracking is set to trades. Complete a gold trade after the game and the wager will be recorded automatically.")
+        tradeWagerHelp:SetFullWidth(true)
+        tradeWagerHelp:SetColor(0.85, 0.82, 0.45)
+        controlsGroup:AddChild(tradeWagerHelp)
+    else
+        wagerGroup = AceGUI:Create("SimpleGroup")
+        wagerGroup:SetFullWidth(true)
+        wagerGroup:SetLayout("Flow")
+        controlsGroup:AddChild(wagerGroup)
+
+        wagerHeader = AceGUI:Create("Label")
+        wagerHeader:SetText("Wager:")
+        wagerHeader:SetWidth(45)
+        wagerHeader:SetColor(0.85, 0.85, 0.85)
+        wagerGroup:AddChild(wagerHeader)
+        
+        goldEdit = AceGUI:Create("EditBox")
+        goldEdit:SetLabel("")
+        goldEdit:SetWidth(54)
+        goldEdit:SetText("")
+        goldEdit:SetMaxLetters(6)
+        goldEdit:DisableButton(true)
+        
+        goldEdit:SetCallback("OnTextChanged", function(widget, event, text)
+            local numericText = text:gsub("[^0-9]", "")
+            if numericText ~= text then
+                widget:SetText(numericText)
+            end
+        end)
+
+        goldPairGroup = AceGUI:Create("SimpleGroup")
+        goldPairGroup:SetWidth(86)
+        goldPairGroup:SetLayout("Flow")
+        wagerGroup:AddChild(goldPairGroup)
+        goldPairGroup:AddChild(goldEdit)
+
+        goldUnitLabel = AceGUI:Create("Label")
+        goldUnitLabel:SetText("Gold")
+        goldUnitLabel:SetWidth(30)
+        goldPairGroup:AddChild(goldUnitLabel)
+        
+        silverEdit = AceGUI:Create("EditBox")
+        silverEdit:SetLabel("")
+        silverEdit:SetWidth(40)
+        silverEdit:SetText("")
+        silverEdit:SetMaxLetters(2)
+        silverEdit:DisableButton(true)
+        
+        silverEdit:SetCallback("OnTextChanged", function(widget, event, text)
+            local numericText = text:gsub("[^0-9]", "")
+            if numericText ~= text then
+                widget:SetText(numericText)
+            end
+            local num = tonumber(numericText)
+            if num and num > 99 then
+                widget:SetText("99")
+            end
+        end)
+
+        silverPairGroup = AceGUI:Create("SimpleGroup")
+        silverPairGroup:SetWidth(92)
+        silverPairGroup:SetLayout("Flow")
+        wagerGroup:AddChild(silverPairGroup)
+        silverPairGroup:AddChild(silverEdit)
+
+        silverUnitLabel = AceGUI:Create("Label")
+        silverUnitLabel:SetText("Silver")
+        silverUnitLabel:SetWidth(36)
+        silverPairGroup:AddChild(silverUnitLabel)
+        
+        copperEdit = AceGUI:Create("EditBox")
+        copperEdit:SetLabel("")
+        copperEdit:SetWidth(40)
+        copperEdit:SetText("")
+        copperEdit:SetMaxLetters(2)
+        copperEdit:DisableButton(true)
+        
+        copperEdit:SetCallback("OnTextChanged", function(widget, event, text)
+            local numericText = text:gsub("[^0-9]", "")
+            if numericText ~= text then
+                widget:SetText(numericText)
+            end
+            local num = tonumber(numericText)
+            if num and num > 99 then
+                widget:SetText("99")
+            end
+        end)
+
+        copperPairGroup = AceGUI:Create("SimpleGroup")
+        copperPairGroup:SetWidth(100)
+        copperPairGroup:SetLayout("Flow")
+        wagerGroup:AddChild(copperPairGroup)
+        copperPairGroup:AddChild(copperEdit)
+
+        copperUnitLabel = AceGUI:Create("Label")
+        copperUnitLabel:SetText("Copper")
+        copperUnitLabel:SetWidth(44)
+        copperPairGroup:AddChild(copperUnitLabel)
+    end
     
     -- Game action button (changes based on game state)
     local gameButton = AceGUI:Create("Button")
@@ -284,26 +530,252 @@ function DRE:CreateGameSection(container)
     gameButton:SetCallback("OnClick", function()
         self:HandleGameButtonClick()
     end)
-    gameGroup:AddChild(gameButton)
-    
-    
-    -- Game status (compact, simple display)
-    local statusLabel = AceGUI:Create("Label")
-    statusLabel:SetText("Ready to start! Target someone and click Challenge Player to DeathRoll!")
-    statusLabel:SetFullWidth(true)
-    statusLabel:SetColor(0.9, 0.9, 0.9) -- Light gray text
-    gameGroup:AddChild(statusLabel)
+    controlsGroup:AddChild(gameButton)
+
+    local rollHistoryGroup = AceGUI:Create("InlineGroup")
+    rollHistoryGroup:SetTitle("Roll History")
+    rollHistoryGroup:SetFullWidth(true)
+    rollHistoryGroup:SetHeight(130)
+    rollHistoryGroup:SetLayout("Fill")
+    gameGroup:AddChild(rollHistoryGroup)
+
+    local historyHost = rollHistoryGroup.content or rollHistoryGroup.frame
+    local historyScroll = historyHost.dreRollHistoryScroll
+    local historyContent = historyHost.dreRollHistoryContent
+    local historyText = historyHost.dreRollHistoryText
+
+    if not historyScroll then
+        historyScroll = CreateFrame("ScrollFrame", nil, historyHost)
+        historyHost.dreRollHistoryScroll = historyScroll
+    end
+
+    if not historyContent then
+        historyContent = CreateFrame("Frame", nil, historyScroll)
+        historyHost.dreRollHistoryContent = historyContent
+    end
+
+    if not historyText then
+        historyText = historyContent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        historyHost.dreRollHistoryText = historyText
+    end
+
+    historyScroll:ClearAllPoints()
+    historyScroll:SetPoint("TOPLEFT", historyHost, "TOPLEFT", 0, 0)
+    historyScroll:SetPoint("BOTTOMRIGHT", historyHost, "BOTTOMRIGHT", 0, 0)
+    historyScroll:EnableMouseWheel(true)
+    historyScroll:Show()
+
+    historyContent:ClearAllPoints()
+    historyContent:SetPoint("TOPLEFT", historyScroll, "TOPLEFT", 0, 0)
+    historyContent:SetWidth(math.max(160, historyHost:GetWidth() or 0))
+    historyContent:SetHeight(1)
+    historyScroll:SetScrollChild(historyContent)
+    historyContent:Show()
+
+    historyText:ClearAllPoints()
+    historyText:SetPoint("TOPLEFT", historyContent, "TOPLEFT", 4, -4)
+    historyText:SetJustifyH("LEFT")
+    historyText:SetJustifyV("TOP")
+    historyText:Show()
+
+    historyScroll:SetScript("OnMouseWheel", function(scrollFrame, delta)
+        local currentScroll = scrollFrame:GetVerticalScroll() or 0
+        local maxScroll = math.max(0, ((UI.rollHistoryContent and UI.rollHistoryContent:GetHeight()) or 0) - (scrollFrame:GetHeight() or 0))
+        local nextScroll = currentScroll - (delta * 24)
+        if nextScroll < 0 then
+            nextScroll = 0
+        elseif nextScroll > maxScroll then
+            nextScroll = maxScroll
+        end
+        scrollFrame:SetVerticalScroll(nextScroll)
+    end)
     
     -- Store all UI references for later updates
+    UI.gameContainer = container
+    UI.gameGroup = gameGroup
+    UI.gameControlsGroup = controlsGroup
+    UI.rollHistoryGroup = rollHistoryGroup
+    UI.rollHistoryScroll = historyScroll
+    UI.rollHistoryContent = historyContent
+    UI.rollHistoryBox = historyText
+    UI.rollInputGroup = rollGroup
+    UI.autoRollButton = autoRollButton
+    UI.wagerGroup = wagerGroup
+    UI.wagerHeader = wagerHeader
+    UI.goldPairGroup = goldPairGroup
+    UI.silverPairGroup = silverPairGroup
+    UI.copperPairGroup = copperPairGroup
+    UI.goldUnitLabel = goldUnitLabel
+    UI.silverUnitLabel = silverUnitLabel
+    UI.copperUnitLabel = copperUnitLabel
     UI.goldEdit = goldEdit
     UI.silverEdit = silverEdit
     UI.copperEdit = copperEdit
     UI.gameButton = gameButton
-    UI.rollHistoryBox = statusLabel -- Simple status label for roll display
-    UI.rollHistory = {} -- Array to store roll entries
+    UI.tradeWagerHelp = tradeWagerHelp
+    UI.rollHistory = UI.rollHistory or {}
+    if #UI.rollHistory == 0 then
+        table.insert(UI.rollHistory, "Ready to start! Target someone and click Challenge Player to DeathRoll!")
+    end
+    
+    self:UpdateWagerInputMode()
+    C_Timer.After(0, function()
+        self:UpdateGameSectionLayout()
+        self:RefreshRollHistoryDisplay()
+    end)
     
     -- Update button text with current target initially
     self:UpdateChallengeButtonText()
+end
+
+function DRE:UpdateGameSectionLayout()
+    if not (UI.gameControlsGroup and UI.gameGroup) then
+        return
+    end
+
+    local groupFrame = UI.gameGroup.content or UI.gameGroup.frame
+    local containerWidth = 0
+    if groupFrame then
+        containerWidth = groupFrame:GetWidth() or 0
+    end
+    if containerWidth <= 0 and UI.mainWindow and UI.mainWindow.frame then
+        local frame = UI.mainWindow.frame
+        containerWidth = (frame:GetWidth() or 400) - 40
+    end
+
+    if containerWidth <= 0 then
+        return
+    end
+
+    self:UpdateGameControlsLayout(math.max(140, containerWidth - 8), containerWidth < 260)
+
+    if UI.gameControlsGroup and UI.gameControlsGroup.DoLayout then
+        UI.gameControlsGroup:DoLayout()
+    end
+
+    if UI.rollHistoryGroup then
+        local containerHeight = 0
+        if groupFrame then
+            containerHeight = groupFrame:GetHeight() or 0
+        end
+        if containerHeight <= 0 and UI.mainWindow and UI.mainWindow.frame then
+            containerHeight = math.max(220, (UI.mainWindow.frame:GetHeight() or 420) - 120)
+        end
+
+        local controlsHeight = 0
+        if UI.gameControlsGroup.content then
+            controlsHeight = UI.gameControlsGroup.content:GetHeight() or 0
+        end
+        if controlsHeight <= 0 and UI.gameControlsGroup.frame then
+            controlsHeight = UI.gameControlsGroup.frame:GetHeight() or 0
+        end
+
+        local availableHeight = containerHeight - controlsHeight - 4
+        UI.rollHistoryGroup:SetHeight(math.max(84, availableHeight))
+    end
+
+    if UI.gameGroup and UI.gameGroup.DoLayout then
+        UI.gameGroup:DoLayout()
+    end
+
+    self:UpdateRollHistoryPanelLayout()
+end
+
+function DRE:UpdateGameControlsLayout(controlsWidth, isStacked)
+    local availableWidth = math.max(120, (controlsWidth or 0) - 24)
+    local compactMode = isStacked or availableWidth < 235
+    local stackRollControls = isStacked or availableWidth < 250
+
+    if UI.rollEdit then
+        UI.rollEdit:SetFullWidth(false)
+        local rollEditWidth = 0
+        if stackRollControls then
+            rollEditWidth = math.max(78, availableWidth - 42)
+        else
+            rollEditWidth = math.max(82, math.min(140, availableWidth - 154))
+        end
+        UI.rollEdit:SetWidth(rollEditWidth)
+    end
+
+    if UI.autoRollButton then
+        UI.autoRollButton:SetFullWidth(stackRollControls)
+        if not stackRollControls then
+            UI.autoRollButton:SetWidth(110)
+        end
+    end
+
+    local unitLabelWidths = compactMode and {30, 36, 44} or {30, 36, 44}
+    local unitWidthTotal = unitLabelWidths[1] + unitLabelWidths[2] + unitLabelWidths[3]
+    local headerWidth = compactMode and 42 or 45
+    local wagerFieldWidth = compactMode and 34 or math.max(34, math.min(52, math.floor((availableWidth - headerWidth - unitWidthTotal - 18) / 3)))
+
+    if UI.wagerHeader then
+        UI.wagerHeader:SetWidth(headerWidth)
+    end
+
+    if UI.goldUnitLabel then
+        UI.goldUnitLabel:SetWidth(unitLabelWidths[1])
+    end
+    if UI.silverUnitLabel then
+        UI.silverUnitLabel:SetWidth(unitLabelWidths[2])
+    end
+    if UI.copperUnitLabel then
+        UI.copperUnitLabel:SetWidth(unitLabelWidths[3])
+    end
+
+    for _, widget in ipairs({UI.goldEdit, UI.silverEdit, UI.copperEdit}) do
+        if widget then
+            widget:SetFullWidth(false)
+            widget:SetWidth(wagerFieldWidth)
+        end
+    end
+
+    if UI.goldPairGroup then
+        UI.goldPairGroup:SetWidth(wagerFieldWidth + unitLabelWidths[1] + 8)
+    end
+    if UI.silverPairGroup then
+        UI.silverPairGroup:SetWidth(wagerFieldWidth + unitLabelWidths[2] + 8)
+    end
+    if UI.copperPairGroup then
+        UI.copperPairGroup:SetWidth(wagerFieldWidth + unitLabelWidths[3] + 8)
+    end
+
+    if UI.rollInputGroup and UI.rollInputGroup.DoLayout then
+        UI.rollInputGroup:DoLayout()
+    end
+
+    if UI.wagerGroup and UI.wagerGroup.DoLayout then
+        UI.wagerGroup:DoLayout()
+    end
+
+    if UI.gameControlsGroup and UI.gameControlsGroup.DoLayout then
+        UI.gameControlsGroup:DoLayout()
+    end
+end
+
+function DRE:RefreshRollHistoryDisplay()
+    if not UI.rollHistory then
+        return
+    end
+
+    local historyText = table.concat(UI.rollHistory, "\n")
+
+    if UI.rollHistoryBox then
+        pcall(function()
+            UI.rollHistoryBox:SetText(historyText)
+        end)
+
+        self:UpdateRollHistoryPanelLayout()
+
+        C_Timer.After(0, function()
+            if not (UI and UI.rollHistoryScroll and UI.rollHistoryContent) then
+                return
+            end
+
+            local maxScroll = math.max(0, (UI.rollHistoryContent:GetHeight() or 0) - (UI.rollHistoryScroll:GetHeight() or 0))
+            UI.rollHistoryScroll:SetVerticalScroll(maxScroll)
+        end)
+    end
 end
 
 -- Add a roll entry to the history display
@@ -313,7 +785,7 @@ function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
         return
     end
 
-    if not UI.rollHistoryBox or not UI.rollHistory then
+    if not UI.rollHistory then
         self:DebugPrint("AddRollToHistory: UI components not ready")
         return
     end
@@ -358,26 +830,15 @@ function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
     local entry = string.format("%s%s%s rolled %d (1-%d) - %.3f%% chance of losing",
         colorCode, displayName, resetColor, roll, maxRoll, lossChance)
 
-    -- Add to history array
-    table.insert(UI.rollHistory, 1, entry) -- Insert at beginning
+    -- Append to history so the newest messages appear at the bottom like chat.
+    table.insert(UI.rollHistory, entry)
 
-    -- Keep only last 3 entries for compact display
-    if #UI.rollHistory > 3 then
-        table.remove(UI.rollHistory, 4)
-    end
-
-    -- Update display with compact format (with nil guard)
-    local historyText = table.concat(UI.rollHistory, "\n")
-    if UI.rollHistoryBox then
-        pcall(function()
-            UI.rollHistoryBox:SetText(historyText)
-        end)
-    end
+    self:RefreshRollHistoryDisplay()
 end
 
 -- Update roll history with game status messages (for non-game states only)
 function DRE:UpdateRollHistoryStatus(message, clearHistory)
-    if not UI.rollHistoryBox then
+    if not UI.rollHistory then
         return
     end
     
@@ -385,9 +846,12 @@ function DRE:UpdateRollHistoryStatus(message, clearHistory)
     if clearHistory then
         UI.rollHistory = {}
     end
-    
-    -- For status messages, just replace the content
-    UI.rollHistoryBox:SetText(message)
+
+    if message and message ~= "" then
+        table.insert(UI.rollHistory, message)
+    end
+
+    self:RefreshRollHistoryDisplay()
 end
 
 -- Clear roll history for new game
@@ -399,7 +863,7 @@ end
 
 -- Add game result to roll history
 function DRE:AddGameResultToHistory(result, opponent, wager)
-    if not UI.rollHistoryBox or not UI.rollHistory then
+    if not UI.rollHistory then
         return
     end
     
@@ -420,17 +884,9 @@ function DRE:AddGameResultToHistory(result, opponent, wager)
     local entry = string.format("%s%s%s vs %s%s", 
         colorCode, resultText, resetColor, opponent or "Unknown", wagerText)
     
-    -- Add result to top of history
-    table.insert(UI.rollHistory, 1, entry)
-    
-    -- Keep only last 3 entries
-    if #UI.rollHistory > 3 then
-        table.remove(UI.rollHistory, 4)
-    end
-    
-    -- Update display
-    local historyText = table.concat(UI.rollHistory, "\n")
-    UI.rollHistoryBox:SetText(historyText)
+    table.insert(UI.rollHistory, entry)
+
+    self:RefreshRollHistoryDisplay()
 end
 
 -- Create stats section
@@ -631,23 +1087,28 @@ end
 
 -- Create history section
 function DRE:CreateHistorySection(container)
-    local historyGroup = AceGUI:Create("ScrollFrame")
+    local historyGroup = AceGUI:Create("SimpleGroup")
     historyGroup:SetFullWidth(true)
     historyGroup:SetFullHeight(true)
-    historyGroup:SetLayout("Flow")
+    historyGroup:SetLayout("List")
     container:AddChild(historyGroup)
+    
+    local historyControlsGroup = AceGUI:Create("SimpleGroup")
+    historyControlsGroup:SetFullWidth(true)
+    historyControlsGroup:SetLayout("Flow")
+    historyGroup:AddChild(historyControlsGroup)
     
     -- Header
     local header = AceGUI:Create("Heading")
     header:SetText("Game History")
     header:SetFullWidth(true)
-    historyGroup:AddChild(header)
+    historyControlsGroup:AddChild(header)
     
     if not self.db or not self.db.profile.history then
         local noDataLabel = AceGUI:Create("Label")
         noDataLabel:SetText("No game history yet. Start playing DeathRoll games to see your history here!")
         noDataLabel:SetFullWidth(true)
-        historyGroup:AddChild(noDataLabel)
+        historyControlsGroup:AddChild(noDataLabel)
         return
     end
     
@@ -664,7 +1125,7 @@ function DRE:CreateHistorySection(container)
         local noPlayersLabel = AceGUI:Create("Label")
         noPlayersLabel:SetText("No players in history yet!")
         noPlayersLabel:SetFullWidth(true)
-        historyGroup:AddChild(noPlayersLabel)
+        historyControlsGroup:AddChild(noPlayersLabel)
         return
     end
     
@@ -672,7 +1133,7 @@ function DRE:CreateHistorySection(container)
     local playerSelectorGroup = AceGUI:Create("SimpleGroup")
     playerSelectorGroup:SetFullWidth(true)
     playerSelectorGroup:SetLayout("Flow")
-    historyGroup:AddChild(playerSelectorGroup)
+    historyControlsGroup:AddChild(playerSelectorGroup)
     
     local playerLabel = AceGUI:Create("Label")
     playerLabel:SetText("View history with:")
@@ -692,30 +1153,327 @@ function DRE:CreateHistorySection(container)
     local historyDisplayGroup = AceGUI:Create("InlineGroup")
     historyDisplayGroup:SetTitle("Statistics & Recent Games")
     historyDisplayGroup:SetFullWidth(true)
-    historyDisplayGroup:SetHeight(200) -- Set explicit height to ensure proper scrolling
+    historyDisplayGroup:SetHeight(200)
     historyDisplayGroup:SetLayout("Fill")
     historyGroup:AddChild(historyDisplayGroup)
     
+    local historyScroll = AceGUI:Create("ScrollFrame")
+    historyScroll:SetFullWidth(true)
+    historyScroll:SetFullHeight(true)
+    historyScroll:SetLayout("List")
+    historyDisplayGroup:AddChild(historyScroll)
+
     local historyLabel = AceGUI:Create("Label")
     historyLabel:SetText("Select a player to view history")
     historyLabel:SetFullWidth(true)
     historyLabel:SetJustifyV("TOP")
     historyLabel:SetJustifyH("LEFT")
-    historyDisplayGroup:AddChild(historyLabel)
+    historyScroll:AddChild(historyLabel)
     
     -- Force ScrollFrame to recalculate content area
     C_Timer.After(0.1, function()
         if historyGroup and historyGroup.content then
             historyGroup:DoLayout()
         end
+        if historyScroll then
+            historyScroll:DoLayout()
+        end
     end)
     
     -- Store references for updates
-    UI.historyBox = historyLabel -- Now using Label instead of EditBox
+    UI.historyGroup = historyGroup
+    UI.historyControlsGroup = historyControlsGroup
+    UI.historyDisplayGroup = historyDisplayGroup
+    UI.historyBox = historyLabel
+    UI.historyScroll = historyScroll
     UI.historyDropdown = dropdown
     
     -- Show first player's history by default
     self:UpdateHistoryDisplay(playerNames[1])
+
+    C_Timer.After(0, function()
+        self:UpdateHistorySectionLayout()
+    end)
+end
+
+function DRE:RefreshHistoryLayout()
+    if not UI.historyScroll then
+        return
+    end
+
+    self:UpdateHistorySectionLayout()
+
+    UI.historyScroll:DoLayout()
+
+    C_Timer.After(0, function()
+        if not (UI and UI.historyScroll and UI.historyScroll.scrollbar) then
+            return
+        end
+
+        local scrollbar = UI.historyScroll.scrollbar
+        local minValue = select(1, scrollbar:GetMinMaxValues())
+        scrollbar:SetValue(minValue)
+    end)
+end
+
+function DRE:UpdateHistorySectionLayout()
+    if not (UI.historyGroup and UI.historyControlsGroup and UI.historyDisplayGroup) then
+        return
+    end
+
+    local containerHeight = 0
+    if UI.historyGroup.frame then
+        containerHeight = UI.historyGroup.frame:GetHeight() or 0
+    end
+
+    if containerHeight <= 0 and UI.mainWindow and UI.mainWindow.frame then
+        containerHeight = (UI.mainWindow.frame:GetHeight() or 300) - 80
+    end
+
+    if containerHeight <= 0 then
+        return
+    end
+
+    local controlsHeight = 0
+    if UI.historyControlsGroup.frame then
+        controlsHeight = UI.historyControlsGroup.frame:GetHeight() or 0
+    end
+
+    local availableHeight = containerHeight - controlsHeight - 12
+    if availableHeight < 80 then
+        availableHeight = 80
+    end
+
+    UI.historyDisplayGroup:SetHeight(availableHeight)
+
+    if UI.historyGroup and UI.historyGroup.DoLayout then
+        UI.historyGroup:DoLayout()
+    end
+
+    if UI.historyScroll then
+        UI.historyScroll:DoLayout()
+    end
+end
+
+function DRE:CreateSettingsSection(container)
+    local settingsScroll = AceGUI:Create("ScrollFrame")
+    settingsScroll:SetFullWidth(true)
+    settingsScroll:SetFullHeight(true)
+    settingsScroll:SetLayout("Flow")
+    container:AddChild(settingsScroll)
+
+    local settingsGroup = AceGUI:Create("SimpleGroup")
+    settingsGroup:SetFullWidth(true)
+    settingsGroup:SetLayout("Flow")
+    settingsScroll:AddChild(settingsGroup)
+
+    local header = AceGUI:Create("Heading")
+    header:SetText("Settings")
+    header:SetFullWidth(true)
+    settingsGroup:AddChild(header)
+
+    local description = AceGUI:Create("Label")
+    description:SetText("These settings mirror the main addon configuration and apply immediately.")
+    description:SetFullWidth(true)
+    description:SetColor(0.8, 0.8, 0.8)
+    settingsGroup:AddChild(description)
+
+    local function addSection(title)
+        local group = AceGUI:Create("InlineGroup")
+        group:SetTitle(title)
+        group:SetFullWidth(true)
+        group:SetLayout("Flow")
+        settingsGroup:AddChild(group)
+        return group
+    end
+
+    local function addToggle(parent, label, value, onChange)
+        local checkbox = AceGUI:Create("CheckBox")
+        checkbox:SetLabel(label)
+        checkbox:SetFullWidth(true)
+        checkbox:SetValue(value)
+        checkbox:SetCallback("OnValueChanged", function(_, _, newValue)
+            onChange(newValue)
+        end)
+        parent:AddChild(checkbox)
+        return checkbox
+    end
+
+    local function addSlider(parent, label, minValue, maxValue, step, value, onChange)
+        local slider = AceGUI:Create("Slider")
+        slider:SetLabel(label)
+        slider:SetFullWidth(true)
+        slider:SetSliderValues(minValue, maxValue, step)
+        slider:SetValue(value)
+        slider:SetCallback("OnValueChanged", function(_, _, newValue)
+            onChange(newValue)
+        end)
+        parent:AddChild(slider)
+        return slider
+    end
+
+    local function addButton(parent, text, onClick)
+        local button = AceGUI:Create("Button")
+        button:SetText(text)
+        button:SetFullWidth(true)
+        button:SetCallback("OnClick", function()
+            onClick()
+        end)
+        parent:AddChild(button)
+        return button
+    end
+
+    local gameplayGroup = addSection("Gameplay")
+    addToggle(gameplayGroup, "Auto Emote", self.db.profile.gameplay.autoEmote, function(value)
+        self.db.profile.gameplay.autoEmote = value
+    end)
+    addToggle(gameplayGroup, "Sound Effects", self.db.profile.gameplay.soundEnabled, function(value)
+        self.db.profile.gameplay.soundEnabled = value
+    end)
+    addToggle(gameplayGroup, "Track Gold", self.db.profile.gameplay.trackGold, function(value)
+        self.db.profile.gameplay.trackGold = value
+    end)
+    addToggle(gameplayGroup, "Chat Messages", self.db.profile.gameplay.chatMessages, function(value)
+        self.db.profile.gameplay.chatMessages = value
+    end)
+    addToggle(gameplayGroup, "Debug Messages", self.db.profile.gameplay.debugMessages, function(value)
+        self.db.profile.gameplay.debugMessages = value
+    end)
+
+    local challengeGroup = addSection("Challenge System")
+    addToggle(challengeGroup, "Enable Challenge Popups", self.db.profile.challengeSystem.enabled, function(value)
+        self.db.profile.challengeSystem.enabled = value
+    end)
+    addToggle(challengeGroup, "Send Challenge Whispers", self.db.profile.challengeSystem.sendWhisper, function(value)
+        self.db.profile.challengeSystem.sendWhisper = value
+    end)
+    addToggle(challengeGroup, "Track Wager From Completed Trade", self.db.profile.challengeSystem.trackWagerByTrade, function(value)
+        self.db.profile.challengeSystem.trackWagerByTrade = value
+    end)
+    addSlider(challengeGroup, "Minimum Roll for Popups", 2, 10000, 1, self.db.profile.challengeSystem.minRollThreshold, function(value)
+        self.db.profile.challengeSystem.minRollThreshold = math.floor(value)
+    end)
+
+    local interfaceGroup = addSection("Interface")
+    addSlider(interfaceGroup, "UI Scale", 0.6, 2.2, 0.1, (self.db.profile.ui.scale or 0.9) + 0.1, function(value)
+        self.db.profile.ui.scale = value - 0.1
+        self:UpdateUIScale()
+    end)
+    addToggle(interfaceGroup, "Hide Minimap Icon", self.db.profile.minimap.hide, function(value)
+        self.db.profile.minimap.hide = value
+        self:ToggleMinimapIcon()
+    end)
+    addButton(interfaceGroup, "Reset Window Position", function()
+        self:ResetWindowPosition()
+        self:UpdateMainTabLayout()
+    end)
+    addButton(interfaceGroup, "Reset Window Size", function()
+        self:ResetWindowSize()
+        self:UpdateMainTabLayout()
+    end)
+    addButton(interfaceGroup, "Open Blizzard Config", function()
+        self:OpenOptions()
+    end)
+
+    local dataGroup = addSection("Data Management")
+    addButton(dataGroup, "Show Statistics In Chat", function()
+        local stats = self:GetOverallStats()
+        self:Print("=== DeathRoll Statistics ===")
+        self:Print("Total Games: " .. stats.totalGames)
+        self:Print("Total Wins: " .. stats.totalWins)
+        self:Print("Total Losses: " .. stats.totalLosses)
+        self:Print("Gold Won: " .. self:FormatGold(stats.totalGoldWon))
+        self:Print("Gold Lost: " .. self:FormatGold(stats.totalGoldLost))
+        self:Print("Current Streak: " .. stats.currentStreak)
+    end)
+    addButton(dataGroup, "Recalculate Gold Tracking", function()
+        local success, message = self:RecalculateGoldTracking()
+        if success then
+            self:Print("Gold tracking fixed: " .. message)
+        else
+            self:Print("Failed to fix gold tracking: " .. message)
+        end
+    end)
+    addButton(dataGroup, "Clean Old Data (30 Days)", function()
+        self:CleanOldData(30)
+    end)
+    addButton(dataGroup, "Export Data", function()
+        local exportString = self:ExportData()
+        local frame = AceGUI:Create("Frame")
+        frame:SetTitle("Export Data")
+        frame:SetLayout("Fill")
+        frame:SetWidth(600)
+        frame:SetHeight(500)
+
+        local editBox = AceGUI:Create("MultiLineEditBox")
+        editBox:SetText(exportString)
+        editBox:SetFullWidth(true)
+        editBox:SetFullHeight(true)
+        editBox:SetLabel("Copy this data to save as backup:")
+        frame:AddChild(editBox)
+
+        frame:Show()
+    end)
+    addButton(dataGroup, "Edit Game Records", function()
+        self:ShowEditGameDialog()
+    end)
+    addButton(dataGroup, "Reset All Data", function()
+        StaticPopup_Show("DEATHROLL_RESET_CONFIRM")
+    end)
+
+    local funStatSections = {
+        {
+            title = "Fun Statistics: Player Relationships",
+            items = {
+                {key = "showMostPlayedWith", label = "Most Played With"},
+                {key = "showMostWinsAgainst", label = "Most Wins Against"},
+                {key = "showMostLossesAgainst", label = "Most Losses Against"},
+                {key = "showNemesis", label = "Your Nemesis"},
+                {key = "showVictim", label = "Your Victim"},
+            },
+        },
+        {
+            title = "Fun Statistics: Gold and Money",
+            items = {
+                {key = "showMostMoneyWonFrom", label = "Biggest Gold Mine"},
+                {key = "showMostMoneyLostTo", label = "Biggest Money Sink"},
+                {key = "showBiggestWin", label = "Biggest Single Win"},
+                {key = "showBiggestLoss", label = "Biggest Single Loss"},
+                {key = "showHighRoller", label = "High Roller"},
+                {key = "showCheapskate", label = "Cheapskate"},
+            },
+        },
+        {
+            title = "Fun Statistics: Luck and Streaks",
+            items = {
+                {key = "showLuckyPlayer", label = "Lucky Player"},
+                {key = "showUnluckyPlayer", label = "Unlucky Player"},
+                {key = "showDaredevil", label = "Daredevil Opponent"},
+                {key = "showConservative", label = "Conservative Opponent"},
+            },
+        },
+    }
+
+    for _, section in ipairs(funStatSections) do
+        local group = addSection(section.title)
+        for _, item in ipairs(section.items) do
+            addToggle(group, item.label, self.db.profile.funStats[item.key], function(value)
+                self.db.profile.funStats[item.key] = value
+            end)
+        end
+    end
+
+    UI.settingsScroll = settingsScroll
+    UI.settingsContent = settingsGroup
+
+    C_Timer.After(0.1, function()
+        if UI and UI.settingsContent and UI.settingsContent.DoLayout then
+            UI.settingsContent:DoLayout()
+        end
+        if UI and UI.settingsScroll then
+            UI.settingsScroll:DoLayout()
+        end
+    end)
 end
 
 -- UI StartDeathRoll function removed - using Core.lua version instead
@@ -726,6 +1484,7 @@ function DRE:UpdateUIScale()
     if UI.mainWindow and UI.mainWindow.frame then
         local scale = self.db.profile.ui.scale or 1.0
         UI.mainWindow.frame:SetScale(scale)
+        self:QueueLayoutRefresh()
     end
 end
 
@@ -922,6 +1681,7 @@ function DRE:UpdateHistoryDisplay(playerName)
     local playerData = self.db.profile.history[playerName]
     if not playerData then
         UI.historyBox:SetText("No data available for " .. (playerName or "Unknown"))
+        self:RefreshHistoryLayout()
         return
     end
     
@@ -966,6 +1726,7 @@ function DRE:UpdateHistoryDisplay(playerName)
     end
     
     UI.historyBox:SetText(text)
+    self:RefreshHistoryLayout()
 end
 
 
@@ -1076,7 +1837,31 @@ Attack = consistent pressure | Defend = blocks & counters | Gamble = swingy chao
 end
 
 -- Calculate wager from UI input fields
+function DRE:UpdateWagerInputMode()
+    local isTradeMode = self:IsTradeWagerModeEnabled()
+
+    for _, widget in ipairs({UI.goldEdit, UI.silverEdit, UI.copperEdit}) do
+        if widget and widget.SetDisabled then
+            widget:SetDisabled(isTradeMode)
+        end
+    end
+
+    if UI.tradeWagerHelp then
+        if isTradeMode then
+            UI.tradeWagerHelp:SetText("Wager tracking is set to trades. Complete a gold trade after the game and the wager will be recorded automatically.")
+            UI.tradeWagerHelp:SetColor(0.85, 0.82, 0.45)
+        else
+            UI.tradeWagerHelp:SetText("")
+            UI.tradeWagerHelp:SetColor(0.8, 0.8, 0.8)
+        end
+    end
+end
+
 function DRE:CalculateWagerFromUI()
+    if self:IsTradeWagerModeEnabled() then
+        return 0
+    end
+
     local gold = tonumber(UI.goldEdit and UI.goldEdit:GetText() or "0") or 0
     local silver = tonumber(UI.silverEdit and UI.silverEdit:GetText() or "0") or 0  
     local copper = tonumber(UI.copperEdit and UI.copperEdit:GetText() or "0") or 0
@@ -1101,7 +1886,7 @@ function DRE:HandleGameButtonClick()
             if targetName and targetName == UI.recentTargetRoll.playerName then
                 local wager = self:CalculateWagerFromUI()
                 self:DebugPrint("Accepting challenge from " .. targetName .. " with roll " .. UI.recentTargetRoll.roll)
-                self:StartDeathRoll(targetName, UI.recentTargetRoll.roll, wager)
+                self:StartDeathRoll(targetName, UI.recentTargetRoll.roll, wager, self:IsTradeWagerModeEnabled())
             else
                 self:Print("Target changed - please target " .. (UI.recentTargetRoll.playerName or "the challenger") .. " to accept their challenge")
             end
@@ -1130,6 +1915,7 @@ function DRE:AcceptIncomingChallenge()
     local theirRoll = challenge.roll
     local maxRoll = challenge.maxRoll
     local wager = 0 -- Could be made configurable
+    local trackWagerByTrade = self:IsTradeWagerModeEnabled()
     
     self:ChatPrint("Accepting " .. challenger .. "'s DeathRoll challenge!")
     self:ChatPrint(challenger .. " rolled " .. theirRoll .. " (1-" .. maxRoll .. ")")
@@ -1137,11 +1923,14 @@ function DRE:AcceptIncomingChallenge()
     -- Start the game with their roll
     if theirRoll == 1 then
         self:ChatPrint(challenger .. " rolled 1 and lost! You won!")
-        self:HandleGameEnd(challenger, "WIN", wager, maxRoll)
+        self:HandleGameEnd(challenger, "WIN", wager, maxRoll, {
+            opponent = challenger,
+            trackWagerByTrade = trackWagerByTrade
+        })
     else
         self:ChatPrint("Your turn! Roll 1-" .. theirRoll)
         -- Start the game - they already rolled, now it's your turn
-        self:StartActualGame(challenger, maxRoll, wager, theirRoll)
+        self:StartActualGame(challenger, maxRoll, wager, theirRoll, trackWagerByTrade)
     end
     
     -- Clear the challenge data
@@ -1180,6 +1969,7 @@ function DRE:AcceptRecentRoll()
     local maxRoll = rollData.maxRoll
     local currentTarget = UnitName("target")
     local wager = 0 -- Could be made configurable
+    local trackWagerByTrade = self:IsTradeWagerModeEnabled()
     
     if rollOwner == UnitName("player") then
         -- You rolled - challenge the current target with your roll
@@ -1193,10 +1983,13 @@ function DRE:AcceptRecentRoll()
         -- Start game with your roll as the starting point
         if rollResult == 1 then
             self:ChatPrint("You rolled 1 and lost! " .. currentTarget .. " wins!")
-            self:HandleGameEnd(currentTarget, "LOSS", wager, maxRoll)
+            self:HandleGameEnd(currentTarget, "LOSS", wager, maxRoll, {
+                opponent = currentTarget,
+                trackWagerByTrade = trackWagerByTrade
+            })
         else
             -- Start the game - you already rolled, now target needs to roll
-            self:StartActualGame(currentTarget, maxRoll, wager, rollResult)
+            self:StartActualGame(currentTarget, maxRoll, wager, rollResult, trackWagerByTrade)
         end
     else
         -- Someone else rolled - accept their challenge
@@ -1205,10 +1998,13 @@ function DRE:AcceptRecentRoll()
         -- Start game with their roll as the starting point
         if rollResult == 1 then
             self:ChatPrint(rollOwner .. " rolled 1 and lost! You won!")
-            self:HandleGameEnd(rollOwner, "WIN", wager, maxRoll)
+            self:HandleGameEnd(rollOwner, "WIN", wager, maxRoll, {
+                opponent = rollOwner,
+                trackWagerByTrade = trackWagerByTrade
+            })
         else
             -- Start the game - they already rolled, now it's your turn
-            self:StartActualGame(rollOwner, maxRoll, wager, rollResult)
+            self:StartActualGame(rollOwner, maxRoll, wager, rollResult, trackWagerByTrade)
         end
     end
     
@@ -1244,11 +2040,11 @@ function DRE:StartChallengeFlow()
     
     local roll = tonumber(UI.rollEdit:GetText())
 
-    -- Calculate wager in copper, treating empty fields as 0
-    local gold = tonumber(UI.goldEdit:GetText()) or 0
-    local silver = tonumber(UI.silverEdit:GetText()) or 0
-    local copper = tonumber(UI.copperEdit:GetText()) or 0
-    local totalWager = (gold * 10000) + (silver * 100) + copper
+    local usingTradeWager = self:IsTradeWagerModeEnabled()
+    local totalWager = self:CalculateWagerFromUI()
+    local gold = tonumber(UI.goldEdit and UI.goldEdit:GetText() or "0") or 0
+    local silver = tonumber(UI.silverEdit and UI.silverEdit:GetText() or "0") or 0
+    local copper = tonumber(UI.copperEdit and UI.copperEdit:GetText() or "0") or 0
 
     if not roll or roll < 2 then
         self:Print("Roll must be at least 2!")
@@ -1260,7 +2056,7 @@ function DRE:StartChallengeFlow()
         return
     end
     
-    if gold < 0 or silver < 0 or copper < 0 then
+    if not usingTradeWager and (gold < 0 or silver < 0 or copper < 0) then
         self:Print("Wager amounts cannot be negative!")
         return
     end
@@ -1279,7 +2075,7 @@ function DRE:StartChallengeFlow()
     self:UpdateGameUIState("WAITING_FOR_OPPONENT")
 
     -- Start the challenge
-    self:StartDeathRoll(target, roll, totalWager)
+    self:StartDeathRoll(target, roll, totalWager, usingTradeWager)
 end
 
 -- Perform a roll in the active game
@@ -1318,6 +2114,13 @@ end
 
 -- Clean up UI
 function DRE:CleanupUI()
+    self:ReleaseEmbeddedRollHistory()
+
+    UI.rollHistoryGroup = nil
+    UI.rollHistoryScroll = nil
+    UI.rollHistoryContent = nil
+    UI.rollHistoryBox = nil
+
     if UI.mainWindow then
         UI.mainWindow:Hide()
         UI.mainWindow = nil

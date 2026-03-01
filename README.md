@@ -1,16 +1,20 @@
-# DeathRoll Enhancer v2.3.1 - TOC Compatibility Update
+# DeathRoll Enhancer v2.3.2 - SKEM Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.3.1-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.3.2-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
 
-## What's New in Version 2.3.1
+## What's New in Version 2.3.2
 
-- **TOC compatibility update** - Advertise multi-version Interface support to prevent "out of date" flags across Classic/TBC/Wrath/Cata/Retail
+- **SKEM Edition UI polish** - Added a built-in Settings tab, stretched main tabs, and tightened the default window to 400x311
+- **Embedded full roll history** - Main DeathRoll log now keeps all rolls inside the window with mouse-wheel scrolling instead of truncating at three lines
+- **History scrollbar refresh fix** - Switching to players with longer histories now shows the scrollbar immediately
+- **Use My Gold button** - Replaced the old auto-roll setting with a one-click roll helper beside the roll input
+- **Trade-based wager tracking** - Added an option to hide manual wager inputs and record wagers from completed gold trades instead
 
 ## 🆕 What's New in Version 2.3.0
 
@@ -38,7 +42,7 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 ### **Professional Interface**
 - **Modern AceGUI design** with clean, scalable interface
 - **Resizable & moveable window** with persistent positioning
-- **Tabbed interface** - DeathRoll, Statistics, and History tabs
+- **Tabbed interface** - DeathRoll, Statistics, History, and Settings tabs
 - **Smart challenge detection** - Automatically detects opponent rolls and shows "PlayerName rolled 56 from 1000 - Accept challenge!"
 - **Real-time game progress** with colored player names and win probability
 
@@ -53,7 +57,7 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 ### **Smart Game Management**
 - **Automatic roll detection** - Recognizes opponent rolls in chat
 - **Challenge acceptance** - One-click accept with pre-filled roll values
-- **Wager system** - Gold/Silver/Copper inputs with smart calculations
+- **Flexible wager system** - Gold/Silver/Copper inputs or trade-based wager tracking
 - **Self-duel mode** - Practice against yourself
 - **Cross-version compatibility** - Works on Classic Era, TBC, Wrath, Cata, and Retail
 
@@ -68,8 +72,11 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 
 - **`/dr`** or **`/deathroll`** - Open main interface
 - **`/dr config`** - Open configuration panel
+- **`/dr accept`** - Accept pending whisper-based challenge
+- **`/dr decline`** - Decline pending whisper-based challenge
 - **`/dr edit`** - Edit recent game records to fix mistakes
 - **`/dr fixgold`** - Recalculate gold tracking totals
+- **`/dr size`** - Show current window size and scale details
 - **`/drh [player]`** - View history with specific player
 
 ## 🎨 Interface Navigation
@@ -77,16 +84,18 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 - **DeathRoll Tab** - Start games and view live progress
 - **Statistics Tab** - Review your performance and fun stats
 - **History Tab** - Browse detailed game history per player
+- **Settings Tab** - Adjust gameplay, challenge, UI, data, and fun stat options in-window
 - **Minimap Icon** - Quick access and customizable positioning
 
 ## ⚙️ Configuration Options
 
-Access via `/dr config` for extensive customization:
+Access via `/dr config` or the in-window `Settings` tab for extensive customization:
 - **UI scaling and positioning** with reset functions
 - **Auto-emote settings** for win/loss reactions
 - **Sound notifications** for game events
 - **Chat message control** - Toggle informational messages
 - **Debug mode** - Enable detailed logging for troubleshooting
+- **Trade-based wager tracking** - Capture wager amounts from completed gold trades
 - **Fun statistics toggles** - Show only the stats you want
 - **Minimap icon** show/hide and positioning
 - **Data management** - Edit games, clean old data, export statistics

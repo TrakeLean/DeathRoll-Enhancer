@@ -53,8 +53,11 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll)
         playerData.recentGames = {}
     end
     
+    local recordedAt = time()
+
     table.insert(playerData.recentGames, 1, {
         date = date("%Y-%m-%d %H:%M"),
+        timestamp = recordedAt,
         result = result,
         goldAmount = goldAmount or 0,
         initialRoll = initialRoll or 0
@@ -308,13 +311,31 @@ function DRE:GetLastGameRecord()
     local latestGame = nil
     local latestPlayer = nil
     local latestTime = 0
+
+    local function parseDateToNumber(dateStr)
+        if not dateStr or type(dateStr) ~= "string" then
+            return 0
+        end
+
+        local year, month, day, hour, min = dateStr:match("^(%d%d%d%d)%-(%d%d)%-(%d%d) (%d%d):(%d%d)$")
+        if not year then
+            return 0
+        end
+
+        return tonumber(year) * 100000000 + tonumber(month) * 1000000 +
+            tonumber(day) * 10000 + tonumber(hour) * 100 + tonumber(min)
+    end
     
     -- Find the most recent game across all players
     for playerName, playerData in pairs(self.db.profile.history) do
         if playerData.recentGames and #playerData.recentGames > 0 then
             local game = playerData.recentGames[1] -- Most recent is first
             local gameTime = game.timestamp or 0
-            
+
+            if gameTime == 0 and game.date then
+                gameTime = parseDateToNumber(game.date)
+            end
+
             if gameTime > latestTime then
                 latestTime = gameTime
                 latestGame = game
@@ -564,6 +585,34 @@ end
 -- Compatibility function - edit the most recent game record
 function DRE:EditLastGame(playerName, newResult, newGoldAmount, newInitialRoll)
     return self:EditGameRecord(playerName, 1, newResult, newGoldAmount, newInitialRoll)
+end
+
+function DRE:FindGameRecordIndexByTimestamp(playerName, recordedAt)
+    if not self.db or not self.db.profile.history or not playerName or not recordedAt then
+        return nil
+    end
+
+    local playerData = self.db.profile.history[playerName]
+    if not playerData or not playerData.recentGames then
+        return nil
+    end
+
+    for gameIndex, game in ipairs(playerData.recentGames) do
+        if game and tonumber(game.timestamp) == tonumber(recordedAt) then
+            return gameIndex, game
+        end
+    end
+
+    return nil
+end
+
+function DRE:UpdateGameWagerByTimestamp(playerName, recordedAt, newGoldAmount)
+    local gameIndex, game = self:FindGameRecordIndexByTimestamp(playerName, recordedAt)
+    if not gameIndex or not game then
+        return false, "Unable to find the recorded game"
+    end
+
+    return self:EditGameRecord(playerName, gameIndex, game.result, newGoldAmount or 0, game.initialRoll)
 end
 
 -- Recalculate and fix global gold tracking totals from individual player data

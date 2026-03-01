@@ -1,5 +1,28 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.3.2 - SKEM Edition
+
+### UI Improvements
+- **Main tabs stretched to fit the window** - DeathRoll, Statistics, History, and Settings now use the available width more evenly
+- **New in-window Settings tab** - Added a full settings surface directly in the addon window for common gameplay, challenge, interface, data, and fun stats controls
+- **Embedded roll history panel** - The DeathRoll tab now keeps the full roll log inside the main window with mouse-wheel scrolling and no visible scrollbar instead of truncating after three entries
+- **History tab scrollbar refresh fix** - Switching to players with longer histories now triggers the scrollbar immediately without requiring a window resize
+- **Scale-aware layout refresh** - Changing UI scale now forces a full relayout so tabs, text, and content boxes stay aligned
+- **DeathRoll layout cleanup** - Roll and wager controls were compacted, the history panel sizing was tightened, and the default window size is now 400x311
+
+### Quality of Life
+- **Use My Gold button** - Replaced the old Auto-Roll from Money toggle with a button beside the roll input for explicit one-click use
+- **Trade-based wager tracking** - Added a saved setting to record wagers from completed gold trades instead of manual wager entry
+- **Manual wager auto-hide in trade mode** - The Gold/Silver/Copper inputs are hidden on the DeathRoll tab when trade-based wager tracking is enabled
+- **Roll history tab-leak fix** - Fixed the embedded roll history text appearing on non-DeathRoll tabs after tab switches
+- **Edition label refresh** - Updated visible version labeling to SKEM Edition
+
+### Commands And Data Integrity
+- **New slash commands** - `/dr accept`, `/dr decline`, and `/dr size` now support pending challenges and window diagnostics
+- **Timestamped game records** - New saved game records now include numeric timestamps, and recent-record lookups fall back cleanly for older entries
+
+---
+
 ## Version 2.3.1 - TOC Compatibility Update
 
 ### Compatibility Fixes

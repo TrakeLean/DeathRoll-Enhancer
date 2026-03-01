@@ -26,7 +26,7 @@ TEMP_FILE=$(mktemp)
 cat > "$TEMP_FILE" << EOF
 # DeathRoll Enhancer - Changelog
 
-## Version $NEW_VERSION - Bintes Edition
+## Version $NEW_VERSION - SKEM Edition
 
 ### Bug Fixes
 - [Add your changes here]

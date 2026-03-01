@@ -20,7 +20,7 @@ Write-Host "Updating to version $NewVersion..." -ForegroundColor Green
 $newChangelog = @"
 # DeathRoll Enhancer - Changelog
 
-## Version $NewVersion - Bintes Edition
+## Version $NewVersion - SKEM Edition
 
 ### Bug Fixes
 - [Add your changes here]

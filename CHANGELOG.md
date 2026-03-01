@@ -14,6 +14,7 @@
 - **Use My Gold button** - Replaced the old Auto-Roll from Money toggle with a button beside the roll input for explicit one-click use
 - **Trade-based wager tracking** - Added a saved setting to record wagers from completed gold trades instead of manual wager entry
 - **Manual wager auto-hide in trade mode** - The Gold/Silver/Copper inputs are hidden on the DeathRoll tab when trade-based wager tracking is enabled
+- **Perspective-based roll odds** - Roll history now describes the immediate odds from your perspective, showing your chance of winning after your roll and your chance of losing after your opponent's roll
 - **Roll history tab-leak fix** - Fixed the embedded roll history text appearing on non-DeathRoll tabs after tab switches
 - **Edition label refresh** - Updated visible version labeling to SKEM Edition
 

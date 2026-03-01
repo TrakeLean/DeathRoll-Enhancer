@@ -15,6 +15,7 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 - **History scrollbar refresh fix** - Switching to players with longer histories now shows the scrollbar immediately
 - **Use My Gold button** - Replaced the old auto-roll setting with a one-click roll helper beside the roll input
 - **Trade-based wager tracking** - Added an option to hide manual wager inputs and record wagers from completed gold trades instead
+- **Perspective-based roll odds** - The roll log now shows your chance of winning after your roll and your chance of losing after your opponent's roll
 
 ## 🆕 What's New in Version 2.3.0
 

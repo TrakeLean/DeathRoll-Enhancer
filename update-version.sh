@@ -1,5 +1,6 @@
 #!/bin/bash
-# Version update script - automatically updates all version references
+# Version prep script for docs/changelog.
+# Core.lua and DeathRollEnhancer.toc use CurseForge @project-version@ tokens.
 
 if [ -z "$1" ]; then
     echo "Usage: ./update-version.sh <new-version>"
@@ -10,16 +11,10 @@ fi
 NEW_VERSION="$1"
 echo "Updating to version $NEW_VERSION..."
 
-# Update Core.lua
-sed -i "s/DRE.version = \"[^\"]*\"/DRE.version = \"$NEW_VERSION\"/" Core.lua
-
-# Update DeathRollEnhancer.toc
-sed -i "s/## Version: [0-9.]*/## Version: $NEW_VERSION/" DeathRollEnhancer.toc
-sed -i "s/Version [0-9.]*|r/Version $NEW_VERSION|r/" DeathRollEnhancer.toc
-
 # Update README.md
 sed -i "s/# DeathRoll Enhancer v[^ ]*/# DeathRoll Enhancer v$NEW_VERSION/" README.md
 sed -i "s/Version-[^-]*-brightgreen/Version-$NEW_VERSION-brightgreen/" README.md
+sed -i "s/## What's New in Version [0-9.]*/## What's New in Version $NEW_VERSION/" README.md
 
 # Update CHANGELOG.md (add new section at top)
 TEMP_FILE=$(mktemp)
@@ -47,3 +42,4 @@ echo "Don't forget to:"
 echo "1. Update CHANGELOG.md with actual changes"
 echo "2. Test the addon"
 echo "3. Commit and push: git add . && git commit -m 'Version $NEW_VERSION' && git push"
+echo "4. Tag and push: git tag v$NEW_VERSION && git push origin v$NEW_VERSION"

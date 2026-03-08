@@ -5,16 +5,14 @@ param(
 
 Write-Host "Updating to version $NewVersion..." -ForegroundColor Green
 
-# Update Core.lua
-(Get-Content Core.lua) -replace 'DRE\.version = "[^"]*"', "DRE.version = `"$NewVersion`"" | Set-Content Core.lua
-
-# Update DeathRollEnhancer.toc
-(Get-Content DeathRollEnhancer.toc) -replace '## Version: [0-9.]*', "## Version: $NewVersion" | Set-Content DeathRollEnhancer.toc
-(Get-Content DeathRollEnhancer.toc) -replace 'Version [0-9.]*\|r', "Version $NewVersion|r" | Set-Content DeathRollEnhancer.toc
+# NOTE:
+# Core.lua and DeathRollEnhancer.toc use CurseForge replacement tokens
+# (@project-version@). Do not replace those with static versions.
 
 # Update README.md
 (Get-Content README.md) -replace '# DeathRoll Enhancer v[^ ]*', "# DeathRoll Enhancer v$NewVersion" | Set-Content README.md
 (Get-Content README.md) -replace 'Version-[^-]*-brightgreen', "Version-$NewVersion-brightgreen" | Set-Content README.md
+(Get-Content README.md) -replace '## What''s New in Version [0-9.]*', "## What's New in Version $NewVersion" | Set-Content README.md
 
 # Update CHANGELOG.md (add new section at top)
 $newChangelog = @"
@@ -40,3 +38,4 @@ Write-Host "Don't forget to:" -ForegroundColor Yellow
 Write-Host "1. Update CHANGELOG.md with actual changes" -ForegroundColor Yellow
 Write-Host "2. Test the addon" -ForegroundColor Yellow  
 Write-Host "3. Commit and push changes" -ForegroundColor Yellow
+Write-Host "4. Create and push a git tag: git tag v$NewVersion; git push origin v$NewVersion" -ForegroundColor Yellow

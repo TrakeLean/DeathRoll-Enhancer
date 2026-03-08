@@ -1,5 +1,19 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.3.3 - Anti-Cheat and Stats Update
+
+### New Features
+- **Wrong-roll range detection** - Active games now validate strict roll ranges and flag invalid opponent rolls as potential cheats
+- **Suspicious roll tracking** - Added persistent suspicious-roll tracking with `/dr suspicious` and `/dr cheaters` summaries
+- **Rename merge command** - Added `/dr merge <oldName> <newName>` to merge history and suspicious data after player renames
+- **New fun stat** - Added **Most Likely to Cheat** based on tracked invalid roll-range flags
+
+### Quality of Life
+- **Track Gold cleanup** - Removed the old Track Gold toggle to keep gold tracking behavior consistent
+- **Statistics coverage improvements** - Wired new fun stats into both Statistics and Settings tabs
+
+---
+
 ## Version 2.3.2 - SKEM Edition
 
 ### UI Improvements

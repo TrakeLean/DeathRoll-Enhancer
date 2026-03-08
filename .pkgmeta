@@ -1,0 +1,14 @@
+package-as: DeathRollEnhancer
+manual-changelog: CHANGELOG.md
+license-output: LICENSE.txt
+
+ignore:
+  - .claude
+  - .vscode
+  - versions
+  - update-version.ps1
+  - update-version.sh
+  - PROJECT_CONTEXT.md
+  - RELEASE_PROCESS.md
+  - CurseForge_Description.md
+  - .gitattributes

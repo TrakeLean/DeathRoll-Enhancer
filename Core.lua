@@ -38,7 +38,11 @@ DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
-DRE.version = "2.3.2"
+-- Replaced by CurseForge packager on tagged builds.
+DRE.version = "@project-version@"
+if DRE.version == "@project-version@" then
+    DRE.version = "dev-local"
+end
 DRE.author = "0xTrk"
 
 -- Utility: safe trim for user input (WoW Lua doesn't provide string:trim())
@@ -86,7 +90,6 @@ local defaults = {
         gameplay = {
             autoEmote = true,
             soundEnabled = true,
-            trackGold = true,
             autoRollFromMoney = false,
             chatMessages = false,
             debugMessages = false,
@@ -97,6 +100,7 @@ local defaults = {
             minRollThreshold = 100,
             trackWagerByTrade = false,
         },
+        suspiciousRolls = {},
         history = {},
         goldTracking = {
             totalWon = 0,
@@ -109,8 +113,12 @@ local defaults = {
             showMostPlayedWith = true,
             showMostWinsAgainst = true,
             showMostLossesAgainst = true,
+            showFrenemy = true,
+            showLikelyCheater = true,
             showMostMoneyWonFrom = true,
             showMostMoneyLostTo = true,
+            showBestMatchup = true,
+            showWorstMatchup = true,
             showBiggestWin = true,
             showBiggestLoss = true,
             showLuckyPlayer = true,
@@ -495,6 +503,7 @@ function DRE:CalculateFunStats()
     end
     
     local history = self.db.profile.history
+    local suspiciousRolls = self.db.profile.suspiciousRolls or {}
     local funStats = {}
     
     -- Initialize counters
@@ -505,14 +514,30 @@ function DRE:CalculateFunStats()
     local mostMoneyLostPlayer, mostMoneyLostAmount = nil, 0
     local nemesisPlayer, nemesisWinRate = nil, -1  -- Start at -1 so 0% is valid
     local victimPlayer, victimWinRate = nil, 2     -- Start at 2 (200%) so 100% is valid
+    local frenemyPlayer, frenemyDistance, frenemyGames, frenemyWinRate = nil, math.huge, 0, 0
+    local bestMatchupPlayer, bestMatchupPerGame, bestMatchupNet, bestMatchupGames = nil, -math.huge, 0, 0
+    local worstMatchupPlayer, worstMatchupPerGame, worstMatchupNet, worstMatchupGames = nil, math.huge, 0, 0
     local highRollerPlayer, highRollerAvg = nil, 0
     local cheapskatePlayer, cheapskateAvg = nil, math.huge
-    local luckyPlayer, luckyWinRate = nil, -1      -- Start at -1 so 0% is valid
-    local unluckyPlayer, unluckyWinRate = nil, 2   -- Start at 2 (200%) so 100% is valid
+    local luckyPlayer, luckyScore, luckyGames, luckyWinRate = nil, -math.huge, 0, 0
+    local unluckyPlayer, unluckyScore, unluckyGames, unluckyWinRate = nil, math.huge, 0, 0
     local daredevilPlayer, daredevilAvg = nil, 0
     local conservativePlayer, conservativeAvg = nil, math.huge
     local biggestWinAmount, biggestWinPlayer = 0, nil
     local biggestLossAmount, biggestLossPlayer = 0, nil
+    local likelyCheaterPlayer, likelyCheaterCount, likelyCheaterLastSeen = nil, 0, 0
+
+    for playerName, entry in pairs(suspiciousRolls) do
+        local count = entry and tonumber(entry.count) or 0
+        local lastSeen = entry and tonumber(entry.lastSeen) or 0
+        if count > 0 then
+            if count > likelyCheaterCount or (count == likelyCheaterCount and lastSeen > likelyCheaterLastSeen) then
+                likelyCheaterPlayer = playerName
+                likelyCheaterCount = count
+                likelyCheaterLastSeen = lastSeen
+            end
+        end
+    end
     
     -- Analyze each player
     for playerName, playerData in pairs(history) do
@@ -552,7 +577,25 @@ function DRE:CalculateFunStats()
                 mostMoneyLostPlayer = playerName
                 mostMoneyLostAmount = goldLost
             end
-            
+
+            -- Best/Worst matchup by net gold per game (minimum 5 games)
+            if totalGames >= 5 then
+                local netGold = goldWon - goldLost
+                local netPerGame = netGold / totalGames
+                if netPerGame > bestMatchupPerGame then
+                    bestMatchupPlayer = playerName
+                    bestMatchupPerGame = netPerGame
+                    bestMatchupNet = netGold
+                    bestMatchupGames = totalGames
+                end
+                if netPerGame < worstMatchupPerGame then
+                    worstMatchupPlayer = playerName
+                    worstMatchupPerGame = netPerGame
+                    worstMatchupNet = netGold
+                    worstMatchupGames = totalGames
+                end
+            end
+             
             -- Calculate win rates for nemesis/victim (minimum 5 games)
             if totalGames >= 5 then
                 local theirWinRate = losses / totalGames -- Their wins against us
@@ -569,15 +612,35 @@ function DRE:CalculateFunStats()
                     victimPlayer = playerName
                     victimWinRate = theirWinRate
                 end
-                
-                -- Lucky/Unlucky based on our win rate
-                if ourWinRate > luckyWinRate then
+
+                -- Frenemy: closest to a 50/50 matchup (minimum 10 games)
+                if totalGames >= 10 then
+                    local distanceToEven = math.abs(ourWinRate - 0.5)
+                    if distanceToEven < frenemyDistance then
+                        frenemyPlayer = playerName
+                        frenemyDistance = distanceToEven
+                        frenemyGames = totalGames
+                        frenemyWinRate = ourWinRate
+                    elseif distanceToEven == frenemyDistance and totalGames > frenemyGames then
+                        frenemyPlayer = playerName
+                        frenemyGames = totalGames
+                        frenemyWinRate = ourWinRate
+                    end
+                end
+                 
+                -- Lucky/Unlucky based on wins above/below a 50/50 baseline.
+                local luckScore = wins - (totalGames * 0.5)
+                if luckScore > luckyScore then
                     luckyPlayer = playerName
+                    luckyScore = luckScore
+                    luckyGames = totalGames
                     luckyWinRate = ourWinRate
                 end
                 
-                if ourWinRate < unluckyWinRate then
+                if luckScore < unluckyScore then
                     unluckyPlayer = playerName
+                    unluckyScore = luckScore
+                    unluckyGames = totalGames
                     unluckyWinRate = ourWinRate
                 end
             end
@@ -592,10 +655,10 @@ function DRE:CalculateFunStats()
                 for _, game in ipairs(playerData.recentGames) do
                     -- Track biggest single win/loss
                     if game.goldAmount and game.goldAmount > 0 then
-                        if game.result == "Won" and game.goldAmount > biggestWinAmount then
+                        if (game.result == "Won" or game.result == "WIN") and game.goldAmount > biggestWinAmount then
                             biggestWinAmount = game.goldAmount
                             biggestWinPlayer = playerName
-                        elseif game.result == "Lost" and game.goldAmount > biggestLossAmount then
+                        elseif (game.result == "Lost" or game.result == "LOSS") and game.goldAmount > biggestLossAmount then
                             biggestLossAmount = game.goldAmount
                             biggestLossPlayer = playerName
                         end
@@ -647,12 +710,16 @@ function DRE:CalculateFunStats()
         mostLossesAgainst = {player = mostLossesPlayer, count = mostLossesCount},
         mostMoneyWonFrom = {player = mostMoneyWonPlayer, amount = mostMoneyWonAmount},
         mostMoneyLostTo = {player = mostMoneyLostPlayer, amount = mostMoneyLostAmount},
+        frenemy = {player = frenemyPlayer, distance = frenemyDistance, games = frenemyGames, winRate = frenemyWinRate},
+        bestMatchup = {player = bestMatchupPlayer, netPerGame = bestMatchupPerGame, net = bestMatchupNet, games = bestMatchupGames},
+        worstMatchup = {player = worstMatchupPlayer, netPerGame = worstMatchupPerGame, net = worstMatchupNet, games = worstMatchupGames},
         nemesis = {player = nemesisPlayer, winRate = nemesisWinRate},
         victim = {player = victimPlayer, winRate = victimWinRate},
+        likelyCheater = {player = likelyCheaterPlayer, count = likelyCheaterCount},
         highRoller = {player = highRollerPlayer, avgWager = highRollerAvg},
         cheapskate = {player = cheapskatePlayer, avgWager = cheapskateAvg},
-        luckyPlayer = {player = luckyPlayer, winRate = luckyWinRate},
-        unluckyPlayer = {player = unluckyPlayer, winRate = unluckyWinRate},
+        luckyPlayer = {player = luckyPlayer, winRate = luckyWinRate, score = luckyScore, games = luckyGames},
+        unluckyPlayer = {player = unluckyPlayer, winRate = unluckyWinRate, score = unluckyScore, games = unluckyGames},
         daredevil = {player = daredevilPlayer, avgRoll = daredevilAvg},
         conservative = {player = conservativePlayer, avgRoll = conservativeAvg},
         biggestWin = {amount = biggestWinAmount, player = biggestWinPlayer},
@@ -683,11 +750,49 @@ function DRE:FormatFunStat(statType, statData)
         mostMoneyLostTo = function(data)
             return string.format("Biggest Money Sink: %s (%s lost)", player, self:FormatGold(data.amount))
         end,
+        frenemy = function(data)
+            return string.format("Frenemy: %s (%d games, %.1f%% win rate)", player, data.games or 0, (data.winRate or 0) * 100)
+        end,
+        bestMatchup = function(data)
+            local netPerGame = data.netPerGame or 0
+            if netPerGame >= 0 then
+                netPerGame = math.floor(netPerGame + 0.5)
+            else
+                netPerGame = math.ceil(netPerGame - 0.5)
+            end
+            return string.format(
+                "Best Matchup: %s (%s net, %s per game over %d games)",
+                player,
+                self:FormatGold(data.net or 0),
+                self:FormatGold(netPerGame),
+                data.games or 0
+            )
+        end,
+        worstMatchup = function(data)
+            local netPerGame = data.netPerGame or 0
+            if netPerGame >= 0 then
+                netPerGame = math.floor(netPerGame + 0.5)
+            else
+                netPerGame = math.ceil(netPerGame - 0.5)
+            end
+            return string.format(
+                "Worst Matchup: %s (%s net, %s per game over %d games)",
+                player,
+                self:FormatGold(data.net or 0),
+                self:FormatGold(netPerGame),
+                data.games or 0
+            )
+        end,
         nemesis = function(data)
             return string.format("Your Nemesis: %s (%.1f%% win rate against you)", player, data.winRate * 100)
         end,
         victim = function(data)
             return string.format("Your Victim: %s (%.1f%% win rate against you)", player, data.winRate * 100)
+        end,
+        likelyCheater = function(data)
+            local count = data.count or 0
+            local pluralSuffix = count == 1 and "" or "s"
+            return string.format("Most Likely to Cheat: %s (%d suspicious roll%s)", player, count, pluralSuffix)
         end,
         highRoller = function(data)
             return string.format("High Roller: %s (%s avg wager)", player, self:FormatGold(data.avgWager))
@@ -696,10 +801,22 @@ function DRE:FormatFunStat(statType, statData)
             return string.format("Cheapskate: %s (%s avg wager)", player, self:FormatGold(data.avgWager))
         end,
         luckyPlayer = function(data)
-            return string.format("Lucky Charm: %s (%.1f%% win rate with them)", player, data.winRate * 100)
+            return string.format(
+                "Lucky Charm: %s (%+.1f wins vs 50/50 over %d games, %.1f%% win rate)",
+                player,
+                data.score or 0,
+                data.games or 0,
+                (data.winRate or 0) * 100
+            )
         end,
         unluckyPlayer = function(data)
-            return string.format("Bad Luck Magnet: %s (%.1f%% win rate with them)", player, data.winRate * 100)
+            return string.format(
+                "Bad Luck Magnet: %s (%+.1f wins vs 50/50 over %d games, %.1f%% win rate)",
+                player,
+                data.score or 0,
+                data.games or 0,
+                (data.winRate or 0) * 100
+            )
         end,
         daredevil = function(data)
             return string.format("Daredevil: %s (avg %.0f starting roll)", player, data.avgRoll)
@@ -725,35 +842,57 @@ end
 
 -- Slash command handlers
 function DRE:SlashCommand(input)
-    if not input or self:Trim(input) == "" then
+    local trimmedInput = self:Trim(input or "")
+    local mergeSource, mergeTarget = trimmedInput:match("^merge%s+(%S+)%s+(%S+)$")
+
+    if mergeSource and mergeTarget then
+        local success, message = self:MergePlayerHistory(mergeSource, mergeTarget)
+        if success then
+            self:Print(message)
+
+            if self.UI and self.UI.historyDropdown and self.UI.historyDropdown.GetValue then
+                local selectedPlayer = self.UI.historyDropdown:GetValue()
+                if selectedPlayer == mergeSource then
+                    self:UpdateHistoryDisplay(mergeTarget)
+                elseif selectedPlayer then
+                    self:UpdateHistoryDisplay(selectedPlayer)
+                end
+            end
+        else
+            self:Print("Failed to merge player history: " .. (message or "Unknown error"))
+            self:Print("Usage: /dr merge <oldName> <newName>")
+        end
+    elseif trimmedInput == "" then
         self:ShowMainWindow()
-    elseif input == "config" or input == "options" then
+    elseif trimmedInput == "config" or trimmedInput == "options" then
         self:OpenOptions()
-    elseif input == "debug" then
+    elseif trimmedInput == "debug" then
         self:Print("Debug command triggered - dumping buffer...")
         self:DumpDebugBuffer()
-    elseif input == "accept" then
+    elseif trimmedInput == "accept" then
         if self.pendingChallenge then
             self:AcceptChallenge()
         else
             self:Print("No pending challenge to accept")
         end
-    elseif input == "decline" then
+    elseif trimmedInput == "decline" then
         if self.pendingChallenge then
             self:DeclineChallenge()
         else
             self:Print("No pending challenge to decline")
         end
-    elseif input == "edit" then
+    elseif trimmedInput == "edit" then
         self:ShowEditGameDialog()
-    elseif input == "fixgold" then
+    elseif trimmedInput == "fixgold" then
         local success, message = self:RecalculateGoldTracking()
         if success then
             self:Print("Gold tracking fixed: " .. message)
         else
             self:Print("Failed to fix gold tracking: " .. message)
         end
-    elseif input == "size" or input == "windowsize" then
+    elseif trimmedInput == "suspicious" or trimmedInput == "cheaters" then
+        self:PrintSuspiciousRollSummary()
+    elseif trimmedInput == "size" or trimmedInput == "windowsize" then
         self:PrintCurrentWindowSize()
     else
         self:Print("Usage: /dr or /deathroll - Opens the main window")
@@ -762,7 +901,9 @@ function DRE:SlashCommand(input)
         self:Print("       /dr accept - Accept pending challenge")
         self:Print("       /dr decline - Decline pending challenge")
         self:Print("       /dr edit - Edit recent game records")
+        self:Print("       /dr merge <oldName> <newName> - Merge player history after rename")
         self:Print("       /dr fixgold - Recalculate gold tracking totals")
+        self:Print("       /dr suspicious - Show tracked invalid/wrong rolls")
         self:Print("       /dr size - Show current window size")
     end
 end
@@ -817,14 +958,6 @@ function DRE:SetupOptions()
                         get = function() return self.db.profile.gameplay.soundEnabled end,
                         set = function(_, val) self.db.profile.gameplay.soundEnabled = val end,
                         order = 3,
-                    },
-                    trackGold = {
-                        name = "Track Gold",
-                        desc = "Track gold won and lost",
-                        type = "toggle",
-                        get = function() return self.db.profile.gameplay.trackGold end,
-                        set = function(_, val) self.db.profile.gameplay.trackGold = val end,
-                        order = 4,
                     },
                     chatMessages = {
                         name = "Chat Messages",
@@ -1061,10 +1194,26 @@ function DRE:SetupOptions()
                         set = function(_, val) self.db.profile.funStats.showVictim = val end,
                         order = 7,
                     },
+                    showFrenemy = {
+                        name = "Frenemy",
+                        desc = "Show your most even matchup near 50/50 (minimum 10 games)",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showFrenemy end,
+                        set = function(_, val) self.db.profile.funStats.showFrenemy = val end,
+                        order = 8,
+                    },
+                    showLikelyCheater = {
+                        name = "Most Likely to Cheat",
+                        desc = "Show who has the most flagged invalid roll-range attempts",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showLikelyCheater end,
+                        set = function(_, val) self.db.profile.funStats.showLikelyCheater = val end,
+                        order = 8.5,
+                    },
                     separator2 = {
                         name = "Gold & Money",
                         type = "header",
-                        order = 8,
+                        order = 9,
                     },
                     showMostMoneyWonFrom = {
                         name = "Biggest Gold Mine",
@@ -1072,7 +1221,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showMostMoneyWonFrom end,
                         set = function(_, val) self.db.profile.funStats.showMostMoneyWonFrom = val end,
-                        order = 9,
+                        order = 10,
                     },
                     showMostMoneyLostTo = {
                         name = "Biggest Money Sink",
@@ -1080,7 +1229,23 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showMostMoneyLostTo end,
                         set = function(_, val) self.db.profile.funStats.showMostMoneyLostTo = val end,
-                        order = 10,
+                        order = 11,
+                    },
+                    showBestMatchup = {
+                        name = "Best Matchup",
+                        desc = "Show the opponent with the best net gold per game (minimum 5 games)",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showBestMatchup end,
+                        set = function(_, val) self.db.profile.funStats.showBestMatchup = val end,
+                        order = 12,
+                    },
+                    showWorstMatchup = {
+                        name = "Worst Matchup",
+                        desc = "Show the opponent with the worst net gold per game (minimum 5 games)",
+                        type = "toggle",
+                        get = function() return self.db.profile.funStats.showWorstMatchup end,
+                        set = function(_, val) self.db.profile.funStats.showWorstMatchup = val end,
+                        order = 13,
                     },
                     showBiggestWin = {
                         name = "Biggest Single Win",
@@ -1088,7 +1253,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showBiggestWin end,
                         set = function(_, val) self.db.profile.funStats.showBiggestWin = val end,
-                        order = 11,
+                        order = 14,
                     },
                     showBiggestLoss = {
                         name = "Biggest Single Loss",
@@ -1096,7 +1261,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showBiggestLoss end,
                         set = function(_, val) self.db.profile.funStats.showBiggestLoss = val end,
-                        order = 12,
+                        order = 15,
                     },
                     showHighRoller = {
                         name = "High Roller",
@@ -1104,7 +1269,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showHighRoller end,
                         set = function(_, val) self.db.profile.funStats.showHighRoller = val end,
-                        order = 13,
+                        order = 16,
                     },
                     showCheapskate = {
                         name = "Cheapskate",
@@ -1112,28 +1277,28 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showCheapskate end,
                         set = function(_, val) self.db.profile.funStats.showCheapskate = val end,
-                        order = 14,
+                        order = 17,
                     },
                     separator3 = {
                         name = "Luck & Streaks",
                         type = "header",
-                        order = 15,
+                        order = 18,
                     },
                     showLuckyPlayer = {
                         name = "Lucky Player",
-                        desc = "Show which player seems to bring you the most luck",
+                        desc = "Show who overperforms your 50/50 baseline the most (minimum 5 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showLuckyPlayer end,
                         set = function(_, val) self.db.profile.funStats.showLuckyPlayer = val end,
-                        order = 16,
+                        order = 19,
                     },
                     showUnluckyPlayer = {
                         name = "Unlucky Player",
-                        desc = "Show which player seems to bring you bad luck",
+                        desc = "Show who underperforms your 50/50 baseline the most (minimum 5 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showUnluckyPlayer end,
                         set = function(_, val) self.db.profile.funStats.showUnluckyPlayer = val end,
-                        order = 17,
+                        order = 20,
                     },
                     showDaredevil = {
                         name = "Daredevil Opponent",
@@ -1141,7 +1306,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showDaredevil end,
                         set = function(_, val) self.db.profile.funStats.showDaredevil = val end,
-                        order = 18,
+                        order = 21,
                     },
                     showConservative = {
                         name = "Conservative Opponent",
@@ -1149,7 +1314,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showConservative end,
                         set = function(_, val) self.db.profile.funStats.showConservative = val end,
-                        order = 19,
+                        order = 22,
                     },
                 },
             },
@@ -1495,6 +1660,88 @@ function DRE:CleanupOldRolls(currentTime)
     end
 end
 
+function DRE:RecordSuspiciousRoll(playerName, roll, maxRoll, expectedMaxRoll)
+    if not playerName or not self.db or not self.db.profile then
+        return nil
+    end
+
+    self.db.profile.suspiciousRolls = self.db.profile.suspiciousRolls or {}
+
+    local existing = self.db.profile.suspiciousRolls[playerName] or {
+        count = 0
+    }
+
+    existing.count = (existing.count or 0) + 1
+    existing.lastRoll = tonumber(roll) or 0
+    existing.lastMaxRoll = tonumber(maxRoll) or 0
+    existing.expectedMaxRoll = tonumber(expectedMaxRoll) or 0
+    existing.lastSeen = time()
+
+    self.db.profile.suspiciousRolls[playerName] = existing
+
+    self:DebugPrint(string.format(
+        "Tracked suspicious roll for %s: roll=%d max=%d expectedMax=%d count=%d",
+        playerName,
+        existing.lastRoll,
+        existing.lastMaxRoll,
+        existing.expectedMaxRoll,
+        existing.count
+    ))
+
+    return existing
+end
+
+function DRE:PrintSuspiciousRollSummary()
+    if not self.db or not self.db.profile or not self.db.profile.suspiciousRolls then
+        self:Print("No suspicious rolls recorded.")
+        return
+    end
+
+    local suspiciousList = {}
+    for playerName, entry in pairs(self.db.profile.suspiciousRolls) do
+        if entry and (entry.count or 0) > 0 then
+            table.insert(suspiciousList, {
+                playerName = playerName,
+                count = entry.count or 0,
+                lastRoll = entry.lastRoll or 0,
+                lastMaxRoll = entry.lastMaxRoll or 0,
+                expectedMaxRoll = entry.expectedMaxRoll or 0,
+                lastSeen = entry.lastSeen or 0
+            })
+        end
+    end
+
+    if #suspiciousList == 0 then
+        self:Print("No suspicious rolls recorded.")
+        return
+    end
+
+    table.sort(suspiciousList, function(a, b)
+        if a.count == b.count then
+            return a.lastSeen > b.lastSeen
+        end
+        return a.count > b.count
+    end)
+
+    self:Print("=== Tracked Invalid Rolls ===")
+    for _, record in ipairs(suspiciousList) do
+        local whenText = "unknown"
+        if record.lastSeen and record.lastSeen > 0 then
+            whenText = date("%Y-%m-%d %H:%M", record.lastSeen)
+        end
+
+        self:Print(string.format(
+            "%s: %d flagged roll(s) - last %d (1-%d), expected 1-%d at %s",
+            record.playerName,
+            record.count,
+            record.lastRoll,
+            record.lastMaxRoll,
+            record.expectedMaxRoll,
+            whenText
+        ))
+    end
+end
+
 -- Clear recent rolls for a specific player (e.g., when game starts/ends)
 function DRE:ClearRecentRollsForPlayer(playerName)
     if not self.recentRolls or not playerName then return end
@@ -1562,8 +1809,7 @@ function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
         self:DebugPrint("Game active - checking if roll is relevant (player: " .. myName .. ", target: " .. (self.gameState.target or "nil") .. ")")
         
         -- Check if this roll is relevant to our game
-        if (playerName == myName or playerName == self.gameState.target) and
-           maxRoll <= self.gameState.currentRoll + 1 then -- Allow some tolerance
+        if (playerName == myName or playerName == self.gameState.target) then
             self:DebugPrint("Roll is relevant - processing via HandleGameRoll")
             self:HandleGameRoll(playerName, roll, maxRoll)
         else
@@ -2425,6 +2671,7 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
     local recordedPlayerName = nil
     local recordedResult = nil
     local recordedAt = nil
+    local forcedRecordedResult = options and options.recordedResult
 
     if options and options.trackWagerByTrade ~= nil then
         shouldTrackTrade = options.trackWagerByTrade == true
@@ -2448,7 +2695,21 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
     self:AddGameResultToHistory(result, opponent, wager)
     
     -- Record the game result
-    if loser and loser ~= playerName then
+    if forcedRecordedResult then
+        if forcedRecordedResult == "WIN" then
+            forcedRecordedResult = "Won"
+        elseif forcedRecordedResult == "LOSS" then
+            forcedRecordedResult = "Lost"
+        end
+
+        local target = opponent
+        if not target or target == "" then
+            target = self.gameState and self.gameState.target or "Unknown"
+        end
+        recordedPlayerName = target
+        recordedResult = forcedRecordedResult
+        recordedAt = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0)
+    elseif loser and loser ~= playerName then
         -- We won against the loser
         recordedPlayerName = loser
         recordedResult = "Won"
@@ -2551,9 +2812,53 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
     end
 
     local isSelfDuel = (self.gameState.target == myName)
+    local expectedMaxRoll = tonumber(self.gameState.currentRoll) or 0
+    if expectedMaxRoll <= 0 then
+        self:DebugPrint("Invalid expected roll range in game state")
+        return
+    end
+
+    local isMyRoll = (playerName == myName)
+    local isOpponentRoll = (not isSelfDuel and playerName == self.gameState.target)
+
+    if maxRoll ~= expectedMaxRoll then
+        if isOpponentRoll then
+            local tracked = self:RecordSuspiciousRoll(playerName, roll, maxRoll, expectedMaxRoll)
+            local suspiciousCount = tracked and tracked.count or 1
+            local warningText = string.format(
+                "|cffff4444Potential cheat detected: %s rolled %d (1-%d), expected 1-%d. [flag #%d]|r",
+                playerName,
+                roll,
+                maxRoll,
+                expectedMaxRoll,
+                suspiciousCount
+            )
+            self:Print(warningText)
+            self:ChatPrint(playerName .. " made an invalid roll range. Waiting for a valid roll 1-" .. expectedMaxRoll .. ".")
+            if self.UpdateRollHistoryStatus then
+                self:UpdateRollHistoryStatus(warningText, false)
+            end
+            if self.UpdateGameUIState then
+                self:UpdateGameUIState("WAITING_FOR_OPPONENT")
+            end
+            return
+        end
+
+        if isMyRoll then
+            self:Print(string.format(
+                "Invalid roll ignored: you rolled 1-%d but expected 1-%d. Roll again.",
+                maxRoll,
+                expectedMaxRoll
+            ))
+            if self.UpdateGameUIState then
+                self:UpdateGameUIState("ROLLING")
+            end
+            return
+        end
+    end
     
     -- Only process rolls from the player if it's a regular duel or self-duel
-    if playerName == myName then
+    if isMyRoll then
         if isSelfDuel then
             -- Increment roll counter
             self.gameState.rollCount = self.gameState.rollCount + 1
@@ -2568,10 +2873,16 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
                 -- Game over - determine winner/loser based on roll count
                 if (self.gameState.rollCount % 2) == 1 then
                     self:ChatPrint("You lost your self-duel! (Rolled 1 on turn " .. self.gameState.rollCount .. ")")
-                    self:HandleGameEnd(myName, "LOSS", self.gameState.wager, self.gameState.initialRoll)
+                    self:HandleGameEnd(myName, "LOSS", self.gameState.wager, self.gameState.initialRoll, {
+                        opponent = myName,
+                        recordedResult = "Lost"
+                    })
                 else
                     self:ChatPrint("You won your self-duel! (Your opponent-self rolled 1 on turn " .. self.gameState.rollCount .. ")")
-                    self:HandleGameEnd(myName, "WIN", self.gameState.wager, self.gameState.initialRoll)
+                    self:HandleGameEnd(myName, "WIN", self.gameState.wager, self.gameState.initialRoll, {
+                        opponent = myName,
+                        recordedResult = "Won"
+                    })
                 end
             else
                 -- Continue game

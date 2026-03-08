@@ -1023,6 +1023,8 @@ function DRE:CreateFunStatsSection(container)
                 {setting = "showMostLossesAgainst", stat = "mostLossesAgainst"},
                 {setting = "showNemesis", stat = "nemesis"},
                 {setting = "showVictim", stat = "victim"},
+                {setting = "showFrenemy", stat = "frenemy"},
+                {setting = "showLikelyCheater", stat = "likelyCheater"},
             }
         },
         {
@@ -1030,6 +1032,8 @@ function DRE:CreateFunStatsSection(container)
             stats = {
                 {setting = "showMostMoneyWonFrom", stat = "mostMoneyWonFrom"},
                 {setting = "showMostMoneyLostTo", stat = "mostMoneyLostTo"},
+                {setting = "showBestMatchup", stat = "bestMatchup"},
+                {setting = "showWorstMatchup", stat = "worstMatchup"},
                 {setting = "showBiggestWin", stat = "biggestWin"},
                 {setting = "showBiggestLoss", stat = "biggestLoss"},
                 {setting = "showHighRoller", stat = "highRoller"},
@@ -1336,9 +1340,6 @@ function DRE:CreateSettingsSection(container)
     addToggle(gameplayGroup, "Sound Effects", self.db.profile.gameplay.soundEnabled, function(value)
         self.db.profile.gameplay.soundEnabled = value
     end)
-    addToggle(gameplayGroup, "Track Gold", self.db.profile.gameplay.trackGold, function(value)
-        self.db.profile.gameplay.trackGold = value
-    end)
     addToggle(gameplayGroup, "Chat Messages", self.db.profile.gameplay.chatMessages, function(value)
         self.db.profile.gameplay.chatMessages = value
     end)
@@ -1436,6 +1437,8 @@ function DRE:CreateSettingsSection(container)
                 {key = "showMostLossesAgainst", label = "Most Losses Against"},
                 {key = "showNemesis", label = "Your Nemesis"},
                 {key = "showVictim", label = "Your Victim"},
+                {key = "showFrenemy", label = "Frenemy"},
+                {key = "showLikelyCheater", label = "Most Likely to Cheat"},
             },
         },
         {
@@ -1443,6 +1446,8 @@ function DRE:CreateSettingsSection(container)
             items = {
                 {key = "showMostMoneyWonFrom", label = "Biggest Gold Mine"},
                 {key = "showMostMoneyLostTo", label = "Biggest Money Sink"},
+                {key = "showBestMatchup", label = "Best Matchup"},
+                {key = "showWorstMatchup", label = "Worst Matchup"},
                 {key = "showBiggestWin", label = "Biggest Single Win"},
                 {key = "showBiggestLoss", label = "Biggest Single Loss"},
                 {key = "showHighRoller", label = "High Roller"},
@@ -1567,9 +1572,11 @@ function DRE:FormatPlayerHistory(playerData)
         return "No data available"
     end
     
-    local text = string.format("Games Played: %d\n", playerData.gamesPlayed or 0)
-    text = text .. string.format("Wins: %d\n", playerData.wins or 0)
-    text = text .. string.format("Losses: %d\n", playerData.losses or 0)
+    local wins = playerData.wins or 0
+    local losses = playerData.losses or 0
+    local text = string.format("Games Played: %d\n", wins + losses)
+    text = text .. string.format("Wins: %d\n", wins)
+    text = text .. string.format("Losses: %d\n", losses)
     text = text .. string.format("Gold Won: %s\n", self:FormatGold(playerData.goldWon or 0))
     text = text .. string.format("Gold Lost: %s\n", self:FormatGold(playerData.goldLost or 0))
     
@@ -1589,93 +1596,21 @@ end
 
 -- Update stats display
 function DRE:UpdateStatsDisplay()
-    -- Only update stats if we're on the statistics tab
     if UI.currentTab ~= "statistics" then
         return
     end
-    
-    if not UI.statsLabel or not self.db or not self.db.profile.goldTracking then
+
+    if not self.db or not self.db.profile.goldTracking or not UI.tabGroup then
         return
     end
-    
-    local stats = self.db.profile.goldTracking
-    
-    -- Recalculate total games and win rate
-    local totalGames = 0
-    local totalWins = 0
-    local totalLosses = 0
-    if self.db.profile.history then
-        for playerName, playerData in pairs(self.db.profile.history) do
-            totalWins = totalWins + (playerData.wins or 0)
-            totalLosses = totalLosses + (playerData.losses or 0)
-        end
+
+    -- Rebuild the statistics tab so sectioned fun stats stay in sync with live edits/deletes/cleanup.
+    UI.tabGroup:ReleaseChildren()
+    self:CreateStatsSection(UI.tabGroup)
+    if UI.tabGroup.DoLayout then
+        UI.tabGroup:DoLayout()
     end
-    totalGames = totalWins + totalLosses
-    local winRate = totalGames > 0 and (totalWins / totalGames * 100) or 0
-    
-    local statsText = string.format(
-        "Total Games Played: %d\nGames Won: %d\nGames Lost: %d\nWin Rate: %.1f%%\n\nGold Won: %s\nGold Lost: %s\nNet Profit: %s",
-        totalGames,
-        totalWins,
-        totalLosses,
-        winRate,
-        self:FormatGold(stats.totalWon or 0),
-        self:FormatGold(stats.totalLost or 0),
-        self:FormatGold((stats.totalWon or 0) - (stats.totalLost or 0))
-    )
-    
-    UI.statsLabel:SetText(statsText)
-    
-    if UI.streakLabel then
-        local streakText = string.format(
-            "Current Streak: %s%d\nBest Win Streak: %d\nWorst Loss Streak: %d",
-            (stats.currentStreak or 0) >= 0 and "+" or "",
-            stats.currentStreak or 0,
-            stats.bestWinStreak or 0,
-            stats.worstLossStreak or 0
-        )
-        UI.streakLabel:SetText(streakText)
-    end
-    
-    -- Update fun stats if they exist
-    if UI.funStatsLabel and self.db and self.db.profile.funStats then
-        local funStats = self:CalculateFunStats()
-        local settings = self.db.profile.funStats
-        local statsToShow = {}
-        
-        local statMappings = {
-            showMostPlayedWith = "mostPlayedWith",
-            showMostWinsAgainst = "mostWinsAgainst", 
-            showMostLossesAgainst = "mostLossesAgainst",
-            showMostMoneyWonFrom = "mostMoneyWonFrom",
-            showMostMoneyLostTo = "mostMoneyLostTo",
-            showBiggestWin = "biggestWin",
-            showBiggestLoss = "biggestLoss",
-            showNemesis = "nemesis",
-            showVictim = "victim",
-            showHighRoller = "highRoller",
-            showCheapskate = "cheapskate",
-            showLuckyPlayer = "luckyPlayer",
-            showUnluckyPlayer = "unluckyPlayer", 
-            showDaredevil = "daredevil",
-            showConservative = "conservative",
-        }
-        
-        for settingKey, statKey in pairs(statMappings) do
-            if settings[settingKey] then
-                local statText = self:FormatFunStat(statKey, funStats[statKey])
-                if statText then
-                    table.insert(statsToShow, statText)
-                end
-            end
-        end
-        
-        local funStatsText = #statsToShow > 0 and 
-            table.concat(statsToShow, "\n") or
-            "No fun statistics available yet.\nPlay more games to unlock interesting insights!"
-            
-        UI.funStatsLabel:SetText(funStatsText)
-    end
+    self:UpdateMainTabLayout()
 end
 
 -- Update history display for selected player

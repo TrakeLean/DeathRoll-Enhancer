@@ -2,7 +2,7 @@
 
 ## Overview
 
-DeathRollEnhancer is a single World of Warcraft addon focused on DeathRoll games, stats tracking, wager tracking, history browsing, and challenge handling. The current version in the repo is `2.3.2`.
+DeathRollEnhancer is a single World of Warcraft addon focused on DeathRoll games, stats tracking, wager tracking, history browsing, and challenge handling. The current version in the repo is `2.3.3`.
 
 The addon uses:
 
@@ -103,7 +103,9 @@ Main commands:
 - `/dr decline`: decline the current pending whisper-based challenge
 - `/dr debug`: dump debug buffer and export it to saved variables
 - `/dr edit`: open edit recent game records dialog
+- `/dr merge <oldName> <newName>`: merge history entries after a player rename
 - `/dr fixgold`: rebuild global gold totals and streaks from history
+- `/dr suspicious` or `/dr cheaters`: show tracked invalid roll-range attempts
 - `/dr size` or `/dr windowsize`: print the current live and saved window size
 - `/drh [player]` or `/deathrollhistory [player]`: show history for a player
 
@@ -400,6 +402,7 @@ Computed examples:
 - unlucky player
 - high roller
 - cheapskate
+- most likely to cheat (based on suspicious invalid roll-range flags)
 - daredevil
 - conservative
 - biggest single win
@@ -450,7 +453,6 @@ The AceConfig options panel includes controls for:
 
 - auto emotes
 - sound effects toggle
-- gold tracking toggle
 - chat messages
 - debug messages
 - challenge popup enablement

@@ -1,5 +1,17 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.3.6 - Stats and History Cleanup
+
+### New Features
+- **`/dr dedupe` command** - Added a one-shot duplicate cleanup command to remove repeated game entries across history and recalculate totals/streaks.
+
+### Improvements
+- **Merge dedupe and reporting** - `/dr merge` now deduplicates merged history and reports how many duplicate rows were removed.
+- **History dropdown refresh** - History dropdown now refreshes immediately after merge and dedupe operations to avoid stale old-name entries.
+- **Fun stats stability rework** - Improved sample thresholds, tie-breaking, and contradictory-stat suppression so stats are less repetitive and less misleading.
+
+---
+
 ## Version 2.3.5 - Merge Hotfix
 
 ### Bug Fixes

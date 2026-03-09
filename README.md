@@ -1,20 +1,19 @@
-# DeathRoll Enhancer v2.3.3 - SKEM Edition
+# DeathRoll Enhancer v2.3.6 - SKEM Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.3.3-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.3.6-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
 
-## What's New in Version 2.3.3
+## What's New in Version 2.3.6
 
-- **Wrong-roll cheat detection** - Active games now flag and ignore invalid roll ranges (for example, rolling `1-260` when `1-266` is expected)
-- **Suspicious roll tracking commands** - Added `/dr suspicious` and `/dr cheaters` to review flagged invalid rolls per player
-- **Rename merge command** - Added `/dr merge <oldName> <newName>` to merge history for players who changed names
-- **New fun stat** - Added **Most Likely to Cheat** based on suspicious roll-range flags
-- **Settings cleanup** - Removed the old Track Gold toggle so gold tracking is always consistent
+- **Duplicate history cleanup command** - Added `/dr dedupe` to remove duplicate game rows and recalculate stats/totals
+- **Safer merge behavior** - `/dr merge` now deduplicates merged history and reports how many duplicate records were removed
+- **Stats logic rework** - Fun stats now use clearer minimum sample thresholds, stable tie-breaking, and suppression of contradictory duplicate-looking outputs
+- **History dropdown refresh** - History list now refreshes immediately after merge/dedupe changes
 
 ## 🆕 What's New in Version 2.3.0
 
@@ -78,7 +77,8 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 - **`/dr edit`** - Edit recent game records to fix mistakes
 - **`/dr merge <oldName> <newName>`** - Merge player history after a rename
 - **`/dr fixgold`** - Recalculate gold tracking totals
-- **`/dr suspicious`** - Show tracked invalid roll-range attempts
+- **`/dr dedupe`** - Remove duplicate game entries and recalculate statistics
+- **`/dr suspicious`** or **`/dr cheaters`** - Show tracked invalid roll-range attempts
 - **`/dr size`** - Show current window size and scale details
 - **`/drh [player]`** - View history with specific player
 
@@ -159,6 +159,16 @@ View detailed analytics including:
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and all changes.
 
 ### Recent Updates
+
+**v2.3.6** - Stats and History Cleanup
+- Added `/dr dedupe` to remove duplicate game entries and recalculate totals
+- Improved `/dr merge` to dedupe merged data and report duplicate-removal counts
+- Reworked fun stat thresholds/tie-breaking to reduce weird duplicate-looking results
+
+**v2.3.5** - Merge and Packaging Hotfixes
+- Fixed `/dr merge` runtime crash in WoW Lua environments
+- Fixed stale old-name entries in History dropdown after merge
+- Fixed local addon version fallback display and CurseForge changelog markdown rendering
 
 **v2.3.3** - Anti-Cheat and Stats Update
 - Added strict wrong-roll range detection with suspicious-roll tracking

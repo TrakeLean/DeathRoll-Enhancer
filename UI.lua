@@ -1670,6 +1670,41 @@ function DRE:UpdateHistoryDisplay(playerName)
     self:RefreshHistoryLayout()
 end
 
+function DRE:RefreshHistoryDropdown(preferredPlayer)
+    if not UI.historyDropdown or not self.db or not self.db.profile or not self.db.profile.history then
+        return
+    end
+
+    local playerNames = {}
+    local playerDropdown = {}
+    for playerName, playerData in pairs(self.db.profile.history) do
+        local wins = tonumber(playerData and playerData.wins) or 0
+        local losses = tonumber(playerData and playerData.losses) or 0
+        local recentGamesCount = (playerData and playerData.recentGames and #playerData.recentGames) or 0
+
+        if wins > 0 or losses > 0 or recentGamesCount > 0 then
+            table.insert(playerNames, playerName)
+            playerDropdown[playerName] = playerName
+        end
+    end
+
+    table.sort(playerNames)
+    UI.historyDropdown:SetList(playerDropdown)
+
+    local selectedPlayer = preferredPlayer
+    if not selectedPlayer or not playerDropdown[selectedPlayer] then
+        selectedPlayer = playerNames[1]
+    end
+
+    if selectedPlayer then
+        UI.historyDropdown:SetValue(selectedPlayer)
+        self:UpdateHistoryDisplay(selectedPlayer)
+    elseif UI.historyBox then
+        UI.historyBox:SetText("No players in history yet!")
+        self:RefreshHistoryLayout()
+    end
+end
+
 
 -- Create Spicy Duel RPS section
 function DRE:CreateSpicyDuelSection(container)

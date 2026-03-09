@@ -39,9 +39,25 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
+local localFallbackVersion = "2.3.6"
 DRE.version = "@project-version@"
-if DRE.version == "@project-version@" then
-    DRE.version = "dev-local"
+if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
+    local metadataVersion = nil
+    if C_AddOns and C_AddOns.GetAddOnMetadata then
+        metadataVersion = C_AddOns.GetAddOnMetadata(addonName, "Version")
+    elseif GetAddOnMetadata then
+        metadataVersion = GetAddOnMetadata(addonName, "Version")
+    end
+
+    if metadataVersion and metadataVersion ~= "" and metadataVersion ~= "@project-version@" then
+        DRE.version = metadataVersion
+    else
+        DRE.version = localFallbackVersion
+    end
+end
+
+if type(DRE.version) == "string" then
+    DRE.version = DRE.version:gsub("^v", "")
 end
 DRE.author = "0xTrk"
 
@@ -505,6 +521,9 @@ function DRE:CalculateFunStats()
     local history = self.db.profile.history
     local suspiciousRolls = self.db.profile.suspiciousRolls or {}
     local funStats = {}
+    local MIN_MATCHUP_GAMES = 3
+    local MIN_RATE_GAMES = 3
+    local MIN_FRENEMY_GAMES = 5
     
     -- Initialize counters
     local mostGamesPlayer, mostGamesCount = nil, 0
@@ -512,22 +531,29 @@ function DRE:CalculateFunStats()
     local mostLossesPlayer, mostLossesCount = nil, 0
     local mostMoneyWonPlayer, mostMoneyWonAmount = nil, 0
     local mostMoneyLostPlayer, mostMoneyLostAmount = nil, 0
-    local nemesisPlayer, nemesisWinRate = nil, -1  -- Start at -1 so 0% is valid
-    local victimPlayer, victimWinRate = nil, 2     -- Start at 2 (200%) so 100% is valid
+    local nemesisPlayer, nemesisWinRate, nemesisGames = nil, -1, 0  -- Start at -1 so 0% is valid
+    local victimPlayer, victimWinRate, victimGames = nil, 2, 0      -- Start at 2 (200%) so 100% is valid
     local frenemyPlayer, frenemyDistance, frenemyGames, frenemyWinRate = nil, math.huge, 0, 0
-    local bestMatchupPlayer, bestMatchupPerGame, bestMatchupNet, bestMatchupGames = nil, -math.huge, 0, 0
-    local worstMatchupPlayer, worstMatchupPerGame, worstMatchupNet, worstMatchupGames = nil, math.huge, 0, 0
-    local highRollerPlayer, highRollerAvg = nil, 0
-    local cheapskatePlayer, cheapskateAvg = nil, math.huge
+    local bestMatchupPlayer, bestMatchupPerGame, bestMatchupNet, bestMatchupGames = nil, 0, 0, 0
+    local worstMatchupPlayer, worstMatchupPerGame, worstMatchupNet, worstMatchupGames = nil, 0, 0, 0
+    local highRollerPlayer, highRollerAvg, highRollerSamples = nil, 0, 0
+    local cheapskatePlayer, cheapskateAvg, cheapskateSamples = nil, math.huge, 0
     local luckyPlayer, luckyScore, luckyGames, luckyWinRate = nil, -math.huge, 0, 0
     local unluckyPlayer, unluckyScore, unluckyGames, unluckyWinRate = nil, math.huge, 0, 0
-    local daredevilPlayer, daredevilAvg = nil, 0
-    local conservativePlayer, conservativeAvg = nil, math.huge
+    local daredevilPlayer, daredevilAvg, daredevilSamples = nil, 0, 0
+    local conservativePlayer, conservativeAvg, conservativeSamples = nil, math.huge, 0
     local biggestWinAmount, biggestWinPlayer = 0, nil
     local biggestLossAmount, biggestLossPlayer = 0, nil
     local likelyCheaterPlayer, likelyCheaterCount, likelyCheaterLastSeen = nil, 0, 0
 
-    for playerName, entry in pairs(suspiciousRolls) do
+    local suspiciousNames = {}
+    for playerName in pairs(suspiciousRolls) do
+        table.insert(suspiciousNames, playerName)
+    end
+    table.sort(suspiciousNames)
+
+    for _, playerName in ipairs(suspiciousNames) do
+        local entry = suspiciousRolls[playerName]
         local count = entry and tonumber(entry.count) or 0
         local lastSeen = entry and tonumber(entry.lastSeen) or 0
         if count > 0 then
@@ -539,8 +565,15 @@ function DRE:CalculateFunStats()
         end
     end
     
+    local playerNames = {}
+    for playerName in pairs(history) do
+        table.insert(playerNames, playerName)
+    end
+    table.sort(playerNames)
+
     -- Analyze each player
-    for playerName, playerData in pairs(history) do
+    for _, playerName in ipairs(playerNames) do
+        local playerData = history[playerName]
         local wins = playerData.wins or 0
         local losses = playerData.losses or 0
         local totalGames = wins + losses
@@ -578,17 +611,25 @@ function DRE:CalculateFunStats()
                 mostMoneyLostAmount = goldLost
             end
 
-            -- Best/Worst matchup by net gold per game (minimum 5 games)
-            if totalGames >= 5 then
+            -- Best/Worst matchup by net gold per game.
+            if totalGames >= MIN_MATCHUP_GAMES then
                 local netGold = goldWon - goldLost
                 local netPerGame = netGold / totalGames
-                if netPerGame > bestMatchupPerGame then
+                if netPerGame > 0 and (
+                    not bestMatchupPlayer
+                    or netPerGame > bestMatchupPerGame
+                    or (netPerGame == bestMatchupPerGame and totalGames > bestMatchupGames)
+                ) then
                     bestMatchupPlayer = playerName
                     bestMatchupPerGame = netPerGame
                     bestMatchupNet = netGold
                     bestMatchupGames = totalGames
                 end
-                if netPerGame < worstMatchupPerGame then
+                if netPerGame < 0 and (
+                    not worstMatchupPlayer
+                    or netPerGame < worstMatchupPerGame
+                    or (netPerGame == worstMatchupPerGame and totalGames > worstMatchupGames)
+                ) then
                     worstMatchupPlayer = playerName
                     worstMatchupPerGame = netPerGame
                     worstMatchupNet = netGold
@@ -596,25 +637,29 @@ function DRE:CalculateFunStats()
                 end
             end
              
-            -- Calculate win rates for nemesis/victim (minimum 5 games)
-            if totalGames >= 5 then
+            -- Calculate win rates for nemesis/victim.
+            if totalGames >= MIN_RATE_GAMES then
                 local theirWinRate = losses / totalGames -- Their wins against us
                 local ourWinRate = wins / totalGames -- Our wins against them
                 
                 -- Nemesis (highest win rate against us)
-                if theirWinRate > nemesisWinRate then
+                if theirWinRate > nemesisWinRate
+                    or (theirWinRate == nemesisWinRate and totalGames > nemesisGames) then
                     nemesisPlayer = playerName
                     nemesisWinRate = theirWinRate
+                    nemesisGames = totalGames
                 end
                 
                 -- Victim (lowest win rate against us, highest for us)
-                if theirWinRate < victimWinRate then
+                if theirWinRate < victimWinRate
+                    or (theirWinRate == victimWinRate and totalGames > victimGames) then
                     victimPlayer = playerName
                     victimWinRate = theirWinRate
+                    victimGames = totalGames
                 end
 
-                -- Frenemy: closest to a 50/50 matchup (minimum 10 games)
-                if totalGames >= 10 then
+                -- Frenemy: closest to a 50/50 matchup.
+                if totalGames >= MIN_FRENEMY_GAMES then
                     local distanceToEven = math.abs(ourWinRate - 0.5)
                     if distanceToEven < frenemyDistance then
                         frenemyPlayer = playerName
@@ -630,14 +675,14 @@ function DRE:CalculateFunStats()
                  
                 -- Lucky/Unlucky based on wins above/below a 50/50 baseline.
                 local luckScore = wins - (totalGames * 0.5)
-                if luckScore > luckyScore then
+                if luckScore > luckyScore or (luckScore == luckyScore and totalGames > luckyGames) then
                     luckyPlayer = playerName
                     luckyScore = luckScore
                     luckyGames = totalGames
                     luckyWinRate = ourWinRate
                 end
                 
-                if luckScore < unluckyScore then
+                if luckScore < unluckyScore or (luckScore == unluckyScore and totalGames > unluckyGames) then
                     unluckyPlayer = playerName
                     unluckyScore = luckScore
                     unluckyGames = totalGames
@@ -677,30 +722,68 @@ function DRE:CalculateFunStats()
                 -- Calculate average wager
                 if wagerCount > 0 then
                     local avgWager = math.floor(totalWager / wagerCount)
-                    if avgWager > highRollerAvg then
+                    if avgWager > highRollerAvg
+                        or (avgWager == highRollerAvg and wagerCount > highRollerSamples) then
                         highRollerPlayer = playerName
                         highRollerAvg = avgWager
+                        highRollerSamples = wagerCount
                     end
-                    if avgWager < cheapskateAvg then
+                    if avgWager < cheapskateAvg
+                        or (avgWager == cheapskateAvg and wagerCount > cheapskateSamples) then
                         cheapskatePlayer = playerName
                         cheapskateAvg = avgWager
+                        cheapskateSamples = wagerCount
                     end
                 end
                 
                 -- Calculate average starting roll
                 if rollCount > 0 then
                     local avgRoll = totalStartRoll / rollCount
-                    if avgRoll > daredevilAvg then
+                    if avgRoll > daredevilAvg
+                        or (avgRoll == daredevilAvg and rollCount > daredevilSamples) then
                         daredevilPlayer = playerName
                         daredevilAvg = avgRoll
+                        daredevilSamples = rollCount
                     end
-                    if avgRoll < conservativeAvg then
+                    if avgRoll < conservativeAvg
+                        or (avgRoll == conservativeAvg and rollCount > conservativeSamples) then
                         conservativePlayer = playerName
                         conservativeAvg = avgRoll
+                        conservativeSamples = rollCount
                     end
                 end
             end
         end
+    end
+
+    -- Hide contradictory or low-signal pairs.
+    if luckyScore <= 0 then
+        luckyPlayer = nil
+        luckyGames = 0
+        luckyWinRate = 0
+        luckyScore = 0
+    end
+
+    if unluckyScore >= 0 then
+        unluckyPlayer = nil
+        unluckyGames = 0
+        unluckyWinRate = 0
+        unluckyScore = 0
+    end
+
+    if nemesisPlayer and victimPlayer and nemesisPlayer == victimPlayer then
+        victimPlayer = nil
+        victimWinRate = 0
+    end
+
+    if highRollerPlayer and cheapskatePlayer and highRollerPlayer == cheapskatePlayer then
+        cheapskatePlayer = nil
+        cheapskateAvg = 0
+    end
+
+    if daredevilPlayer and conservativePlayer and daredevilPlayer == conservativePlayer then
+        conservativePlayer = nil
+        conservativeAvg = 0
     end
     
     -- Package the results
@@ -852,10 +935,15 @@ function DRE:SlashCommand(input)
 
             if self.UI and self.UI.historyDropdown and self.UI.historyDropdown.GetValue then
                 local selectedPlayer = self.UI.historyDropdown:GetValue()
+                local preferredPlayer = selectedPlayer
                 if selectedPlayer == mergeSource then
-                    self:UpdateHistoryDisplay(mergeTarget)
-                elseif selectedPlayer then
-                    self:UpdateHistoryDisplay(selectedPlayer)
+                    preferredPlayer = mergeTarget
+                end
+
+                if self.RefreshHistoryDropdown then
+                    self:RefreshHistoryDropdown(preferredPlayer or mergeTarget)
+                elseif preferredPlayer then
+                    self:UpdateHistoryDisplay(preferredPlayer)
                 end
             end
         else
@@ -890,6 +978,17 @@ function DRE:SlashCommand(input)
         else
             self:Print("Failed to fix gold tracking: " .. message)
         end
+    elseif trimmedInput == "dedupe" then
+        local success, message = self:DeduplicateHistoryData()
+        if success then
+            self:Print("History deduplicated: " .. message)
+            if self.UI and self.UI.historyDropdown and self.RefreshHistoryDropdown then
+                local selectedPlayer = self.UI.historyDropdown:GetValue()
+                self:RefreshHistoryDropdown(selectedPlayer)
+            end
+        else
+            self:Print("Failed to deduplicate history: " .. (message or "Unknown error"))
+        end
     elseif trimmedInput == "suspicious" or trimmedInput == "cheaters" then
         self:PrintSuspiciousRollSummary()
     elseif trimmedInput == "size" or trimmedInput == "windowsize" then
@@ -903,6 +1002,7 @@ function DRE:SlashCommand(input)
         self:Print("       /dr edit - Edit recent game records")
         self:Print("       /dr merge <oldName> <newName> - Merge player history after rename")
         self:Print("       /dr fixgold - Recalculate gold tracking totals")
+        self:Print("       /dr dedupe - Remove duplicate game entries and recalculate stats")
         self:Print("       /dr suspicious - Show tracked invalid/wrong rolls")
         self:Print("       /dr size - Show current window size")
     end
@@ -1180,7 +1280,7 @@ function DRE:SetupOptions()
                     },
                     showNemesis = {
                         name = "Your Nemesis",
-                        desc = "Show the player with the highest win rate against you (min 5 games)",
+                        desc = "Show the player with the highest win rate against you (minimum 3 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showNemesis end,
                         set = function(_, val) self.db.profile.funStats.showNemesis = val end,
@@ -1188,7 +1288,7 @@ function DRE:SetupOptions()
                     },
                     showVictim = {
                         name = "Your Victim",
-                        desc = "Show the player with the lowest win rate against you (min 5 games)",
+                        desc = "Show the player with the lowest win rate against you (minimum 3 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showVictim end,
                         set = function(_, val) self.db.profile.funStats.showVictim = val end,
@@ -1196,7 +1296,7 @@ function DRE:SetupOptions()
                     },
                     showFrenemy = {
                         name = "Frenemy",
-                        desc = "Show your most even matchup near 50/50 (minimum 10 games)",
+                        desc = "Show your most even matchup near 50/50 (minimum 5 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showFrenemy end,
                         set = function(_, val) self.db.profile.funStats.showFrenemy = val end,
@@ -1233,7 +1333,7 @@ function DRE:SetupOptions()
                     },
                     showBestMatchup = {
                         name = "Best Matchup",
-                        desc = "Show the opponent with the best net gold per game (minimum 5 games)",
+                        desc = "Show the opponent with the best net gold per game (minimum 3 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showBestMatchup end,
                         set = function(_, val) self.db.profile.funStats.showBestMatchup = val end,
@@ -1241,7 +1341,7 @@ function DRE:SetupOptions()
                     },
                     showWorstMatchup = {
                         name = "Worst Matchup",
-                        desc = "Show the opponent with the worst net gold per game (minimum 5 games)",
+                        desc = "Show the opponent with the worst net gold per game (minimum 3 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showWorstMatchup end,
                         set = function(_, val) self.db.profile.funStats.showWorstMatchup = val end,
@@ -1286,7 +1386,7 @@ function DRE:SetupOptions()
                     },
                     showLuckyPlayer = {
                         name = "Lucky Player",
-                        desc = "Show who overperforms your 50/50 baseline the most (minimum 5 games)",
+                        desc = "Show who overperforms your 50/50 baseline the most (minimum 3 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showLuckyPlayer end,
                         set = function(_, val) self.db.profile.funStats.showLuckyPlayer = val end,
@@ -1294,7 +1394,7 @@ function DRE:SetupOptions()
                     },
                     showUnluckyPlayer = {
                         name = "Unlucky Player",
-                        desc = "Show who underperforms your 50/50 baseline the most (minimum 5 games)",
+                        desc = "Show who underperforms your 50/50 baseline the most (minimum 3 games)",
                         type = "toggle",
                         get = function() return self.db.profile.funStats.showUnluckyPlayer end,
                         set = function(_, val) self.db.profile.funStats.showUnluckyPlayer = val end,

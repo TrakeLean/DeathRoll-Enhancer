@@ -55,6 +55,52 @@ local function GetGameTimestamp(game)
     return ParseDateTimeToEpoch(game.date)
 end
 
+local function BuildGameDedupKey(game)
+    if not game then
+        return nil
+    end
+
+    local timestamp = tonumber(game.timestamp) or 0
+    local result = tostring(game.result or "")
+    local goldAmount = tonumber(game.goldAmount) or 0
+    local initialRoll = tonumber(game.initialRoll) or 0
+    local dateText = tostring(game.date or "")
+
+    if timestamp > 0 then
+        return string.format("t:%d|r:%s|g:%d|i:%d", timestamp, result, goldAmount, initialRoll)
+    end
+
+    return string.format("d:%s|r:%s|g:%d|i:%d", dateText, result, goldAmount, initialRoll)
+end
+
+local function DeduplicateRecentGames(playerData)
+    if not playerData then
+        return 0
+    end
+
+    local recentGames = playerData.recentGames
+    if type(recentGames) ~= "table" or #recentGames <= 1 then
+        return 0
+    end
+
+    local seen = {}
+    local deduped = {}
+    local removed = 0
+
+    for _, game in ipairs(recentGames) do
+        local key = BuildGameDedupKey(game)
+        if key and not seen[key] then
+            seen[key] = true
+            table.insert(deduped, game)
+        else
+            removed = removed + 1
+        end
+    end
+
+    playerData.recentGames = deduped
+    return removed
+end
+
 local function RecalculatePlayerAggregates(playerData)
     if not playerData then
         return
@@ -143,6 +189,7 @@ function DRE:MergePlayerHistory(sourceName, targetName)
     table.sort(targetData.recentGames, function(a, b)
         return GetGameTimestamp(a) > GetGameTimestamp(b)
     end)
+    local dedupedCount = DeduplicateRecentGames(targetData)
     RecalculatePlayerAggregates(targetData)
 
     if self.db.profile.suspiciousRolls and self.db.profile.suspiciousRolls[sourceName] then
@@ -170,10 +217,42 @@ function DRE:MergePlayerHistory(sourceName, targetName)
     end
 
     return true, string.format(
-        "Merged '%s' into '%s' (%d games moved). %s",
+        "Merged '%s' into '%s' (%d games moved, %d duplicate entries removed). %s",
         sourceName,
         targetName,
         mergedGames,
+        dedupedCount,
+        recalcMessage or "Global gold tracking recalculated."
+    )
+end
+
+function DRE:DeduplicateHistoryData()
+    if not self.db or not self.db.profile or not self.db.profile.history then
+        return false, "No data available"
+    end
+
+    local totalRemoved = 0
+    local playersTouched = 0
+
+    for playerName, playerData in pairs(self.db.profile.history) do
+        local removed = DeduplicateRecentGames(playerData)
+        if removed > 0 then
+            playersTouched = playersTouched + 1
+            totalRemoved = totalRemoved + removed
+        end
+        RecalculatePlayerAggregates(playerData)
+    end
+
+    local _, recalcMessage = self:RecalculateGoldTracking()
+
+    if self.UpdateStatsDisplay then
+        self:UpdateStatsDisplay()
+    end
+
+    return true, string.format(
+        "Removed %d duplicate game entries across %d players. %s",
+        totalRemoved,
+        playersTouched,
         recalcMessage or "Global gold tracking recalculated."
     )
 end

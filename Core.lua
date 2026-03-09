@@ -39,7 +39,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.3.8"
+local localFallbackVersion = "2.3.9"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
     local metadataVersion = nil
@@ -998,13 +998,13 @@ function DRE:SlashCommand(input)
         local arg2 = sendStatsArg2 ~= "" and sendStatsArg2 or nil
 
         if sendStatsArg1 then
-            local arg1Upper = string.upper(sendStatsArg1)
-            local isChannelOnlyArg = (arg1Upper == "PARTY" or arg1Upper == "P" or arg1Upper == "GUILD" or arg1Upper == "G" or arg1Upper == "RAID" or arg1Upper == "R" or arg1Upper == "SAY" or arg1Upper == "S")
+            local normalizedArg1Channel = self:NormalizeStatsBroadcastChannelToken(sendStatsArg1)
+            local isChannelOnlyArg = normalizedArg1Channel ~= nil
             if arg2 then
                 playerName = sendStatsArg1
                 channelHint = arg2
             elseif isChannelOnlyArg then
-                channelHint = sendStatsArg1
+                channelHint = normalizedArg1Channel
             else
                 playerName = sendStatsArg1
             end
@@ -1018,7 +1018,7 @@ function DRE:SlashCommand(input)
         end
 
         if not playerName or playerName == "" then
-            self:Print("No player selected. Use /dr sendstats <player> [party|guild|raid|say] or select a player in History tab.")
+            self:Print("No player selected. Use /dr sendstats <player> [party|raid|guild|officer|instance|say|yell] or select a player in History tab.")
             return
         end
 
@@ -1084,7 +1084,7 @@ function DRE:SlashCommand(input)
         self:Print("       /dr suspicious - Show tracked invalid/wrong rolls")
         self:Print("       /dr setsuspicious <player> <count> - Set suspicious-roll count")
         self:Print("       /dr clearsuspicious <player> - Clear suspicious-roll entry")
-        self:Print("       /dr sendstats [player] [party|guild|raid|say] - Broadcast main stats")
+        self:Print("       /dr sendstats [player] [party|raid|guild|officer|instance|say|yell] - Broadcast main stats")
         self:Print("       /dr size - Show current window size")
     end
 end
@@ -1101,6 +1101,49 @@ function DRE:HistoryCommand(input)
         self:Print("Please provide a target name or select a target.")
         self:Print("Usage: /drh [playername] or /deathrollhistory [playername]")
     end
+end
+
+function DRE:SanitizeChatText(text)
+    if text == nil then
+        return ""
+    end
+
+    local cleaned = tostring(text)
+    -- Chat escape sequences use pipes; strip them from broadcast text.
+    cleaned = cleaned:gsub("|", "")
+    cleaned = cleaned:gsub("[\r\n]", " ")
+    cleaned = cleaned:gsub("%c", "")
+    cleaned = cleaned:gsub("%s+", " ")
+
+    return self:Trim(cleaned)
+end
+
+function DRE:NormalizeStatsBroadcastChannelToken(channelToken)
+    local requested = channelToken and string.upper(self:Trim(channelToken)) or ""
+    if requested == "" then
+        return nil
+    end
+
+    local aliases = {
+        P = "PARTY",
+        PARTY = "PARTY",
+        R = "RAID",
+        RAID = "RAID",
+        G = "GUILD",
+        GUILD = "GUILD",
+        S = "SAY",
+        SAY = "SAY",
+        Y = "YELL",
+        YELL = "YELL",
+        I = "INSTANCE_CHAT",
+        INSTANCE = "INSTANCE_CHAT",
+        INSTANCE_CHAT = "INSTANCE_CHAT",
+        LFG = "INSTANCE_CHAT",
+        O = "OFFICER",
+        OFFICER = "OFFICER",
+    }
+
+    return aliases[requested]
 end
 
 function DRE:BuildPlayerStatsBroadcast(playerName)
@@ -1135,9 +1178,14 @@ function DRE:BuildPlayerStatsBroadcast(playerName)
         flagsSuffix = string.format(" | Flags %d", suspiciousCount)
     end
 
+    local safePlayerName = self:SanitizeChatText(playerName)
+    if safePlayerName == "" then
+        safePlayerName = "Unknown"
+    end
+
     local message = string.format(
         "[DR] vs %s: %d games (%dW-%dL, %.1f%% WR) | Net %s | Won %s | Lost %s%s",
-        playerName,
+        safePlayerName,
         games,
         wins,
         losses,
@@ -1152,50 +1200,65 @@ function DRE:BuildPlayerStatsBroadcast(playerName)
 end
 
 function DRE:ResolveStatsBroadcastChannel(channelHint)
-    local requested = channelHint and string.upper(self:Trim(channelHint)) or ""
+    local requested = self:NormalizeStatsBroadcastChannelToken(channelHint)
 
     local inRaid = IsInRaid and IsInRaid()
     local inGroup = IsInGroup and IsInGroup()
+    local inInstanceGroup = false
+    if IsInGroup and LE_PARTY_CATEGORY_INSTANCE then
+        inInstanceGroup = IsInGroup(LE_PARTY_CATEGORY_INSTANCE)
+    end
     local inGuild = IsInGuild and IsInGuild()
 
-    if requested == "" then
+    if not requested then
         if inRaid then
             return "RAID", "raid"
+        elseif inInstanceGroup then
+            return "INSTANCE_CHAT", "instance"
         elseif inGroup then
             return "PARTY", "party"
         elseif inGuild then
             return "GUILD", "guild"
         end
-        return nil, nil, "You are not in a party/raid or guild. Specify a channel like /dr sendstats <player> say."
+        return nil, nil, "You are not in a party/raid/instance or guild. Specify channel: say, yell, party, raid, guild, officer, instance."
     end
-
-    if requested == "P" then requested = "PARTY" end
-    if requested == "G" then requested = "GUILD" end
-    if requested == "R" then requested = "RAID" end
-    if requested == "S" then requested = "SAY" end
 
     if requested == "PARTY" then
         if inRaid then
             return "RAID", "raid"
+        elseif inInstanceGroup then
+            return "INSTANCE_CHAT", "instance"
         elseif inGroup then
             return "PARTY", "party"
         end
-        return nil, nil, "You are not in a party or raid."
+        return nil, nil, "You are not in a party, raid, or instance group."
     elseif requested == "RAID" then
         if inRaid then
             return "RAID", "raid"
         end
         return nil, nil, "You are not in a raid."
+    elseif requested == "INSTANCE_CHAT" then
+        if inInstanceGroup then
+            return "INSTANCE_CHAT", "instance"
+        end
+        return nil, nil, "You are not in an instance group."
     elseif requested == "GUILD" then
         if inGuild then
             return "GUILD", "guild"
         end
         return nil, nil, "You are not in a guild."
+    elseif requested == "OFFICER" then
+        if inGuild then
+            return "OFFICER", "officer"
+        end
+        return nil, nil, "You are not in a guild."
     elseif requested == "SAY" then
         return "SAY", "say"
+    elseif requested == "YELL" then
+        return "YELL", "yell"
     end
 
-    return nil, nil, "Unknown channel. Use party, guild, raid, or say."
+    return nil, nil, "Unknown channel. Use party, raid, guild, officer, instance, say, or yell."
 end
 
 function DRE:SendPlayerStatsBroadcast(playerName, channelHint)
@@ -1209,7 +1272,12 @@ function DRE:SendPlayerStatsBroadcast(playerName, channelHint)
         return false, channelError
     end
 
-    SendChatMessage(message, chatType)
+    local safeMessage = self:SanitizeChatText(message)
+    if safeMessage == "" then
+        return false, "Failed to build a safe broadcast message."
+    end
+
+    SendChatMessage(safeMessage, chatType)
     return true, string.format("Sent stats for %s to %s.", playerName, channelName)
 end
 

@@ -11,7 +11,7 @@ DeathRoll Enhancer is a World of Warcraft addon for running DeathRoll games with
 - Tabbed layout: DeathRoll, Statistics, History, and Settings
 - Minimap icon for quick open/config access
 - Live roll history and game-state feedback during active games
-- History-tab quick actions to broadcast selected player stats to Party or Guild
+- History-tab channel selector to broadcast selected player stats to party, raid, guild, officer, instance, say, or yell
 
 ### Game Flow
 - Automatic roll detection from chat events
@@ -41,7 +41,7 @@ DeathRoll Enhancer is a World of Warcraft addon for running DeathRoll games with
 - `/dr suspicious` or `/dr cheaters` - Show flagged invalid roll ranges
 - `/dr setsuspicious <player> <count>` - Manually set a player's suspicious-roll count
 - `/dr clearsuspicious <player>` - Clear a player's suspicious-roll entry
-- `/dr sendstats [player] [party|guild|raid|say]` - Broadcast main stats against a player
+- `/dr sendstats [player] [party|raid|guild|officer|instance|say|yell]` - Broadcast main stats against a player
 - `/dr fixgold` - Recalculate gold totals and streak data
 - `/dr size` - Print current window size details
 - `/drh [player]` - Show history for a specific player

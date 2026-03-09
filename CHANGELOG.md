@@ -1,5 +1,17 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.3.9 - Stats Broadcast Hotfix
+
+### Bug Fixes
+- **Chat-send invalid escape fix** - Sanitized outbound stats broadcast text before `SendChatMessage` to prevent `Invalid escape code in chat message` failures.
+
+### Improvements
+- **History broadcast UX update** - Replaced fixed Party/Guild buttons with a channel dropdown and a single `Send Stats` action.
+- **Expanded broadcast channels** - `/dr sendstats` and the History UI now support `party`, `raid`, `guild`, `officer`, `instance`, `say`, and `yell`.
+- **Channel parsing improvements** - Added better channel token normalization and clearer channel validation feedback.
+
+---
+
 ## Version 2.3.8 - Matchup Stats Broadcast
 
 ### New Features

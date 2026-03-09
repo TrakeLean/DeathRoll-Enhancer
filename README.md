@@ -1,19 +1,19 @@
-# DeathRoll Enhancer v2.3.8 - SKEM Edition
+# DeathRoll Enhancer v2.3.9 - SKEM Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.3.8-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.3.9-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
 
-## What's New in Version 2.3.8
+## What's New in Version 2.3.9
 
-- **Matchup stat broadcast command** - Added `/dr sendstats [player] [party|guild|raid|say]` to share main stats against a selected player
-- **History tab quick actions** - Added one-click `Send Stats to Party` and `Send Stats to Guild` buttons under player history
-- **Smart fallback targeting** - `/dr sendstats` now uses History selection first, then current target if no player is provided
-- **Chat-ready summary format** - Broadcast output now includes games, W/L, win rate, net, won, lost, and suspicious flags
+- **Invalid escape code hotfix** - Stats broadcasts now sanitize outbound chat text to prevent `SendChatMessage` failures.
+- **Channel picker in History tab** - Replaced fixed buttons with a channel dropdown + `Send Stats` button.
+- **More broadcast channels** - `/dr sendstats` now supports `party`, `raid`, `guild`, `officer`, `instance`, `say`, and `yell`.
+- **Better channel feedback** - Improved channel parsing and validation messages when a channel is unavailable.
 
 ## 🆕 What's New in Version 2.3.0
 
@@ -81,7 +81,7 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 - **`/dr suspicious`** or **`/dr cheaters`** - Show tracked invalid roll-range attempts
 - **`/dr setsuspicious <player> <count>`** - Manually set a player's suspicious-roll count
 - **`/dr clearsuspicious <player>`** - Clear a player's suspicious-roll entry
-- **`/dr sendstats [player] [party|guild|raid|say]`** - Broadcast main stats against a player
+- **`/dr sendstats [player] [party|raid|guild|officer|instance|say|yell]`** - Broadcast main stats against a player
 - **`/dr size`** - Show current window size and scale details
 - **`/drh [player]`** - View history with specific player
 
@@ -163,9 +163,14 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history and all changes.
 
 ### Recent Updates
 
+**v2.3.9** - Stats Broadcast Hotfix
+- Fixed `Invalid escape code in chat message` errors when broadcasting matchup stats
+- Added History-tab channel selector + `Send Stats` action
+- Expanded `/dr sendstats` to party/raid/guild/officer/instance/say/yell
+
 **v2.3.8** - Matchup Stats Broadcast
-- Added `/dr sendstats [player] [party|guild|raid|say]` for in-chat matchup summaries
-- Added History-tab buttons to send selected player stats directly to Party or Guild
+- Added `/dr sendstats [player] [party|raid|guild|officer|instance|say|yell]` for in-chat matchup summaries
+- Added History-tab quick-send actions for sharing selected matchup stats
 - Added automatic player/channel fallback and compact broadcast formatting
 
 **v2.3.7** - Tab Layout and Suspicion Management

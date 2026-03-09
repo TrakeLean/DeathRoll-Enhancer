@@ -1136,15 +1136,45 @@ function DRE:CreateHistorySection(container)
     end)
     playerSelectorGroup:AddChild(dropdown)
 
-    local broadcastButtonsGroup = AceGUI:Create("SimpleGroup")
-    broadcastButtonsGroup:SetFullWidth(true)
-    broadcastButtonsGroup:SetLayout("Flow")
-    historyControlsGroup:AddChild(broadcastButtonsGroup)
+    local broadcastControlsGroup = AceGUI:Create("SimpleGroup")
+    broadcastControlsGroup:SetFullWidth(true)
+    broadcastControlsGroup:SetLayout("Flow")
+    historyControlsGroup:AddChild(broadcastControlsGroup)
 
-    local sendPartyButton = AceGUI:Create("Button")
-    sendPartyButton:SetText("Send Stats to Party")
-    sendPartyButton:SetWidth(150)
-    sendPartyButton:SetCallback("OnClick", function()
+    local channelLabel = AceGUI:Create("Label")
+    channelLabel:SetText("Send stats to:")
+    channelLabel:SetWidth(120)
+    broadcastControlsGroup:AddChild(channelLabel)
+
+    local channelDropdown = AceGUI:Create("Dropdown")
+    channelDropdown:SetList({
+        party = "Party",
+        raid = "Raid",
+        guild = "Guild",
+        officer = "Officer",
+        instance = "Instance",
+        say = "Say",
+        yell = "Yell",
+    })
+    channelDropdown:SetWidth(140)
+
+    local defaultChannel = "say"
+    if IsInRaid and IsInRaid() then
+        defaultChannel = "raid"
+    elseif IsInGroup and LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+        defaultChannel = "instance"
+    elseif IsInGroup and IsInGroup() then
+        defaultChannel = "party"
+    elseif IsInGuild and IsInGuild() then
+        defaultChannel = "guild"
+    end
+    channelDropdown:SetValue(defaultChannel)
+    broadcastControlsGroup:AddChild(channelDropdown)
+
+    local sendStatsButton = AceGUI:Create("Button")
+    sendStatsButton:SetText("Send Stats")
+    sendStatsButton:SetWidth(120)
+    sendStatsButton:SetCallback("OnClick", function()
         local selectedPlayer = nil
         if UI.historyDropdown and UI.historyDropdown.GetValue then
             selectedPlayer = UI.historyDropdown:GetValue()
@@ -1154,36 +1184,20 @@ function DRE:CreateHistorySection(container)
             self:Print("No player selected to broadcast.")
             return
         end
-        local success, message = self:SendPlayerStatsBroadcast(selectedPlayer, "party")
-        if success then
-            self:Print(message)
-        else
-            self:Print("Failed to send stats: " .. (message or "Unknown error"))
-        end
-    end)
-    broadcastButtonsGroup:AddChild(sendPartyButton)
 
-    local sendGuildButton = AceGUI:Create("Button")
-    sendGuildButton:SetText("Send Stats to Guild")
-    sendGuildButton:SetWidth(150)
-    sendGuildButton:SetCallback("OnClick", function()
-        local selectedPlayer = nil
-        if UI.historyDropdown and UI.historyDropdown.GetValue then
-            selectedPlayer = UI.historyDropdown:GetValue()
+        local channelHint = "say"
+        if UI.statsBroadcastChannelDropdown and UI.statsBroadcastChannelDropdown.GetValue then
+            channelHint = UI.statsBroadcastChannelDropdown:GetValue() or channelHint
         end
-        selectedPlayer = selectedPlayer or UI.selectedHistoryPlayer
-        if not selectedPlayer then
-            self:Print("No player selected to broadcast.")
-            return
-        end
-        local success, message = self:SendPlayerStatsBroadcast(selectedPlayer, "guild")
+
+        local success, message = self:SendPlayerStatsBroadcast(selectedPlayer, channelHint)
         if success then
             self:Print(message)
         else
             self:Print("Failed to send stats: " .. (message or "Unknown error"))
         end
     end)
-    broadcastButtonsGroup:AddChild(sendGuildButton)
+    broadcastControlsGroup:AddChild(sendStatsButton)
     
     -- History display area - with explicit height for proper scrolling
     local historyDisplayGroup = AceGUI:Create("InlineGroup")
@@ -1223,6 +1237,7 @@ function DRE:CreateHistorySection(container)
     UI.historyBox = historyLabel
     UI.historyScroll = historyScroll
     UI.historyDropdown = dropdown
+    UI.statsBroadcastChannelDropdown = channelDropdown
     UI.selectedHistoryPlayer = playerNames[1]
     
     -- Show first player's history by default

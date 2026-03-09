@@ -1,5 +1,12 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.3.5 - Merge Hotfix
+
+### Bug Fixes
+- **`/dr merge` runtime fix (WoW Lua compatibility)** - Replaced `os.time` usage in date parsing with WoW-safe `time(...)` to prevent `attempt to index global 'os' (a nil value)` errors during history merge sorting.
+
+---
+
 ## Version 2.3.3 - Anti-Cheat and Stats Update
 
 ### New Features

@@ -30,12 +30,13 @@ local function ParseDateTimeToEpoch(dateText)
         return 0
     end
 
-    local parsedTime = os.time({
+    local parsedTime = time({
         year = tonumber(year),
         month = tonumber(month),
         day = tonumber(day),
         hour = tonumber(hour),
-        min = tonumber(min)
+        min = tonumber(min),
+        sec = 0
     })
 
     return tonumber(parsedTime) or 0

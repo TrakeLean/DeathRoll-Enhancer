@@ -1,5 +1,20 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.3.7 - Tab Layout and Suspicion Management
+
+### Fixes
+- **Tab overlap fix** - Stopped forcing manual tab widths and switched to AceGUI native tab layout rebuild to prevent random overlap on DeathRoll/Statistics/History tabs.
+
+### New Features
+- **Suspicion entry management commands** - Added `/dr setsuspicious <player> <count>`, `/dr clearsuspicious <player>`, and `/dr forgive <player>`.
+- **Edit dialog suspicion controls** - Added "Save Suspicion Count" and "Clear Suspicion Entry" controls in `/dr edit`.
+
+### Improvements
+- **Per-game suspicious metadata** - Games can now store suspicious wrong-roll count/details at record time and show this in the edit dialog.
+- **Legacy toggle cleanup** - Removed stale/unused fun-stat toggle keys from old saved profiles to avoid no-op config noise.
+
+---
+
 ## Version 2.3.6 - Stats and History Cleanup
 
 ### New Features

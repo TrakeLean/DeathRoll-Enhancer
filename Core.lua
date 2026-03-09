@@ -39,7 +39,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.3.6"
+local localFallbackVersion = "2.3.7"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
     local metadataVersion = nil
@@ -141,11 +141,6 @@ local defaults = {
             showUnluckyPlayer = true,
             showNemesis = true,
             showVictim = true,
-            showGoldMinePlayer = true,
-            showMoneySinkPlayer = true,
-            showLongestWinStreak = true,
-            showLongestLossStreak = true,
-            showAvgWager = true,
             showHighRoller = true,
             showCheapskate = true,
             showDaredevil = true,
@@ -158,6 +153,7 @@ local defaults = {
 function DRE:OnInitialize()
     -- Initialize database
     self.db = AceDB:New("DeathRollEnhancerDB", defaults, true)
+    self:CleanupLegacyFunStatSettings()
 
     -- Initialize recent rolls storage for challenge detection
     self.recentRolls = {}
@@ -181,6 +177,32 @@ function DRE:OnInitialize()
 
     -- Test debug buffer
     self:AddToDebugBuffer("SYSTEM", "Addon loaded and debug buffer initialized")
+end
+
+function DRE:CleanupLegacyFunStatSettings()
+    if not self.db or not self.db.profile or not self.db.profile.funStats then
+        return
+    end
+
+    local legacyKeys = {
+        "showGoldMinePlayer",
+        "showMoneySinkPlayer",
+        "showLongestWinStreak",
+        "showLongestLossStreak",
+        "showAvgWager"
+    }
+
+    local removedCount = 0
+    for _, key in ipairs(legacyKeys) do
+        if self.db.profile.funStats[key] ~= nil then
+            self.db.profile.funStats[key] = nil
+            removedCount = removedCount + 1
+        end
+    end
+
+    if removedCount > 0 then
+        self:DebugPrint(string.format("Removed %d legacy fun-stat toggle keys from profile.", removedCount))
+    end
 end
 
 function DRE:OnEnable()
@@ -927,6 +949,11 @@ end
 function DRE:SlashCommand(input)
     local trimmedInput = self:Trim(input or "")
     local mergeSource, mergeTarget = trimmedInput:match("^merge%s+(%S+)%s+(%S+)$")
+    local setSuspiciousPlayer, setSuspiciousCount = trimmedInput:match("^setsuspicious%s+(%S+)%s+(%d+)$")
+    local clearSuspiciousPlayer = trimmedInput:match("^clearsuspicious%s+(.+)$")
+    if not clearSuspiciousPlayer then
+        clearSuspiciousPlayer = trimmedInput:match("^forgive%s+(.+)$")
+    end
 
     if mergeSource and mergeTarget then
         local success, message = self:MergePlayerHistory(mergeSource, mergeTarget)
@@ -949,6 +976,20 @@ function DRE:SlashCommand(input)
         else
             self:Print("Failed to merge player history: " .. (message or "Unknown error"))
             self:Print("Usage: /dr merge <oldName> <newName>")
+        end
+    elseif setSuspiciousPlayer and setSuspiciousCount then
+        local success, message = self:SetSuspiciousRollCount(setSuspiciousPlayer, setSuspiciousCount)
+        if success then
+            self:Print(message)
+        else
+            self:Print("Failed to set suspicious-roll count: " .. (message or "Unknown error"))
+        end
+    elseif clearSuspiciousPlayer and clearSuspiciousPlayer ~= "" then
+        local success, message = self:ClearSuspiciousRollEntry(clearSuspiciousPlayer)
+        if success then
+            self:Print(message)
+        else
+            self:Print("Failed to clear suspicious-roll entry: " .. (message or "Unknown error"))
         end
     elseif trimmedInput == "" then
         self:ShowMainWindow()
@@ -1004,6 +1045,8 @@ function DRE:SlashCommand(input)
         self:Print("       /dr fixgold - Recalculate gold tracking totals")
         self:Print("       /dr dedupe - Remove duplicate game entries and recalculate stats")
         self:Print("       /dr suspicious - Show tracked invalid/wrong rolls")
+        self:Print("       /dr setsuspicious <player> <count> - Set suspicious-roll count")
+        self:Print("       /dr clearsuspicious <player> - Clear suspicious-roll entry")
         self:Print("       /dr size - Show current window size")
     end
 end
@@ -1842,6 +1885,65 @@ function DRE:PrintSuspiciousRollSummary()
     end
 end
 
+function DRE:SetSuspiciousRollCount(playerName, newCount)
+    if not self.db or not self.db.profile then
+        return false, "No data available"
+    end
+
+    playerName = self:Trim(playerName or "")
+    if playerName == "" then
+        return false, "Player name is required"
+    end
+
+    local countNumber = tonumber(newCount)
+    if not countNumber then
+        return false, "Suspicious count must be a number"
+    end
+
+    countNumber = math.floor(countNumber)
+    if countNumber < 0 then
+        return false, "Suspicious count cannot be negative"
+    end
+
+    self.db.profile.suspiciousRolls = self.db.profile.suspiciousRolls or {}
+    local existing = self.db.profile.suspiciousRolls[playerName]
+
+    if countNumber == 0 then
+        if existing then
+            self.db.profile.suspiciousRolls[playerName] = nil
+            if self.UpdateStatsDisplay then
+                self:UpdateStatsDisplay()
+            end
+            return true, string.format("Cleared suspicious-roll entry for %s.", playerName)
+        end
+        return true, string.format("No suspicious-roll entry exists for %s.", playerName)
+    end
+
+    if not existing then
+        existing = {
+            count = 0,
+            lastRoll = 0,
+            lastMaxRoll = 0,
+            expectedMaxRoll = 0,
+            lastSeen = 0
+        }
+    end
+
+    existing.count = countNumber
+    existing.lastSeen = existing.lastSeen or time()
+    self.db.profile.suspiciousRolls[playerName] = existing
+
+    if self.UpdateStatsDisplay then
+        self:UpdateStatsDisplay()
+    end
+
+    return true, string.format("Set suspicious-roll count for %s to %d.", playerName, countNumber)
+end
+
+function DRE:ClearSuspiciousRollEntry(playerName)
+    return self:SetSuspiciousRollCount(playerName, 0)
+end
+
 -- Clear recent rolls for a specific player (e.g., when game starts/ends)
 function DRE:ClearRecentRollsForPlayer(playerName)
     if not self.recentRolls or not playerName then return end
@@ -2458,8 +2560,20 @@ function DRE:ShowEditGameDialog()
         end
         
         local dateText = game.date or "Unknown Date"
+        local suspiciousCount = tonumber(game.suspiciousRollCount) or 0
+        local overallSuspiciousCount = 0
+        if self.db and self.db.profile and self.db.profile.suspiciousRolls then
+            local suspiciousEntry = self.db.profile.suspiciousRolls[gameData.playerName]
+            overallSuspiciousCount = tonumber(suspiciousEntry and suspiciousEntry.count) or 0
+        end
+        local suspiciousSuffix = ""
+        if suspiciousCount > 0 then
+            suspiciousSuffix = string.format(" [GAME FLAG x%d]", suspiciousCount)
+        elseif overallSuspiciousCount > 0 then
+            suspiciousSuffix = string.format(" [PLAYER FLAGS x%d]", overallSuspiciousCount)
+        end
         local displayText = string.format("[%d] %s vs %s: %s%s - %s", 
-            i, myName, gameData.playerName, resultText, goldText, dateText)
+            i, myName, gameData.playerName, resultText, goldText, dateText) .. suspiciousSuffix
         
         local key = "game_" .. string.format("%02d", i)  -- Zero-pad to ensure proper sorting
         gameList[key] = displayText
@@ -2493,6 +2607,40 @@ function DRE:ShowEditGameDialog()
         infoLabel:SetText(string.format("Editing game vs %s from %s:", playerName, game.date or "Unknown Date"))
         infoLabel:SetFullWidth(true)
         selectedGameGroup:AddChild(infoLabel)
+
+        local suspiciousCount = tonumber(game.suspiciousRollCount) or 0
+        local suspiciousLabel = AceGUI:Create("Label")
+        suspiciousLabel:SetText(string.format("Suspicious wrong rolls in this game: %d", suspiciousCount))
+        suspiciousLabel:SetColor(suspiciousCount > 0 and 1 or 0.7, suspiciousCount > 0 and 0.35 or 0.7, suspiciousCount > 0 and 0.35 or 0.7)
+        suspiciousLabel:SetFullWidth(true)
+        selectedGameGroup:AddChild(suspiciousLabel)
+
+        local overallSuspiciousCount = 0
+        if self.db and self.db.profile and self.db.profile.suspiciousRolls then
+            local suspiciousEntry = self.db.profile.suspiciousRolls[playerName]
+            overallSuspiciousCount = tonumber(suspiciousEntry and suspiciousEntry.count) or 0
+        end
+        if overallSuspiciousCount > 0 then
+            local overallSuspiciousLabel = AceGUI:Create("Label")
+            overallSuspiciousLabel:SetText(string.format("Overall suspicious rolls for %s: %d", playerName, overallSuspiciousCount))
+            overallSuspiciousLabel:SetColor(1, 0.8, 0.4)
+            overallSuspiciousLabel:SetFullWidth(true)
+            selectedGameGroup:AddChild(overallSuspiciousLabel)
+        end
+
+        if suspiciousCount > 0 and game.suspiciousRollDetails and game.suspiciousRollDetails ~= "" then
+            local suspiciousDetailsLabel = AceGUI:Create("Label")
+            suspiciousDetailsLabel:SetText("Details: " .. game.suspiciousRollDetails)
+            suspiciousDetailsLabel:SetColor(0.9, 0.7, 0.7)
+            suspiciousDetailsLabel:SetFullWidth(true)
+            selectedGameGroup:AddChild(suspiciousDetailsLabel)
+        end
+
+        local suspiciousCountInput = AceGUI:Create("EditBox")
+        suspiciousCountInput:SetLabel("Player Suspicion Count:")
+        suspiciousCountInput:SetText(tostring(overallSuspiciousCount or 0))
+        suspiciousCountInput:SetWidth(140)
+        selectedGameGroup:AddChild(suspiciousCountInput)
         
         -- Result dropdown
         local resultDropdown = AceGUI:Create("Dropdown")
@@ -2539,6 +2687,45 @@ function DRE:ShowEditGameDialog()
         buttonGroup:SetLayout("Flow")
         buttonGroup:SetFullWidth(true)
         selectedGameGroup:AddChild(buttonGroup)
+
+        local setSuspicionButton = AceGUI:Create("Button")
+        setSuspicionButton:SetText("Save Suspicion Count")
+        setSuspicionButton:SetWidth(170)
+        setSuspicionButton:SetCallback("OnClick", function()
+            local requestedCount = tonumber(suspiciousCountInput:GetText())
+            if not requestedCount then
+                self:Print("Suspicion count must be a whole number.")
+                return
+            end
+
+            requestedCount = math.floor(requestedCount)
+            local success, message = self:SetSuspiciousRollCount(playerName, requestedCount)
+            if success then
+                self:Print(message)
+                if self.RefreshEditDialog then
+                    self:RefreshEditDialog()
+                end
+            else
+                self:Print("Failed to save suspicion count: " .. (message or "Unknown error"))
+            end
+        end)
+        buttonGroup:AddChild(setSuspicionButton)
+
+        local clearSuspicionButton = AceGUI:Create("Button")
+        clearSuspicionButton:SetText("Clear Suspicion Entry")
+        clearSuspicionButton:SetWidth(170)
+        clearSuspicionButton:SetCallback("OnClick", function()
+            local success, message = self:ClearSuspiciousRollEntry(playerName)
+            if success then
+                self:Print(message)
+                if self.RefreshEditDialog then
+                    self:RefreshEditDialog()
+                end
+            else
+                self:Print("Failed to clear suspicion entry: " .. (message or "Unknown error"))
+            end
+        end)
+        buttonGroup:AddChild(clearSuspicionButton)
         
         -- Save button
         local saveButton = AceGUI:Create("Button")
@@ -2728,7 +2915,9 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWager
         wager = wager or 0,
         trackWagerByTrade = trackWagerByTrade == true,
         playerTurn = true,
-        rollCount = isSelfDuel and 0 or 0  -- Initialize roll counter for all games
+        rollCount = isSelfDuel and 0 or 0, -- Initialize roll counter for all games
+        suspiciousRollCount = 0,
+        suspiciousRollSamples = {}
     }
 
     -- Clear recent rolls for the opponent to prevent button confusion
@@ -2772,6 +2961,17 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
     local recordedResult = nil
     local recordedAt = nil
     local forcedRecordedResult = options and options.recordedResult
+    local gameMetadata = nil
+
+    if self.gameState then
+        local suspiciousRollCount = tonumber(self.gameState.suspiciousRollCount) or 0
+        if suspiciousRollCount > 0 then
+            gameMetadata = {
+                suspiciousRollCount = suspiciousRollCount,
+                suspiciousRollDetails = table.concat(self.gameState.suspiciousRollSamples or {}, ", ")
+            }
+        end
+    end
 
     if options and options.trackWagerByTrade ~= nil then
         shouldTrackTrade = options.trackWagerByTrade == true
@@ -2808,12 +3008,12 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
         end
         recordedPlayerName = target
         recordedResult = forcedRecordedResult
-        recordedAt = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0)
+        recordedAt = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0, gameMetadata)
     elseif loser and loser ~= playerName then
         -- We won against the loser
         recordedPlayerName = loser
         recordedResult = "Won"
-        recordedAt = self:AddGameToHistory(loser, recordedResult, wager or 0, initialRoll or 0)
+        recordedAt = self:AddGameToHistory(loser, recordedResult, wager or 0, initialRoll or 0, gameMetadata)
     elseif loser == playerName then
         -- We lost to the target
         local target = self.gameState and self.gameState.target or "Unknown"
@@ -2822,7 +3022,7 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
         end
         recordedPlayerName = target
         recordedResult = "Lost"
-        recordedAt = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0)
+        recordedAt = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0, gameMetadata)
     end
 
     if shouldTrackTrade and recordedPlayerName and recordedPlayerName ~= playerName and recordedPlayerName ~= "Unknown" then
@@ -2925,6 +3125,16 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
         if isOpponentRoll then
             local tracked = self:RecordSuspiciousRoll(playerName, roll, maxRoll, expectedMaxRoll)
             local suspiciousCount = tracked and tracked.count or 1
+            if self.gameState then
+                self.gameState.suspiciousRollCount = (tonumber(self.gameState.suspiciousRollCount) or 0) + 1
+                self.gameState.suspiciousRollSamples = self.gameState.suspiciousRollSamples or {}
+                if #self.gameState.suspiciousRollSamples < 3 then
+                    table.insert(
+                        self.gameState.suspiciousRollSamples,
+                        string.format("%d (1-%d, expected 1-%d)", roll, maxRoll, expectedMaxRoll)
+                    )
+                end
+            end
             local warningText = string.format(
                 "|cffff4444Potential cheat detected: %s rolled %d (1-%d), expected 1-%d. [flag #%d]|r",
                 playerName,

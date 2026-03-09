@@ -26,46 +26,17 @@ function DRE:InitializeUI()
 end
 
 function DRE:UpdateMainTabLayout()
-    if not (self.UI and self.UI.tabGroup and self.UI.tabGroup.tabs) then
+    if not (self.UI and self.UI.tabGroup) then
         return
     end
 
     local tabGroup = self.UI.tabGroup
-    local tabCount = #tabGroup.tabs
-    if tabCount == 0 then
-        return
-    end
 
-    local availableWidth = 0
-    if tabGroup.border and tabGroup.border.GetWidth then
-        availableWidth = tabGroup.border:GetWidth() or 0
-    end
-    if availableWidth <= 0 and self.UI.mainWindow and self.UI.mainWindow.frame then
-        availableWidth = self.UI.mainWindow.frame:GetWidth() or 0
-    end
-    if availableWidth <= 0 and tabGroup.frame and tabGroup.frame.GetWidth then
-        availableWidth = tabGroup.frame:GetWidth() or 0
-    end
-    if availableWidth <= 0 then
-        return
-    end
-
-    local tabWidth = math.floor((availableWidth - 28) / tabCount)
-    if tabWidth < 90 then
-        return
-    end
-
-    for _, tab in ipairs(tabGroup.tabs) do
-        if tab and tab.SetWidth then
-            tab:SetWidth(tabWidth)
-        end
-        if tab and tab.frame and tab.frame.SetWidth then
-            tab.frame:SetWidth(tabWidth)
-        end
-        if tab and tab.text and tab.text.SetWidth then
-            tab.text:SetWidth(tabWidth - 20)
-            tab.text:SetJustifyH("CENTER")
-        end
+    -- Let AceGUI compute tab widths/rows natively to avoid anchor overlap.
+    if tabGroup.BuildTabs then
+        tabGroup:BuildTabs()
+    elseif tabGroup.frame and tabGroup.frame.obj and tabGroup.frame.obj.BuildTabs then
+        tabGroup.frame.obj:BuildTabs()
     end
 end
 
@@ -1000,19 +971,6 @@ function DRE:CreateFunStatsSection(container)
     local funStats = self:CalculateFunStats()
     local settings = self.db.profile.funStats
 
-    -- Check if any fun stats are enabled
-    local hasEnabledStats = false
-    for key, enabled in pairs(settings) do
-        if enabled then
-            hasEnabledStats = true
-            break
-        end
-    end
-
-    if not hasEnabledStats then
-        return
-    end
-
     -- Define stats in order matching settings tab structure
     local statSections = {
         {
@@ -1050,6 +1008,24 @@ function DRE:CreateFunStatsSection(container)
             }
         },
     }
+
+    -- Check only known/displayable fun-stat toggles.
+    local hasEnabledStats = false
+    for _, section in ipairs(statSections) do
+        for _, statInfo in ipairs(section.stats) do
+            if settings[statInfo.setting] then
+                hasEnabledStats = true
+                break
+            end
+        end
+        if hasEnabledStats then
+            break
+        end
+    end
+
+    if not hasEnabledStats then
+        return
+    end
 
     -- Process each section
     for _, section in ipairs(statSections) do

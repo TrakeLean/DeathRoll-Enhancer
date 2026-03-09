@@ -258,7 +258,7 @@ function DRE:DeduplicateHistoryData()
 end
 
 -- Helper function to add game result to history
-function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll)
+function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll, metadata)
     if not self.db or not playerName then
         return
     end
@@ -295,13 +295,23 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll)
     
     local recordedAt = time()
 
-    table.insert(playerData.recentGames, 1, {
+    local gameRecord = {
         date = date("%Y-%m-%d %H:%M"),
         timestamp = recordedAt,
         result = result,
         goldAmount = goldAmount or 0,
         initialRoll = initialRoll or 0
-    })
+    }
+
+    local suspiciousRollCount = metadata and tonumber(metadata.suspiciousRollCount) or 0
+    if suspiciousRollCount > 0 then
+        gameRecord.suspiciousRollCount = suspiciousRollCount
+        if metadata.suspiciousRollDetails and metadata.suspiciousRollDetails ~= "" then
+            gameRecord.suspiciousRollDetails = tostring(metadata.suspiciousRollDetails)
+        end
+    end
+
+    table.insert(playerData.recentGames, 1, gameRecord)
     
     -- Keep all games - complete history tracking
     

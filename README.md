@@ -1,19 +1,19 @@
-# DeathRoll Enhancer v2.3.6 - SKEM Edition
+# DeathRoll Enhancer v2.3.7 - SKEM Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.3.6-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.3.7-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
 
-## What's New in Version 2.3.6
+## What's New in Version 2.3.7
 
-- **Duplicate history cleanup command** - Added `/dr dedupe` to remove duplicate game rows and recalculate stats/totals
-- **Safer merge behavior** - `/dr merge` now deduplicates merged history and reports how many duplicate records were removed
-- **Stats logic rework** - Fun stats now use clearer minimum sample thresholds, stable tie-breaking, and suppression of contradictory duplicate-looking outputs
-- **History dropdown refresh** - History list now refreshes immediately after merge/dedupe changes
+- **Tab overlap fix** - Main tabs now rely on AceGUI's native tab layout, fixing random overlap of DeathRoll/Statistics/History tabs
+- **Suspicion entry management** - Added controls in Edit Game Records to set or clear a player's suspicious-roll count
+- **New suspicion commands** - Added `/dr setsuspicious <player> <count>`, `/dr clearsuspicious <player>`, and `/dr forgive <player>`
+- **Per-game cheat flag context** - Edit Game Records now shows game-level suspicious flags and player-level suspicious totals
 
 ## 🆕 What's New in Version 2.3.0
 
@@ -79,6 +79,8 @@ Available for download at [CurseForge](https://www.curseforge.com/wow/addons/dea
 - **`/dr fixgold`** - Recalculate gold tracking totals
 - **`/dr dedupe`** - Remove duplicate game entries and recalculate statistics
 - **`/dr suspicious`** or **`/dr cheaters`** - Show tracked invalid roll-range attempts
+- **`/dr setsuspicious <player> <count>`** - Manually set a player's suspicious-roll count
+- **`/dr clearsuspicious <player>`** - Clear a player's suspicious-roll entry
 - **`/dr size`** - Show current window size and scale details
 - **`/drh [player]`** - View history with specific player
 
@@ -159,6 +161,11 @@ View detailed analytics including:
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and all changes.
 
 ### Recent Updates
+
+**v2.3.7** - Tab Layout and Suspicion Management
+- Fixed random tab overlap on DeathRoll/Statistics/History tabs
+- Added set/clear suspicion tools in Edit Game Records
+- Added `/dr setsuspicious`, `/dr clearsuspicious`, and `/dr forgive` commands
 
 **v2.3.6** - Stats and History Cleanup
 - Added `/dr dedupe` to remove duplicate game entries and recalculate totals

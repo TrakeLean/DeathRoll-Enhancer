@@ -2,7 +2,7 @@
 
 DeathRoll Enhancer is a World of Warcraft addon for running DeathRoll games with better tracking, cleaner UI, and safer game flow. It focuses on fast play, clear game state, and long-term stats.
 
-![image](https://media.forgecdn.net/attachments/description/954561/description_81534083-99e1-4a0c-8c9e-f59e1eb4122f.png)
+![image](https://media.forgecdn.net/attachments/1311/246/img1.png)
 
 ## Core Features
 
@@ -26,6 +26,7 @@ DeathRoll Enhancer is a World of Warcraft addon for running DeathRoll games with
 - "Most Likely to Cheat" fun stat based on flagged invalid roll ranges
 - Edit/delete recent game records
 - Merge renamed player records into one history entry
+- Deduplicate repeated history rows and recalculate totals after bad merges/imports
 
 ## Commands
 
@@ -35,7 +36,10 @@ DeathRoll Enhancer is a World of Warcraft addon for running DeathRoll games with
 - `/dr decline` - Decline a pending challenge
 - `/dr edit` - Edit recent game records
 - `/dr merge <oldName> <newName>` - Merge player history after a rename
+- `/dr dedupe` - Remove duplicate game rows and recalculate stats/totals
 - `/dr suspicious` or `/dr cheaters` - Show flagged invalid roll ranges
+- `/dr setsuspicious <player> <count>` - Manually set a player's suspicious-roll count
+- `/dr clearsuspicious <player>` - Clear a player's suspicious-roll entry
 - `/dr fixgold` - Recalculate gold totals and streak data
 - `/dr size` - Print current window size details
 - `/drh [player]` - Show history for a specific player

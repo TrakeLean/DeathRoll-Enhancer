@@ -39,7 +39,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.3.7"
+local localFallbackVersion = "2.3.8"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
     local metadataVersion = nil
@@ -951,6 +951,7 @@ function DRE:SlashCommand(input)
     local mergeSource, mergeTarget = trimmedInput:match("^merge%s+(%S+)%s+(%S+)$")
     local setSuspiciousPlayer, setSuspiciousCount = trimmedInput:match("^setsuspicious%s+(%S+)%s+(%d+)$")
     local clearSuspiciousPlayer = trimmedInput:match("^clearsuspicious%s+(.+)$")
+    local sendStatsArg1, sendStatsArg2 = trimmedInput:match("^sendstats%s+(%S+)%s*(%S*)$")
     if not clearSuspiciousPlayer then
         clearSuspiciousPlayer = trimmedInput:match("^forgive%s+(.+)$")
     end
@@ -990,6 +991,42 @@ function DRE:SlashCommand(input)
             self:Print(message)
         else
             self:Print("Failed to clear suspicious-roll entry: " .. (message or "Unknown error"))
+        end
+    elseif trimmedInput == "sendstats" or sendStatsArg1 then
+        local playerName = nil
+        local channelHint = nil
+        local arg2 = sendStatsArg2 ~= "" and sendStatsArg2 or nil
+
+        if sendStatsArg1 then
+            local arg1Upper = string.upper(sendStatsArg1)
+            local isChannelOnlyArg = (arg1Upper == "PARTY" or arg1Upper == "P" or arg1Upper == "GUILD" or arg1Upper == "G" or arg1Upper == "RAID" or arg1Upper == "R" or arg1Upper == "SAY" or arg1Upper == "S")
+            if arg2 then
+                playerName = sendStatsArg1
+                channelHint = arg2
+            elseif isChannelOnlyArg then
+                channelHint = sendStatsArg1
+            else
+                playerName = sendStatsArg1
+            end
+        end
+
+        if not playerName and self.UI and self.UI.historyDropdown and self.UI.historyDropdown.GetValue then
+            playerName = self.UI.historyDropdown:GetValue()
+        end
+        if (not playerName or playerName == "") and UnitName then
+            playerName = UnitName("target")
+        end
+
+        if not playerName or playerName == "" then
+            self:Print("No player selected. Use /dr sendstats <player> [party|guild|raid|say] or select a player in History tab.")
+            return
+        end
+
+        local success, message = self:SendPlayerStatsBroadcast(playerName, channelHint)
+        if success then
+            self:Print(message)
+        else
+            self:Print("Failed to send stats: " .. (message or "Unknown error"))
         end
     elseif trimmedInput == "" then
         self:ShowMainWindow()
@@ -1047,6 +1084,7 @@ function DRE:SlashCommand(input)
         self:Print("       /dr suspicious - Show tracked invalid/wrong rolls")
         self:Print("       /dr setsuspicious <player> <count> - Set suspicious-roll count")
         self:Print("       /dr clearsuspicious <player> - Clear suspicious-roll entry")
+        self:Print("       /dr sendstats [player] [party|guild|raid|say] - Broadcast main stats")
         self:Print("       /dr size - Show current window size")
     end
 end
@@ -1063,6 +1101,116 @@ function DRE:HistoryCommand(input)
         self:Print("Please provide a target name or select a target.")
         self:Print("Usage: /drh [playername] or /deathrollhistory [playername]")
     end
+end
+
+function DRE:BuildPlayerStatsBroadcast(playerName)
+    if not playerName or playerName == "" then
+        return nil, "Player name is required"
+    end
+
+    local playerData = self:GetPlayerHistory(playerName)
+    if not playerData then
+        return nil, string.format("No history found for %s", playerName)
+    end
+
+    local wins = tonumber(playerData.wins) or 0
+    local losses = tonumber(playerData.losses) or 0
+    local games = wins + losses
+    if games <= 0 then
+        return nil, string.format("No games recorded against %s", playerName)
+    end
+
+    local goldWon = tonumber(playerData.goldWon) or 0
+    local goldLost = tonumber(playerData.goldLost) or 0
+    local net = goldWon - goldLost
+    local winRate = (wins / games) * 100
+
+    local suspiciousCount = 0
+    if self.db and self.db.profile and self.db.profile.suspiciousRolls and self.db.profile.suspiciousRolls[playerName] then
+        suspiciousCount = tonumber(self.db.profile.suspiciousRolls[playerName].count) or 0
+    end
+
+    local flagsSuffix = ""
+    if suspiciousCount > 0 then
+        flagsSuffix = string.format(" | Flags %d", suspiciousCount)
+    end
+
+    local message = string.format(
+        "[DR] vs %s: %d games (%dW-%dL, %.1f%% WR) | Net %s | Won %s | Lost %s%s",
+        playerName,
+        games,
+        wins,
+        losses,
+        winRate,
+        self:FormatGold(net),
+        self:FormatGold(goldWon),
+        self:FormatGold(goldLost),
+        flagsSuffix
+    )
+
+    return message
+end
+
+function DRE:ResolveStatsBroadcastChannel(channelHint)
+    local requested = channelHint and string.upper(self:Trim(channelHint)) or ""
+
+    local inRaid = IsInRaid and IsInRaid()
+    local inGroup = IsInGroup and IsInGroup()
+    local inGuild = IsInGuild and IsInGuild()
+
+    if requested == "" then
+        if inRaid then
+            return "RAID", "raid"
+        elseif inGroup then
+            return "PARTY", "party"
+        elseif inGuild then
+            return "GUILD", "guild"
+        end
+        return nil, nil, "You are not in a party/raid or guild. Specify a channel like /dr sendstats <player> say."
+    end
+
+    if requested == "P" then requested = "PARTY" end
+    if requested == "G" then requested = "GUILD" end
+    if requested == "R" then requested = "RAID" end
+    if requested == "S" then requested = "SAY" end
+
+    if requested == "PARTY" then
+        if inRaid then
+            return "RAID", "raid"
+        elseif inGroup then
+            return "PARTY", "party"
+        end
+        return nil, nil, "You are not in a party or raid."
+    elseif requested == "RAID" then
+        if inRaid then
+            return "RAID", "raid"
+        end
+        return nil, nil, "You are not in a raid."
+    elseif requested == "GUILD" then
+        if inGuild then
+            return "GUILD", "guild"
+        end
+        return nil, nil, "You are not in a guild."
+    elseif requested == "SAY" then
+        return "SAY", "say"
+    end
+
+    return nil, nil, "Unknown channel. Use party, guild, raid, or say."
+end
+
+function DRE:SendPlayerStatsBroadcast(playerName, channelHint)
+    local message, buildError = self:BuildPlayerStatsBroadcast(playerName)
+    if not message then
+        return false, buildError
+    end
+
+    local chatType, channelName, channelError = self:ResolveStatsBroadcastChannel(channelHint)
+    if not chatType then
+        return false, channelError
+    end
+
+    SendChatMessage(message, chatType)
+    return true, string.format("Sent stats for %s to %s.", playerName, channelName)
 end
 
 -- AceConfig Options Table

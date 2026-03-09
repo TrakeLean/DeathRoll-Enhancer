@@ -1,5 +1,18 @@
 # DeathRoll Enhancer - Changelog
 
+## Version 2.3.8 - Matchup Stats Broadcast
+
+### New Features
+- **`/dr sendstats` command** - Added `/dr sendstats [player] [party|guild|raid|say]` to broadcast key matchup stats in chat.
+- **History broadcast buttons** - Added `Send Stats to Party` and `Send Stats to Guild` buttons in the History tab for the selected player.
+
+### Improvements
+- **Smart player fallback** - If no player is supplied, `/dr sendstats` now uses the selected History player, then your current target.
+- **Channel resolution fallback** - If no channel is supplied, broadcast auto-selects RAID, then PARTY, then GUILD.
+- **Clear chat summary format** - Broadcast line now includes games, W/L, win rate, net, won/lost gold, and suspicious-roll flags.
+
+---
+
 ## Version 2.3.7 - Tab Layout and Suspicion Management
 
 ### Fixes

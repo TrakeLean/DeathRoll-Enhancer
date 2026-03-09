@@ -1131,9 +1131,59 @@ function DRE:CreateHistorySection(container)
     dropdown:SetValue(playerNames[1])
     dropdown:SetWidth(180)
     dropdown:SetCallback("OnValueChanged", function(widget, event, key)
+        UI.selectedHistoryPlayer = key
         self:UpdateHistoryDisplay(key)
     end)
     playerSelectorGroup:AddChild(dropdown)
+
+    local broadcastButtonsGroup = AceGUI:Create("SimpleGroup")
+    broadcastButtonsGroup:SetFullWidth(true)
+    broadcastButtonsGroup:SetLayout("Flow")
+    historyControlsGroup:AddChild(broadcastButtonsGroup)
+
+    local sendPartyButton = AceGUI:Create("Button")
+    sendPartyButton:SetText("Send Stats to Party")
+    sendPartyButton:SetWidth(150)
+    sendPartyButton:SetCallback("OnClick", function()
+        local selectedPlayer = nil
+        if UI.historyDropdown and UI.historyDropdown.GetValue then
+            selectedPlayer = UI.historyDropdown:GetValue()
+        end
+        selectedPlayer = selectedPlayer or UI.selectedHistoryPlayer
+        if not selectedPlayer then
+            self:Print("No player selected to broadcast.")
+            return
+        end
+        local success, message = self:SendPlayerStatsBroadcast(selectedPlayer, "party")
+        if success then
+            self:Print(message)
+        else
+            self:Print("Failed to send stats: " .. (message or "Unknown error"))
+        end
+    end)
+    broadcastButtonsGroup:AddChild(sendPartyButton)
+
+    local sendGuildButton = AceGUI:Create("Button")
+    sendGuildButton:SetText("Send Stats to Guild")
+    sendGuildButton:SetWidth(150)
+    sendGuildButton:SetCallback("OnClick", function()
+        local selectedPlayer = nil
+        if UI.historyDropdown and UI.historyDropdown.GetValue then
+            selectedPlayer = UI.historyDropdown:GetValue()
+        end
+        selectedPlayer = selectedPlayer or UI.selectedHistoryPlayer
+        if not selectedPlayer then
+            self:Print("No player selected to broadcast.")
+            return
+        end
+        local success, message = self:SendPlayerStatsBroadcast(selectedPlayer, "guild")
+        if success then
+            self:Print(message)
+        else
+            self:Print("Failed to send stats: " .. (message or "Unknown error"))
+        end
+    end)
+    broadcastButtonsGroup:AddChild(sendGuildButton)
     
     -- History display area - with explicit height for proper scrolling
     local historyDisplayGroup = AceGUI:Create("InlineGroup")
@@ -1173,6 +1223,7 @@ function DRE:CreateHistorySection(container)
     UI.historyBox = historyLabel
     UI.historyScroll = historyScroll
     UI.historyDropdown = dropdown
+    UI.selectedHistoryPlayer = playerNames[1]
     
     -- Show first player's history by default
     self:UpdateHistoryDisplay(playerNames[1])
@@ -1594,6 +1645,8 @@ function DRE:UpdateHistoryDisplay(playerName)
     if not UI.historyBox or not self.db or not self.db.profile.history then
         return
     end
+
+    UI.selectedHistoryPlayer = playerName
     
     local playerData = self.db.profile.history[playerName]
     if not playerData then
@@ -1674,6 +1727,7 @@ function DRE:RefreshHistoryDropdown(preferredPlayer)
 
     if selectedPlayer then
         UI.historyDropdown:SetValue(selectedPlayer)
+        UI.selectedHistoryPlayer = selectedPlayer
         self:UpdateHistoryDisplay(selectedPlayer)
     elseif UI.historyBox then
         UI.historyBox:SetText("No players in history yet!")

@@ -59,7 +59,9 @@ Available via `/dr config` and the in-window Settings tab:
 
 ## Compatibility and Dependencies
 
-- Works across modern WoW flavors (Classic and Retail interface ranges listed in the TOC)
+- Targets Retail, Classic Era/Hardcore, TBC Anniversary, Wrath Classic, Cataclysm Classic, Mists Classic, Titan Reforged (China), and Forever; exact versions and in-game acceptance checks are in TESTING.md.
+- Preserves Forever first names/surnames. Includes modern and legacy API fallbacks; original 1.12/2.4.3/3.3.5 clients are outside this scope.
+- Group Say announcements use **Announce** after each roll; Party/Raid/Instance announcements are automatic.
 - Uses Ace3 with LibSharedMedia and LibDBIcon
 - Lightweight saved-variable storage for persistent history/stat tracking
 

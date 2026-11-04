@@ -2021,11 +2021,14 @@ end
 function DRE:StartChallengeFlow()
     if self:HasActiveGame() or self.disabled then return false end
     local target = DRE:GetUnitPlayerName("target")
-    
-    -- Check if we have a target
+    if not target then
+        self:Print("Please target a player whose name is available to the addon.")
+        return false
+    end
+
+    -- Compare readable identities; UnitIsUnit can return a restricted value.
     if UnitExists("target") then
-        -- Check if target is yourself (self-dueling)
-        if UnitIsUnit("target", "player") then
+        if self:IsSamePlayer(target, self:GetUnitPlayerName("player")) then
             target = DRE:GetUnitPlayerName("player")
             self:Print("Self-duel mode activated!")
         else

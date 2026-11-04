@@ -40,7 +40,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.4.0"
+local localFallbackVersion = "2.4.1"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
     local metadataVersion = nil
@@ -1668,7 +1668,10 @@ function DRE:SetupOptions()
     }
     
     AceConfig:RegisterOptionsTable("DeathRollEnhancer", options)
-    self.optionsFrame = AceConfigDialog:AddToBlizOptions("DeathRollEnhancer", "DeathRoll Enhancer")
+    -- Current AceConfig integrates with Settings; older clients still use /dr config.
+    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+        self.optionsFrame = AceConfigDialog:AddToBlizOptions("DeathRollEnhancer", "DeathRoll Enhancer")
+    end
 end
 
 -- UI Methods
@@ -3113,14 +3116,8 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
     
     if won then
         self:Print("You WON the DeathRoll!")
-        if self.db and self.db.profile.gameplay.autoEmote then
-            DoEmote(self:GetRandomHappyEmote())
-        end
     else
         self:Print("You LOST the DeathRoll!")
-        if self.db and self.db.profile.gameplay.autoEmote then
-            DoEmote(self:GetRandomSadEmote())
-        end
     end
     
     -- Add result to roll history
@@ -3214,6 +3211,17 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
     if self.UpdateStatsDisplay then
         self:UpdateStatsDisplay()
     end
+    if self.db and self.db.profile.gameplay.autoEmote then
+        self:PerformResultEmote(won)
+    end
+end
+
+-- Cosmetic reactions must never interrupt saving or cleaning up a finished game.
+function DRE:PerformResultEmote(won)
+    local perform = C_ChatInfo and C_ChatInfo.PerformEmote or DoEmote
+    if not perform then return false end
+    local emote = won and self:GetRandomHappyEmote() or self:GetRandomSadEmote()
+    return pcall(perform, emote)
 end
 
 -- Handle ongoing game rolls

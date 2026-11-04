@@ -1,18 +1,26 @@
-# DeathRoll Enhancer v2.4.0 - 2SChoppy Edition
+# DeathRoll Enhancer v2.4.1 - 2SChoppy Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.4.0-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.4.1-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with Ace3 and feature-detected compatibility paths; target-client validation is described below.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
 
+## Version 2.4.1: client compatibility
+
+One ZIP targets Retail, Classic Era/Hardcore, TBC Anniversary, Wrath Classic, Cataclysm Classic, Mists Classic, Titan Reforged (China), and Forever. See the [client version matrix and validation limits](TESTING.md#client-version-matrix). This covers modern client families, not original 1.12/2.4.3/3.3.5 installations.
+
+Finished games now save even when optional emotes are unavailable or restricted. Older clients can still open settings with `/dr config`; the Blizzard Settings entry is added only when that API exists. Target challenges avoid restricted unit comparisons, and ordinary chat no longer inherits an addon-message-only restriction.
+
+For group rounds using **Say**, click **Announce** after each roll to send the current turn/result. Party, Raid, and Instance channels continue announcing automatically. Full Forever surnames remain supported.
+
 ## Version 2.4.0: host-controlled group DeathRolls
 
 Open **Group** or `/dr group`. Add 2-40 players in turn order, using **Add Target** / **Add Me** or one exact full name per line. Choose the starting roll and announcement channel, then **Start Round**. The next player rolls using the announced maximum; the first player to roll **1 loses**, ending the round. Only the host needs the addon. Everyone must remain nearby so the host can see their system rolls.
 
-The roster locks during play. **Cancel Round** or `/dr cancel` ends a stuck round; **Restart Round** reuses the previous roster/order/maximum. Cancel before changing participants. **Roll Your Turn** rolls only for the host when eligible; everyone can use ordinary `/roll`. **Announce** retries the current turn/result if chat was blocked. Slash shortcuts: `/dr group roll`, `/dr group announce`, `/dr group cancel`, `/dr group restart`.
+The roster locks during play. **Cancel Round** or `/dr cancel` ends a stuck round; **Restart Round** reuses the previous roster/order/maximum. Cancel before changing participants. **Roll Your Turn** rolls only for the host when eligible; everyone can use ordinary `/roll`. **Announce** sends the current turn/result for Say and retries other channels if chat was blocked. Slash shortcuts: `/dr group roll`, `/dr group announce`, `/dr group cancel`, `/dr group restart`.
 
 Payouts are manual; settle them before starting new trade-tracked 1v1 games. Group results stay separate from 1v1 statistics, and the last 20 log entries remain for this session only. Earlier unpaid 1v1 games with group participants require `/dr edit` payment assignment to prevent a group payout from overwriting them. Reloading or disabling the addon ends the local round. All new flows have automated coverage; live group testing on the intended server is still required.
 
@@ -89,7 +97,7 @@ Challenge and data confirmations use addon-owned dialogs to avoid the Forever co
 - **Challenge acceptance** - One-click accept with pre-filled roll values
 - **Flexible wager system** - Gold/Silver/Copper inputs or trade-based wager tracking
 - **Self-duel mode** - Practice against yourself
-- **Cross-version compatibility** - Works on Classic Era, TBC, Wrath, Cata, and Retail
+- **Cross-version compatibility** - Current Retail and Classic families, plus Forever; see the tested API profiles and client matrix below
 
 ## 🚀 Quick Start
 

@@ -5,3 +5,8 @@ License: Ace3-LICENSE.txt; individual source headers also apply.
 
 Includes Forever AceDB surname/ruleset fixes newer than Release-r1403.
 Update deliberately from upstream and rerun regression/package checks.
+
+Local compatibility patch: AceGUIWidget-Heading.lua guards the optional
+issecretvalue function for older Classic clients. Local widget revision 21.1
+replaces an already loaded upstream 21 while yielding to future 22+. Behavior is otherwise
+unchanged; tests/test_clients.py executes the bundled widget with/without it.

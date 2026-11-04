@@ -45,3 +45,15 @@ class PackageTests(unittest.TestCase):
                 toc = archive.read('DeathRollEnhancer/DeathRollEnhancer.toc')
                 self.assertIn(b'## Version: 2.3.10-dev', toc)
                 self.assertNotIn(b'@project-version@', toc)
+                interfaces = next(line.split(':', 1)[1] for line in toc.decode().splitlines()
+                                  if line.startswith('## Interface:'))
+                self.assertTrue({16001, 120105, 11509, 20506, 30405, 38002, 40402, 50504}
+                                <= {int(value.strip()) for value in interfaces.split(',')})
+                modules = lambda data: [line for line in data.decode().splitlines()
+                                        if line and not line.startswith('#')]
+                for name in names:
+                    if name.endswith('.toc') and name.count('/') == 1:
+                        manifest = archive.read(name)
+                        self.assertIn(b'## Version: 2.3.10-dev', manifest)
+                        self.assertNotIn(b'@project-version@', manifest)
+                        self.assertEqual(modules(toc), modules(manifest))

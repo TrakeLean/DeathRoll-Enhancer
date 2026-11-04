@@ -1,3 +1,13 @@
+## 2.4.1 — 2SChoppy Edition (2026-11-04)
+
+- Update client metadata for Retail 12.1.5, Classic Era/Hardcore 1.15.9, TBC Anniversary 2.5.6, Wrath Classic 3.4.5, Cataclysm Classic 4.4.2, Mists Classic 5.5.4, Titan Reforged 3.80.2, and Forever 1.60.1.
+- Use the modern emote API with a legacy fallback; missing or restricted reactions can no longer prevent saving completed games.
+- Preserve startup and `/dr config` on older clients without the modern Settings API. Fix bundled headings on clients without secret-value APIs, including shared-library load order.
+- Avoid restricted unit comparisons when challenging a target. Preserve full Forever surnames and realm-qualified identities.
+- Stop applying addon-message restrictions to ordinary chat; actual chat lockdown remains respected.
+- Group Say announcements after rolls now wait for **Announce** or `/dr group announce`. Party, Raid, and Instance announcements remain automatic.
+- Add client API-profile and packaging regressions. Source-reviewed and host-tested; live in-game verification remains required. Original 1.12/2.4.3/3.3.5 clients are outside this release's support scope.
+
 ## 2.4.0 — 2SChoppy Edition (2026-11-04)
 
 - Add host-controlled group DeathRolls through the Group tab or `/dr group`: 2-40 players, fixed turn order, a shared decreasing roll maximum, and the first roll of 1 ends the round with that player losing.

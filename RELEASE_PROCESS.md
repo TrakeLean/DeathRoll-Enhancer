@@ -74,7 +74,7 @@ Tag behavior:
 Run the tests in `TESTING.md`, then use the dependency-aware builder:
 
 ```sh
-python3 scripts/build_release.py --version 2.4.0 --output dist/DeathRollEnhancer-2.4.0.zip
+python3 scripts/build_release.py --version 2.4.1 --output dist/DeathRollEnhancer-2.4.1.zip
 ```
 
 It validates every TOC/XML dependency, includes pinned libraries and licenses, replaces version tokens, and writes one installable `DeathRollEnhancer` directory. When copying manually, include `embeds.xml` and the complete `Libs/` directory before the runtime modules. Record the target-client smoke-test status in release notes. GitHub publication does not confirm CurseForge publication; that still depends on the separately configured webhook.

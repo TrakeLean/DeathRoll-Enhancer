@@ -189,10 +189,7 @@ end
 
 function DRE:SendChatSafely(message, channel, language, target)
     if not self:IsAccessibleValue(message) or not self:IsAccessibleValue(target) then return false end
-    if C_ChatInfo and C_ChatInfo.AreOutgoingAddonChatMessagesRestricted
-        and C_ChatInfo.AreOutgoingAddonChatMessagesRestricted() then
-        return false, "Chat is currently restricted by the client."
-    end
+    -- Addon-message restrictions do not describe ordinary player-visible chat.
     if C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown() then
         return false, "Chat is temporarily locked by the client."
     end

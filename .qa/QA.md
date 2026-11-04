@@ -6,7 +6,7 @@
 - Profile schema: `1`
 - Project-quality plugin: `0.2.0`
 - Root type: `git`
-- Files inventoried: `105`
+- Files inventoried: `107`
 - Monorepo detected: `no`
 - Documentation-only: `no`
 
@@ -16,7 +16,7 @@
 | --- | ---: |
 | `Libs` | 45 |
 | `versions` | 22 |
-| `tests` | 7 |
+| `tests` | 8 |
 | `Media` | 2 |
 | `scripts` | 2 |
 | `.claude` | 1 |
@@ -35,6 +35,7 @@
 | `Dialogs.lua` | 1 |
 | `embeds.xml` | 1 |
 | `Events.lua` | 1 |
+| `Group.lua` | 1 |
 | `LICENSE` | 1 |
 | `Minimap.lua` | 1 |
 | `PROJECT_CONTEXT.md` | 1 |
@@ -43,12 +44,11 @@
 | `TESTING.md` | 1 |
 | `UI.lua` | 1 |
 | `update-version.ps1` | 1 |
-| `update-version.sh` | 1 |
 
 ### Languages
 
-- Lua: 50 files
-- Python: 7 files
+- Lua: 51 files
+- Python: 8 files
 - Shell: 1 files
 
 ### Important entry points

@@ -1,4 +1,4 @@
-## Interface: 16001, 120001, 120000, 11508, 20505, 30403, 40402, 50503
+## Interface: 16001, 120105, 120001, 120000, 11509, 11508, 20506, 20505, 30405, 30403, 38002, 40402, 50504, 50503
 ## Title: |cFFFF0000Death|r|cffffffffRoll|r Enhancer
 ## Version: @project-version@
 ## Author: 0xTrk

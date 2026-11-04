@@ -57,9 +57,15 @@ function DRE:GetGroupAnnouncement(round, starting)
         round.turn, #round.players, round.players[round.turn], round.currentRoll)
 end
 
-function DRE:AnnounceGroupRound(starting)
+function DRE:AnnounceGroupRound(starting, automatic)
     local round = self.groupRound
     if not round or self.disabled then return false end
+    -- SAY can require a hardware event. System-roll callbacks have none.
+    if automatic and round.channel == "SAY" then
+        round.chatError = "Click Announce to send the current turn or result to Say."
+        self:RefreshGroupUI()
+        return false
+    end
     -- Recheck channel membership, but never silently switch the round's audience.
     local channel, _, reason = self:ResolveStatsBroadcastChannel(round.channel)
     local message = self:GetGroupAnnouncement(round, starting)
@@ -148,7 +154,7 @@ function DRE:HandleGroupRoll(playerName, roll, maximum)
         round.turn = round.turn % #round.players + 1
     end
     self:Print(self:GetGroupAnnouncement(round))
-    self:AnnounceGroupRound()
+    self:AnnounceGroupRound(false, true)
     self:RefreshGroupUI()
     return true
 end
@@ -307,6 +313,6 @@ function DRE:RefreshGroupUI()
         widgets[key]:SetDisabled(active)
     end
     widgets.status:SetText(round and self:GetGroupAnnouncement(round) or "Ready to configure a group round.")
-    widgets.error:SetText(round and round.chatError and ("Announcement failed: " .. round.chatError .. " Use Announce to retry.") or "")
+    widgets.error:SetText(round and round.chatError and round.chatError or "")
     widgets.log:SetText(round and ("Recent group rolls:\n" .. table.concat(round.log, "\n")) or "")
 end

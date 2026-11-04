@@ -7,9 +7,11 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = ['Core.lua', 'Database.lua', 'UI.lua', 'Dialogs.lua', 'Events.lua', 'Group.lua']
 
 
-def runtime():
+def runtime(prelude=None):
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute((ROOT / 'tests/wow_mock.lua').read_text())
+    if prelude:
+        lua.execute(prelude)
     for name in MODULES:
         lua.execute((ROOT / name).read_text())
     lua.execute('''

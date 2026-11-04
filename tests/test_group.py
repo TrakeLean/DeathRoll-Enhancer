@@ -20,7 +20,8 @@ class GroupTests(unittest.TestCase):
 
     def test_complete_round_wraps_turns_and_keeps_equal_rolls(self):
         self.check('''
-            local round=startGroup()
+            IsInGroup=function() return true end
+            local round=startGroup(nil,nil,'PARTY')
             groupRoll('Me',100,100);groupRoll('Alice',100,100);groupRoll('Bob',100,100)
             assert(round.turn==1 and round.currentRoll==100 and round.rollCount==3)
             groupRoll('Me',50,100);groupRoll('Alice',25,50);groupRoll('Bob',1,25)

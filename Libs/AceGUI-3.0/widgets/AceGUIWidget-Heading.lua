@@ -1,7 +1,8 @@
 --[[-----------------------------------------------------------------------------
 Heading Widget
 -------------------------------------------------------------------------------]]
-local Type, Version = "Heading", 21
+-- Local 21.1: replace an already loaded upstream 21 on legacy clients; 22 wins.
+local Type, Version = "Heading", 21.1
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
 
@@ -30,7 +31,7 @@ local methods = {
 
 	["SetText"] = function(self, text)
 		self.label:SetText(text or "")
-		if issecretvalue(text) or (text and text ~= "") then
+		if (issecretvalue and issecretvalue(text)) or (text and text ~= "") then
 			self.left:SetPoint("RIGHT", self.label, "LEFT", -5, 0)
 			self.right:Show()
 		else

@@ -40,7 +40,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.3.10"
+local localFallbackVersion = "2.3.11"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
     local metadataVersion = nil
@@ -230,6 +230,7 @@ function DRE:OnEnable()
     self:RegisterEvent("TRADE_MONEY_CHANGED")
     self:RegisterEvent("TRADE_ACCEPT_UPDATE")
     self:RegisterEvent("TRADE_CLOSED")
+    self:RegisterEvent("TRADE_REQUEST_CANCEL")
     
     self:DebugPrint("Events registered: CHAT_MSG_SYSTEM, ADDON_LOADED, UI_INFO_MESSAGE, CHAT_MSG_WHISPER, CHAT_MSG_TEXT_EMOTE, CHAT_MSG_EMOTE, PLAYER_TARGET_CHANGED, TRADE_*")
     
@@ -241,6 +242,7 @@ end
 
 function DRE:OnDisable()
     self.disabled = true
+    self.tradeTracking = nil
     self.pendingChallenge = nil
     self.acceptedChallenge = nil
     self:CloseDialog(self.activeDialog, false, "override")
@@ -316,32 +318,28 @@ function DRE:NormalizeTrackedPlayerName(name)
 end
 
 function DRE:CaptureTradeState(resetState)
-    self.tradeTracking = self.tradeTracking or {}
-
+    if self.disabled then return end
     if resetState then
-        self.tradeTracking.completed = nil
-        self.tradeTracking.closedAt = nil
-        self.tradeTracking.partner = nil
-        self.tradeTracking.myGold = 0
-        self.tradeTracking.theirGold = 0
+        self.tradeTracking = { myGold = 0, theirGold = 0 }
     end
+    local state = self.tradeTracking
+    -- Only TRADE_SHOW creates a transaction. Preserve the last visible offer
+    -- after close; teardown/late events must not overwrite it with zeroes.
+    if not state or state.closedAt or state.completed then return end
+    if not resetState and TradeFrame and TradeFrame.IsShown and not TradeFrame:IsShown() then return end
 
     local partner = UnitExists and UnitExists("NPC") and self:GetUnitPlayerName("NPC")
     if not partner and TradeFrameRecipientNameText and TradeFrameRecipientNameText.GetText then
         partner = self:NormalizePlayerName(TradeFrameRecipientNameText:GetText())
     end
-
-    self.tradeTracking.partner = self:NormalizeTrackedPlayerName(partner) or self.tradeTracking.partner
-    self.tradeTracking.myGold = tonumber(GetPlayerTradeMoney()) or self.tradeTracking.myGold or 0
-    self.tradeTracking.theirGold = tonumber(GetTargetTradeMoney()) or self.tradeTracking.theirGold or 0
-    self.tradeTracking.lastUpdated = time()
-
-    self:DebugPrint(string.format(
-        "Trade state updated: partner=%s, myGold=%d, theirGold=%d",
-        self.tradeTracking.partner or "unknown",
-        self.tradeTracking.myGold or 0,
-        self.tradeTracking.theirGold or 0
-    ))
+    state.partner = self:NormalizeTrackedPlayerName(partner) or state.partner
+    local myGold = GetPlayerTradeMoney and GetPlayerTradeMoney()
+    local theirGold = GetTargetTradeMoney and GetTargetTradeMoney()
+    -- Do not convert or format restricted values, or retain an older readable
+    -- amount when the current offer cannot be inspected.
+    state.myGold = self:IsBoundedInteger(myGold, 0, self.MAX_WAGER) and myGold or nil
+    state.theirGold = self:IsBoundedInteger(theirGold, 0, self.MAX_WAGER) and theirGold or nil
+    state.lastUpdated = time()
 end
 
 function DRE:PrunePendingTradeWagers()
@@ -360,13 +358,18 @@ function DRE:HandleTrackedTradeCompletion()
     self:PrunePendingTradeWagers()
     if not self.db then return end
     local trades = self.db.profile.pendingTradeWagers
-    local state = self.tradeTracking or {}
-    if state.completed then return end
+    local state = self.tradeTracking
+    if not state or state.completed then return end
     state.completed = true -- one payment may be considered only once, including ambiguous payments
+    if not self:IsBoundedInteger(state.myGold, 0, self.MAX_WAGER)
+        or not self:IsBoundedInteger(state.theirGold, 0, self.MAX_WAGER) then return end
     local matchIndex, tradeAmount
     for index, pending in ipairs(trades) do
-        local amount = pending.result == "Won" and (tonumber(state.theirGold) or 0)
-            or (tonumber(state.myGold) or 0)
+        if self:IsSamePlayer(pending.playerName, state.partner) and state.myGold > 0 and state.theirGold > 0 then
+            self:Print("Both players traded gold. Use /dr edit to assign this payment; no wager was changed.")
+            return
+        end
+        local amount = pending.result == "Won" and state.theirGold or state.myGold
         if self:IsSamePlayer(pending.playerName, state.partner) and amount > 0 then
             if matchIndex then
                 self:Print("Multiple unpaid games match this trade. Use /dr edit to assign the payment; no wager was changed.")
@@ -1835,6 +1838,10 @@ function DRE:TRADE_CLOSED(event)
     if self.tradeTracking then
         self.tradeTracking.closedAt = time()
     end
+end
+
+function DRE:TRADE_REQUEST_CANCEL(event)
+    self.tradeTracking = nil
 end
 
 function DRE:UI_INFO_MESSAGE(event, messageType, message)

@@ -1,12 +1,18 @@
-# DeathRoll Enhancer v2.3.10 - SKEM Edition
+# DeathRoll Enhancer v2.3.11 - SKEM Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.3.10-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.3.11-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with Ace3 and feature-detected compatibility paths; target-client validation is described below.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
+
+## Version 2.3.11: trade gold capture
+
+Enable **Settings → Challenge System → Track Wager From Completed Trade** before starting a game. After the result, complete a gold trade with that opponent within five minutes. The addon records incoming gold for a win or outgoing gold for a loss only after the server confirms completion. Full Forever surnames are preserved.
+
+Cancelled trades and late window events cannot reuse a payment. If both players offer gold, or several pending games match, assign the payment using `/dr edit`; the addon does not guess. This update has host-side regression coverage; an in-game test on your server/client is still needed.
 
 ## Version 2.3.10: correctness and Forever compatibility
 

@@ -23,7 +23,7 @@
     },
     {
       "purpose": "package",
-      "command": "python3 scripts/build_release.py --version 2.3.10 --output dist/DeathRollEnhancer-2.3.10.zip",
+      "command": "python3 scripts/build_release.py --version 2.3.11 --output dist/DeathRollEnhancer-2.3.11.zip",
       "working_directory": ".",
       "evidence": "scripts/build_release.py"
     }

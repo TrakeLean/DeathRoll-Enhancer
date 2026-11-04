@@ -1,3 +1,14 @@
+## 2.3.11 — trade gold capture hardening (2026-11-04)
+
+- Preserve the last visible gold offer after trade closure; late money/accept events cannot erase it or recreate completed transactions.
+- Clear trade snapshots on cancellation and addon disable. Reject unreadable or invalid money values instead of using an older offer.
+- Require manual wager assignment when both players trade gold, avoiding incorrect amounts/directions. Existing same-player multi-game ambiguity protection remains.
+- Add eight full trade-event regression cases for Forever surnames, incoming/outgoing gold, changing offers, both close/success orders, late updates, cancellation, duplicate completion, restricted values, and expiry.
+- Research compared Gargul's trade-state lifecycle, its Forever identity fixes, GBankClassic cancellation handling, and Forever client trade APIs. See TESTING.md for sources.
+- Validation: all 46 host regression/package tests pass. Actual target-client trade validation remains outstanding.
+
+# DeathRoll Enhancer - Changelog
+
 ## 2.3.10 — correctness and Forever compatibility (2026-11-04)
 
 - Accept only validated server system rolls; enforce turn ownership and bind delayed rolls to their originating game/request.
@@ -11,8 +22,6 @@
 - Respect temporary chat lockdown and report failed challenge sends, following ShamanPower and FrontierScout.
 - Ship Forever/Camelot manifests and add a test-gated GitHub release workflow.
 - Validation: 38 Lua 5.1 regression/package tests. In-game validation on the target server/client build is still outstanding.
-
-# DeathRoll Enhancer - Changelog
 
 ## Version 2.3.9 - Stats Broadcast Hotfix
 

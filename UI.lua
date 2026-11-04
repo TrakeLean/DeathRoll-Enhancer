@@ -318,6 +318,7 @@ function DRE:ShowMainWindow()
         UI.historyDisplayGroup = nil
         UI.rollEdit = nil
         UI.gameButton = nil
+        UI.cancelGameButton = nil
         UI.goldEdit = nil
         UI.silverEdit = nil
         UI.copperEdit = nil
@@ -548,13 +549,22 @@ function DRE:CreateGameSection(container)
     end
     
     -- Game action button (changes based on game state)
+    local actionGroup = AceGUI:Create("SimpleGroup")
+    actionGroup:SetFullWidth(true)
+    actionGroup:SetLayout("Flow")
+    controlsGroup:AddChild(actionGroup)
     local gameButton = AceGUI:Create("Button")
     gameButton:SetText("Challenge Player to DeathRoll!")
-    gameButton:SetFullWidth(true)
+    gameButton:SetRelativeWidth(0.76)
     gameButton:SetCallback("OnClick", function()
         self:HandleGameButtonClick()
     end)
-    controlsGroup:AddChild(gameButton)
+    actionGroup:AddChild(gameButton)
+    local cancelGameButton = AceGUI:Create("Button")
+    cancelGameButton:SetText("Cancel")
+    cancelGameButton:SetRelativeWidth(0.24)
+    cancelGameButton:SetCallback("OnClick", function() self:CancelCurrentGame() end)
+    actionGroup:AddChild(cancelGameButton)
 
     local rollHistoryGroup = AceGUI:Create("InlineGroup")
     rollHistoryGroup:SetTitle("Roll History")
@@ -636,6 +646,7 @@ function DRE:CreateGameSection(container)
     UI.silverEdit = silverEdit
     UI.copperEdit = copperEdit
     UI.gameButton = gameButton
+    UI.cancelGameButton = cancelGameButton
     UI.tradeWagerHelp = tradeWagerHelp
     UI.rollHistory = UI.rollHistory or {}
     if #UI.rollHistory == 0 then
@@ -1159,14 +1170,6 @@ function DRE:CreateHistorySection(container)
     end
     table.sort(playerNames)
     
-    if #playerNames == 0 then
-        local noPlayersLabel = AceGUI:Create("Label")
-        noPlayersLabel:SetText("No players in history yet!")
-        noPlayersLabel:SetFullWidth(true)
-        historyControlsGroup:AddChild(noPlayersLabel)
-        return
-    end
-    
     -- Player selector section
     local playerSelectorGroup = AceGUI:Create("SimpleGroup")
     playerSelectorGroup:SetFullWidth(true)
@@ -1293,7 +1296,7 @@ function DRE:CreateHistorySection(container)
     UI.selectedHistoryPlayer = playerNames[1]
     
     -- Show first player's history by default
-    self:UpdateHistoryDisplay(playerNames[1])
+    self:RefreshHistoryDropdown(playerNames[1])
 
     self:AfterUI(0, function()
         self:UpdateHistorySectionLayout()
@@ -1692,6 +1695,10 @@ end
 
 -- Update stats display
 function DRE:UpdateStatsDisplay()
+    if UI.currentTab == "history" then
+        self:RefreshHistoryDropdown(UI.selectedHistoryPlayer)
+        return
+    end
     if UI.currentTab ~= "statistics" then
         return
     end
@@ -1799,9 +1806,13 @@ function DRE:RefreshHistoryDropdown(preferredPlayer)
         UI.historyDropdown:SetValue(selectedPlayer)
         UI.selectedHistoryPlayer = selectedPlayer
         self:UpdateHistoryDisplay(selectedPlayer)
-    elseif UI.historyBox then
-        UI.historyBox:SetText("No players in history yet!")
-        self:RefreshHistoryLayout()
+    else
+        UI.historyDropdown:SetValue(nil)
+        UI.selectedHistoryPlayer = nil
+        if UI.historyBox then
+            UI.historyBox:SetText("No players in history yet!")
+            self:RefreshHistoryLayout()
+        end
     end
 end
 

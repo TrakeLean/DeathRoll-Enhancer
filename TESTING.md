@@ -6,7 +6,7 @@ Run the host-side regression suite with Python 3.11+ and Lua 5.1 through Lupa:
 python3 -m venv .venv
 .venv/bin/python -m pip install -r tests/requirements.txt
 .venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/build_release.py --version 2.3.12 --output dist/DeathRollEnhancer-2.3.12.zip
+.venv/bin/python scripts/build_release.py --version 2.3.13 --output dist/DeathRollEnhancer-2.3.13.zip
 ```
 
 The tests execute the actual addon modules with mocked WoW/Ace boundaries. They cover trusted roll events, turn order, self-duels, localized/positional roll formats, full player identities, challenge expiry and terms, popup lifecycle, stable record IDs, safe legacy migration, trade settlement, stale timers, widget reuse, and package references. They also compile all active and embedded Lua files under Lua 5.1. Locale fixture strings exercise parser behavior; they do not certify every client's translations.
@@ -28,7 +28,10 @@ A server using a modified or older client still needs its exact build checked. R
 5. Send/accept/decline/expire challenges, including zero wager after a nonzero wager. Test dialog replacement, expiry during combat, close/Escape/controller B, and accept after leaving combat. Enable the native controller UI and check for blocked actions. During restricted chat states the addon should ignore inaccessible values, not try to decode them.
 6. Keep an editor open, finish another game, then save/delete the original selection. Verify merge and dedupe preserve distinct identical-looking games and aggregate-only legacy history. Use quoted full names when merging, e.g. `/dr merge "Alice Smith" "Alice Jones"`.
 7. Finish a tracked game, reload, and settle within five minutes. Check unrelated partners and same-first-name characters cannot settle it. If multiple games match one payment, the addon refuses to guess; assign that payment once through `/dr edit`. A subsequent separate trade can settle the remaining game. Test incoming wins and outgoing losses, cancel/reopen, changed offers including zero, and gold on both sides (manual assignment required).
-8. Broadcast stats through available channels. Failures/restrictions must not falsely report success. Re-enable the addon and verify controls and minimap registration recover.
+8. Cancel an abandoned game with the button and `/dr cancel`, including while a roll is pending and from another tab. Confirm there is no outcome or new pending payment, earlier unpaid games remain, and a new opponent can be challenged. Check the action row at narrow and normal window sizes.
+9. Enter letters, commas, fractions, and out-of-range amounts in `/dr edit`: Save must leave data and pending payments unchanged and keep the editor open. Valid edits and deletions must refresh History without switching tabs; delete the final player and finish the first game with History open.
+10. With LibDBIcon installed, lock and unlock the minimap icon and verify dragging resumes.
+11. Broadcast stats through available channels. Failures/restrictions must not falsely report success. Re-enable the addon and verify controls and minimap registration recover.
 
 Legacy rows without reliable chronology are preserved. Their relative cross-player ordering cannot be recovered. When older releases retained totals but discarded detailed rows, a migration checkpoint preserves known streak history; outcome edits/deletions to pre-checkpoint records invalidate the current-streak checkpoint and replay the retained rows while preserving historical maxima. Missing older outcomes still cannot be reconstructed. `/dr dedupe` removes only duplicate records with proven matching IDs and content, not merely matching dates/results/wagers.
 

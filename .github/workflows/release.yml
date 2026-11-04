@@ -47,12 +47,13 @@ jobs:
           python3 scripts/build_release.py --version "$version" --output "dist/DeathRollEnhancer-$version.zip"
           python3 - <<'PY'
           from pathlib import Path
+          import re
           version = Path('VERSION').read_text().strip()
           changes = Path('CHANGELOG.md').read_text()
           heading = f'## {version} '
           if not changes.startswith(heading):
               raise SystemExit('Changelog must start with this release version')
-          notes = changes.split('\n# DeathRoll Enhancer - Changelog', 1)[0]
+          notes = re.split(r'\n(?:## |# DeathRoll Enhancer - Changelog)', changes, maxsplit=1)[0]
           Path('dist/release-notes.md').write_text(notes)
           PY
       - name: Publish version tag and installable ZIP

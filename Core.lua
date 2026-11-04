@@ -40,7 +40,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.3.12"
+local localFallbackVersion = "2.3.13"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
     local metadataVersion = nil
@@ -934,12 +934,13 @@ function DRE:SlashCommand(input)
     end
 
     if mergeSource and mergeTarget then
+        -- Recalculation refreshes History, so remember the user's selection first.
+        local selectedPlayer = self.UI and self.UI.historyDropdown and self.UI.historyDropdown:GetValue()
         local success, message = self:MergePlayerHistory(mergeSource, mergeTarget)
         if success then
             self:Print(message)
 
             if self.UI and self.UI.historyDropdown and self.UI.historyDropdown.GetValue then
-                local selectedPlayer = self.UI.historyDropdown:GetValue()
                 local preferredPlayer = selectedPlayer
                 if selectedPlayer == mergeSource then
                     preferredPlayer = mergeTarget
@@ -1015,6 +1016,8 @@ function DRE:SlashCommand(input)
         else
             self:Print("No pending challenge to decline")
         end
+    elseif trimmedInput == "cancel" then
+        self:CancelCurrentGame()
     elseif trimmedInput == "edit" then
         self:ShowEditGameDialog()
     elseif trimmedInput == "fixgold" then
@@ -1045,6 +1048,7 @@ function DRE:SlashCommand(input)
         self:Print("       /dr debug - Show debug chat buffer")
         self:Print("       /dr accept - Accept pending challenge")
         self:Print("       /dr decline - Decline pending challenge")
+        self:Print("       /dr cancel - Cancel the active game without recording a result")
         self:Print("       /dr edit - Edit recent game records")
         self:Print("       /dr merge <oldName> <newName> - Merge player history after rename")
         self:Print("       /dr fixgold - Recalculate gold tracking totals")
@@ -2555,7 +2559,7 @@ end
 function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade)
     -- Check for active game first to prevent concurrent games
     if self.gameState and self.gameState.isActive then
-        self:Print("A game is already in progress! Finish the current game first.")
+        self:Print("A game is already in progress! Finish it or use /dr cancel.")
         return
     end
 
@@ -2807,26 +2811,33 @@ function DRE:ShowEditGameDialog()
         saveButton:SetWidth(150)
         saveButton:SetCallback("OnClick", function()
             local newResult = resultDropdown:GetValue() == "win" and "Won" or "Lost"
-            local gold = tonumber(goldInput:GetText()) or 0
-            local silver = tonumber(silverInput:GetText()) or 0
-            local copper = tonumber(copperInput:GetText()) or 0
-            local newInitialRoll = tonumber(rollInput:GetText()) or 0
+            local function readWholeNumber(input)
+                local text = self:Trim(input:GetText())
+                -- Empty fields explicitly mean zero; malformed text must never erase data.
+                if text == "" then return 0 end
+                if not text:match("^[0-9]+$") then return nil end
+                return tonumber(text)
+            end
+            local gold = readWholeNumber(goldInput)
+            local silver = readWholeNumber(silverInput)
+            local copper = readWholeNumber(copperInput)
+            local newInitialRoll = readWholeNumber(rollInput)
 
             -- Validate inputs
-            if gold < 0 or gold > 999999 then
-                self:Print("Gold must be between 0 and 999,999!")
+            if not self:IsBoundedInteger(gold, 0, 999999) then
+                self:Print("Gold must be a whole number between 0 and 999,999 (no commas)!")
                 return
             end
-            if silver < 0 or silver > 99 then
-                self:Print("Silver must be between 0 and 99!")
+            if not self:IsBoundedInteger(silver, 0, 99) then
+                self:Print("Silver must be a whole number between 0 and 99!")
                 return
             end
-            if copper < 0 or copper > 99 then
-                self:Print("Copper must be between 0 and 99!")
+            if not self:IsBoundedInteger(copper, 0, 99) then
+                self:Print("Copper must be a whole number between 0 and 99!")
                 return
             end
-            if newInitialRoll < 0 or newInitialRoll > 999999 then
-                self:Print("Starting roll must be between 0 and 999,999!")
+            if not self:IsBoundedInteger(newInitialRoll, 0, 999999) then
+                self:Print("Starting roll must be a whole number between 0 and 999,999!")
                 return
             end
 
@@ -3013,6 +3024,38 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWager
     
     -- Ensure system messages are registered to track rolls
     self:RegisterEvent("CHAT_MSG_SYSTEM")
+end
+
+-- Local recovery only: cancellation never records an outcome or a pending payment.
+function DRE:CancelCurrentGame()
+    local game = self.gameState
+    if not (game and game.isActive) then
+        self:Print("No active game to cancel.")
+        return false
+    end
+    game.isActive = false
+    game.pendingRoll = nil
+    self.gameState = nil -- retires delayed rolls/timeouts owned by this game
+    self.acceptedChallenge = nil
+    self.pendingChallenge = nil
+    if self.activeDialog and self.activeDialog.definition == self.Dialogs.DEATHROLL_CHALLENGE_POPUP then
+        self:CloseDialog(self.activeDialog, false, "override")
+    end
+    self:ClearRecentRollsForPlayer(game.target)
+    self:ClearRecentRollsForPlayer(self:GetUnitPlayerName("player"))
+    if self.UI then
+        self.UI.isGameActive = false
+        self.UI.currentTarget = nil
+        self.UI.recentTargetRoll = nil
+        self.UI.incomingChallenge = nil
+        self.UI.inputRoll = game.initialRoll
+        self.UI.inputWager = game.wager
+        if self.UI.rollEdit then self.UI.rollEdit:SetText(tostring(game.initialRoll)) end
+        self:SetWagerInputs(game.wager)
+    end
+    self:UpdateGameUIState("WAITING")
+    self:Print("Game cancelled locally. No result or payment was recorded.")
+    return true
 end
 
 -- Handle game end
@@ -3573,6 +3616,9 @@ function DRE:UpdateGameUIState(state)
     
     -- Update UI state
     self.UI.gameState = state
+    if self.UI.cancelGameButton then
+        self.UI.cancelGameButton:SetDisabled(not (self.gameState and self.gameState.isActive))
+    end
     
     -- Validate gameButton exists
     if not self.UI.gameButton then

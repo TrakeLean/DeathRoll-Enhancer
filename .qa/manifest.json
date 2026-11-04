@@ -19,7 +19,7 @@
         ".pkgmeta"
       ],
       "instructions": "Review the active addon against WoW client contracts and current primary API sources. Focus on localized RANDOM_ROLL_RESULT parsing, cross-realm and UTF-8 player identity, deprecated or restricted chat APIs, UI lifecycle contracts with AceGUI, and dependency packaging/load order. Distinguish source-confirmed defects from client-dependent concerns. Do not promise future compatibility or infer support from TOC numbers alone. Report precise file references, severity, reproduction conditions and minimal corrections. Remain read-only and do not repeat preparation.",
-      "reason": "The addon advertises multiple WoW client families, parses English-only rolls, uses direct client globals, and packages without embedded dependencies; a client-contract review is required beyond generic QA."
+      "reason": "The addon targets multiple WoW client families and uses localized rolls, restricted client APIs, full regional names, and pinned embedded libraries; client-contract review is needed beyond generic QA."
     }
   },
   "detection": {
@@ -30,7 +30,7 @@
         "name": "Lua"
       },
       {
-        "file_count": 4,
+        "file_count": 7,
         "name": "Python"
       },
       {
@@ -39,7 +39,7 @@
       }
     ],
     "scan": {
-      "file_count": 102,
+      "file_count": 105,
       "maximum_files": 20000,
       "truncated": false
     },
@@ -84,15 +84,15 @@
       "is_monorepo": false
     }
   },
-  "evidence_sha256": "02d41b813db1f6ddb99cf332d208c61285236679a67a7d4ec3c85e008bf187fb",
+  "evidence_sha256": "95563a3e40541c23b133145d6772f7b36fb9884945e77b1306e24852ccee0e8e",
   "fingerprints": {
-    ".github/workflows/release.yml": "ddad4bb4475120b774e8e7db10005f9a67626c8e6e8a5405b06878f75dfcc898",
+    ".github/workflows/release.yml": "4d6d142259ba0fbe0f966b072da18d30a912c561a46c6587e72c376f2f8c7ebb",
     ".pkgmeta": "10608943568d35a7eae9c376cea0ba2287c0682594745997165e8b89f1c0722a",
-    "Core.lua": "84bfdb8d4f57aeacad7045cd266547d1fd535d5f600a9533a91f2c434b1d4a11",
+    "Core.lua": "ca4bfe916268ff8e04f7223261b5aef57da76d4b16fc4a601e7d3124e9f46ef7",
     "DeathRollEnhancer.toc": "e3121905560e10c5c8d9e0c8c0ceaacefd87ee68ab25acc7d739224744464923",
     "Events.lua": "f09392ca82c4010651bb5a14c931f8e5ad69a8f858e0f0598d576a00c9a469d2",
-    "README.md": "80dd69df14600db4821535b5d1cfef57c81c74fa34e5ceca983ee810247c0564",
-    "UI.lua": "e14dcb2e0daf59190558d2f6c535b02d3fcfff0148354042a0cb2e97f42272e1",
+    "README.md": "3587a2129482a51d3f9c9af8547423437b00b674ef45a4c59c79aebacefdcebf",
+    "UI.lua": "5a219ad1c89798cf4952fc932c76c2184fcb69b4e782073972dd470cf1c8a2bd",
     "scripts/build_release.py": "1f1e72a2c1963c1dd1b23b60e2e00fce7a1c9c4b59ef8a231268ab2240218418",
     "tests/requirements.txt": "c355c313ec4744320b1e0d22e7e70465d899a48e8c62293578ddff95d0672c6b",
     "tests/test_addon.py": "287d2ccdbdab010ad7489acfbd93e767342598bd7e833874ecddca40202780bd"
@@ -104,7 +104,7 @@
     },
     ".codex/agents/quality_custom_wow_compatibility.toml": {
       "kind": "agent",
-      "sha256": "ff4baa64ea614336dce14017904c17688072ab33e27269b50888bbd49f1c87cf"
+      "sha256": "46d0e021df582647761f0c7634378e5aabae5d14ea9be24f4e18d7fa75da67d4"
     },
     ".codex/agents/quality_infrastructure.toml": {
       "kind": "agent",
@@ -120,14 +120,14 @@
     },
     ".qa/QA.md": {
       "kind": "managed_section",
-      "sha256": "5a91a8c0f00bead5fb6e7ddfcefb690314cb7be56be8590c5e83584ed5c14e39"
+      "sha256": "7fa2cde23aff1127902061c79031beaff7a982765db4d2297260af68b9b9d31c"
     },
     "AGENTS.md": {
       "kind": "managed_section",
       "sha256": "ecd9b36fbb1e89847f6d1d7fa7ae0b3c0f1a4228579bcfe08c4dae41aacc37b8"
     }
   },
-  "managed_qa_sha256": "5a91a8c0f00bead5fb6e7ddfcefb690314cb7be56be8590c5e83584ed5c14e39",
+  "managed_qa_sha256": "7fa2cde23aff1127902061c79031beaff7a982765db4d2297260af68b9b9d31c",
   "plugin_version": "0.2.0",
   "requested_agents": [
     "quality_correctness",

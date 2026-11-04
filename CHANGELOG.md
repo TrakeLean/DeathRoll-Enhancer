@@ -1,3 +1,13 @@
+## 2.3.13 — 2SChoppy Edition (2026-11-04)
+
+- Add a local Cancel button and `/dr cancel` to recover abandoned games without recording an outcome or payment; retire their pending roll callbacks.
+- Reject malformed or fractional history-editor inputs before changing records or pending trade wagers. Empty fields explicitly mean zero.
+- Refresh the visible History tab after games, edits, and deletions, including the first game and removal of the final player.
+- Fix minimap unlocking when the optional LibDBIcon library is available.
+- Repair Bash/PowerShell version preparation with shared UTF-8 metadata handling; preserve old changelog sections and extract only the current release notes.
+- Recheck upstream Ace3, Questie, Forever name/chat APIs, and trade-frame behavior. Applicable compatibility fixes are already present; no additional workaround was justified.
+- Validation: 56 host regression/package tests pass. Live testing on the intended Forever server/client remains outstanding.
+
 ## 2.3.12 — 2SChoppy Edition (2026-11-04)
 
 - Rename the current edition to **2SChoppy Edition** in the in-game status bar, all client addon listings, README, version templates, and GitHub release title.

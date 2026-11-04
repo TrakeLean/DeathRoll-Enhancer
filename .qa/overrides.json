@@ -11,7 +11,7 @@
         "DeathRollEnhancer.toc",
         ".pkgmeta"
       ],
-      "reason": "The addon advertises multiple WoW client families, parses English-only rolls, uses direct client globals, and packages without embedded dependencies; a client-contract review is required beyond generic QA."
+      "reason": "The addon targets multiple WoW client families and uses localized rolls, restricted client APIs, full regional names, and pinned embedded libraries; client-contract review is needed beyond generic QA."
     }
   },
   "commands": [
@@ -23,7 +23,7 @@
     },
     {
       "purpose": "package",
-      "command": "python3 scripts/build_release.py --version 2.3.12 --output dist/DeathRollEnhancer-2.3.12.zip",
+      "command": "python3 scripts/build_release.py --version \"$(cat VERSION)\" --output \"dist/DeathRollEnhancer-$(cat VERSION).zip\"",
       "working_directory": ".",
       "evidence": "scripts/build_release.py"
     }

@@ -2,7 +2,7 @@
 
 ## GitHub releases
 
-Update `VERSION`, the first `CHANGELOG.md` section, and the runtime fallback version together. Commit and push to `main`. The release workflow runs the Lua regression/package tests, builds the installable ZIP, then creates `v<VERSION>` and a GitHub release with the ZIP attached. It uses GitHub's repository token; no external upload credential is needed. Pull requests run verification without publishing. A manual workflow dispatch can retry an interrupted release; an existing release is never overwritten.
+Run `bash update-version.sh <new-version>` or `./update-version.ps1 <new-version>` with Python 3 installed. The shared helper updates `VERSION`, the runtime fallback, README title/badge, and a new first changelog section. Fill in that section before publishing. Commit and push to `main`. The release workflow runs the Lua regression/package tests, builds the installable ZIP, then creates `v<VERSION>` and a GitHub release with the ZIP attached. It uses GitHub's repository token; no external upload credential is needed. Pull requests run verification without publishing. A manual workflow dispatch can retry an interrupted release; an existing release is never overwritten.
 
 Download the attached `DeathRollEnhancer-<VERSION>.zip`, not GitHub's source archives. The source archives do not have the required installation folder or substituted version tokens.
 
@@ -74,7 +74,7 @@ Tag behavior:
 Run the tests in `TESTING.md`, then use the dependency-aware builder:
 
 ```sh
-python3 scripts/build_release.py --version 2.3.12 --output dist/DeathRollEnhancer-2.3.12.zip
+python3 scripts/build_release.py --version 2.3.13 --output dist/DeathRollEnhancer-2.3.13.zip
 ```
 
 It validates every TOC/XML dependency, includes pinned libraries and licenses, replaces version tokens, and writes one installable `DeathRollEnhancer` directory. When copying manually, include `embeds.xml` and the complete `Libs/` directory before the runtime modules. Record the target-client smoke-test status in release notes. GitHub publication does not confirm CurseForge publication; that still depends on the separately configured webhook.

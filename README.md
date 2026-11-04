@@ -1,12 +1,16 @@
-# DeathRoll Enhancer v2.3.12 - 2SChoppy Edition
+# DeathRoll Enhancer v2.3.13 - 2SChoppy Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.3.12-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.3.13-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with Ace3 and feature-detected compatibility paths; target-client validation is described below.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
+
+## Version 2.3.13: game recovery and safer editing
+
+Use **Cancel** beside the game button or `/dr cancel` to leave an abandoned game locally. Cancellation records no result or payment and leaves earlier unpaid games intact. History edits now reject invalid amounts instead of silently replacing them with zero, and the History tab refreshes immediately after data changes. Minimap unlocking and release preparation are repaired too.
 
 ## Version 2.3.11: trade gold capture
 

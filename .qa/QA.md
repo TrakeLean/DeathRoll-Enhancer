@@ -6,7 +6,7 @@
 - Profile schema: `1`
 - Project-quality plugin: `0.2.0`
 - Root type: `git`
-- Files inventoried: `102`
+- Files inventoried: `105`
 - Monorepo detected: `no`
 - Documentation-only: `no`
 
@@ -16,8 +16,9 @@
 | --- | ---: |
 | `Libs` | 45 |
 | `versions` | 22 |
-| `tests` | 5 |
+| `tests` | 7 |
 | `Media` | 2 |
+| `scripts` | 2 |
 | `.claude` | 1 |
 | `.gitattributes` | 1 |
 | `.github` | 1 |
@@ -39,7 +40,6 @@
 | `PROJECT_CONTEXT.md` | 1 |
 | `README.md` | 1 |
 | `RELEASE_PROCESS.md` | 1 |
-| `scripts` | 1 |
 | `TESTING.md` | 1 |
 | `UI.lua` | 1 |
 | `update-version.ps1` | 1 |
@@ -48,7 +48,7 @@
 ### Languages
 
 - Lua: 50 files
-- Python: 4 files
+- Python: 7 files
 - Shell: 1 files
 
 ### Important entry points
@@ -63,12 +63,12 @@ Commands use POSIX shell syntax. For PowerShell or cmd.exe, use the command work
 | Purpose | Command | Working directory | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | test | `python3 -m unittest discover -s tests -v` | `.` | `tests/test_addon.py` | configured |
-| package | `python3 scripts/build_release.py --version 2.3.12 --output dist/DeathRollEnhancer-2.3.12.zip` | `.` | `scripts/build_release.py` | configured |
+| package | `python3 scripts/build_release.py --version "$(cat VERSION)" --output "dist/DeathRollEnhancer-$(cat VERSION).zip"` | `.` | `scripts/build_release.py` | configured |
 
 ### Critical workflows
 
 - **test**: `python3 -m unittest discover -s tests -v`
-- **package**: `python3 scripts/build_release.py --version 2.3.12 --output dist/DeathRollEnhancer-2.3.12.zip`
+- **package**: `python3 scripts/build_release.py --version "$(cat VERSION)" --output "dist/DeathRollEnhancer-$(cat VERSION).zip"`
 
 ### Security boundaries
 

@@ -107,7 +107,11 @@ function DRE:SetMinimapLocked(locked)
     
     self.db.profile.minimap.lock = locked
     if LibDBIcon then
-        LibDBIcon:Lock("DeathRollEnhancer")
+        if locked then
+            LibDBIcon:Lock("DeathRollEnhancer")
+        else
+            LibDBIcon:Unlock("DeathRollEnhancer")
+        end
     end
 end
 

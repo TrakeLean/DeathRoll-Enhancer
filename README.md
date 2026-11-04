@@ -1,12 +1,24 @@
-# DeathRoll Enhancer v2.3.9 - SKEM Edition
+# DeathRoll Enhancer v2.3.10 - SKEM Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.3.9-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.3.10-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
-**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with the reliable Ace3 framework for maximum stability and performance across all WoW versions.
+**The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with Ace3 and feature-detected compatibility paths; target-client validation is described below.
 
 Available for download at [CurseForge](https://www.curseforge.com/wow/addons/deathroll-enhancer).
+
+## Version 2.3.10: correctness and Forever compatibility
+
+This version fixes roll impersonation, turn enforcement, challenge acceptance, stale UI callbacks, and history edits targeting the wrong game. Required Ace3 modules are bundled, including upstream Forever name/profile support. Full surnames, UTF-8 names, and remote realm identities are preserved; roll parsing uses the client's localized format.
+
+History records now have stable IDs. Migration preserves old rows and lifetime totals; deduplication no longer guesses from minute/second timestamps. Trade-wager settlements survive reload for five minutes. If several unpaid games match one trade, use `/dr edit` to assign that payment explicitly.
+
+For commands taking two full names, quote each one: `/dr merge "Alice Smith" "Alice Jones"`. `/dr sendstats Alice Smith party` supports full names too.
+
+The official Forever interface is included, but this build still needs in-game testing on the intended server/client. See [verification and client smoke tests](TESTING.md). Optional LibDBIcon and media integrations still require their optional libraries.
+
+Challenge and data confirmations use addon-owned dialogs to avoid the Forever controller popup issue reported by Questie. Chat sends honor temporary client lockdown. The package includes both Forever and Camelot manifests. See [research sources and applicability](TESTING.md#forever-research-sources).
 
 ## What's New in Version 2.3.9
 
@@ -110,7 +122,7 @@ Access via `/dr config` or the in-window `Settings` tab for extensive customizat
 
 - **Built with Ace3** for rock-solid stability and performance
 - **LibSharedMedia integration** for consistent UI theming
-- **Persistent data storage** with automatic backup/restore
+- **Persistent data storage** with exportable backups and conservative legacy migration
 - **Comprehensive error handling** with debug system
 - **Memory efficient** with smart data management
 - **TBC compatible** with automatic fallback for older APIs

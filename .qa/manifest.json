@@ -1,0 +1,141 @@
+{
+  "active_agents": [
+    "quality_correctness",
+    "quality_security",
+    "quality_reliability",
+    "quality_infrastructure",
+    "quality_custom_wow_compatibility"
+  ],
+  "agents_block_sha256": "ecd9b36fbb1e89847f6d1d7fa7ae0b3c0f1a4228579bcfe08c4dae41aacc37b8",
+  "conflicts": [],
+  "custom_specialists": {
+    "wow_compatibility": {
+      "description": "WoW client compatibility, localization, and addon distribution readiness",
+      "evidence": [
+        "Core.lua",
+        "Events.lua",
+        "UI.lua",
+        "DeathRollEnhancer.toc",
+        ".pkgmeta"
+      ],
+      "instructions": "Review the active addon against WoW client contracts and current primary API sources. Focus on localized RANDOM_ROLL_RESULT parsing, cross-realm and UTF-8 player identity, deprecated or restricted chat APIs, UI lifecycle contracts with AceGUI, and dependency packaging/load order. Distinguish source-confirmed defects from client-dependent concerns. Do not promise future compatibility or infer support from TOC numbers alone. Report precise file references, severity, reproduction conditions and minimal corrections. Remain read-only and do not repeat preparation.",
+      "reason": "The addon advertises multiple WoW client families, parses English-only rolls, uses direct client globals, and packages without embedded dependencies; a client-contract review is required beyond generic QA."
+    }
+  },
+  "detection": {
+    "documentation_only": false,
+    "languages": [
+      {
+        "file_count": 50,
+        "name": "Lua"
+      },
+      {
+        "file_count": 3,
+        "name": "Python"
+      },
+      {
+        "file_count": 1,
+        "name": "Shell"
+      }
+    ],
+    "scan": {
+      "file_count": 101,
+      "maximum_files": 20000,
+      "truncated": false
+    },
+    "specialists": {
+      "api_contracts": {
+        "applicable": false,
+        "evidence": []
+      },
+      "database_data_integrity": {
+        "applicable": false,
+        "evidence": []
+      },
+      "frontend_accessibility": {
+        "applicable": false,
+        "evidence": []
+      },
+      "game_engine": {
+        "applicable": false,
+        "evidence": []
+      },
+      "infrastructure_ci_deployment": {
+        "applicable": true,
+        "evidence": [
+          ".github/workflows/release.yml"
+        ]
+      },
+      "ml_data_pipeline": {
+        "applicable": false,
+        "evidence": []
+      },
+      "mobile": {
+        "applicable": false,
+        "evidence": []
+      },
+      "published_library": {
+        "applicable": false,
+        "evidence": []
+      }
+    },
+    "workspace": {
+      "evidence": [],
+      "is_monorepo": false
+    }
+  },
+  "evidence_sha256": "88e42c56aa07b74779b57b717ff9c0d5bf0dab3303ddc32a11151625a50014bd",
+  "fingerprints": {
+    ".github/workflows/release.yml": "6b6e7a82f794f6c21b30707328e61bdaa1c30e04a434fc57f2ac497dd204231c",
+    ".pkgmeta": "10608943568d35a7eae9c376cea0ba2287c0682594745997165e8b89f1c0722a",
+    "Core.lua": "0e8677f2d8312d1d3a959c5061de11ce82b8e54b43ef3b305bebe091303ceaab",
+    "DeathRollEnhancer.toc": "33aedaddf491a7a442cbeb51f2a1bf51e0e8351a76af9f7f305fd98649e6a206",
+    "Events.lua": "f09392ca82c4010651bb5a14c931f8e5ad69a8f858e0f0598d576a00c9a469d2",
+    "README.md": "2d2bef6a5998b0a96e5ec5d6c0bfa3645aa77ff6e2be7ea6cb6f7b773c942e70",
+    "UI.lua": "c3e296db9bb7079f0b4b9ff4ce8682f3850347ea0e1fafac6b953300179bf171",
+    "scripts/build_release.py": "1f1e72a2c1963c1dd1b23b60e2e00fce7a1c9c4b59ef8a231268ab2240218418",
+    "tests/requirements.txt": "c355c313ec4744320b1e0d22e7e70465d899a48e8c62293578ddff95d0672c6b",
+    "tests/test_addon.py": "287d2ccdbdab010ad7489acfbd93e767342598bd7e833874ecddca40202780bd"
+  },
+  "generated_files": {
+    ".codex/agents/quality_correctness.toml": {
+      "kind": "agent",
+      "sha256": "362b31e6354b5404b7f0c5a01b38ef8e57d1c33d4d01d26ee82bde6542a2795f"
+    },
+    ".codex/agents/quality_custom_wow_compatibility.toml": {
+      "kind": "agent",
+      "sha256": "ff4baa64ea614336dce14017904c17688072ab33e27269b50888bbd49f1c87cf"
+    },
+    ".codex/agents/quality_infrastructure.toml": {
+      "kind": "agent",
+      "sha256": "f1785cfed5b5a74f780b12586431db5ccda6e67e04b644f34e54fae9558c6abb"
+    },
+    ".codex/agents/quality_reliability.toml": {
+      "kind": "agent",
+      "sha256": "6a6e32e25687cfb797cef20df049c3684cc5cb7bcfe7798c56c80d9805965f9a"
+    },
+    ".codex/agents/quality_security.toml": {
+      "kind": "agent",
+      "sha256": "c0048f025138dd49f4b0bfa016ffda0b1c03aaa3e01981eaac8b616cc6ad5c1a"
+    },
+    ".qa/QA.md": {
+      "kind": "managed_section",
+      "sha256": "493d9354dc0a0ddaddfb6fda949a2a0b4cf8c5b8823aa8583479b2cd57efb70b"
+    },
+    "AGENTS.md": {
+      "kind": "managed_section",
+      "sha256": "ecd9b36fbb1e89847f6d1d7fa7ae0b3c0f1a4228579bcfe08c4dae41aacc37b8"
+    }
+  },
+  "managed_qa_sha256": "493d9354dc0a0ddaddfb6fda949a2a0b4cf8c5b8823aa8583479b2cd57efb70b",
+  "plugin_version": "0.2.0",
+  "requested_agents": [
+    "quality_correctness",
+    "quality_security",
+    "quality_reliability",
+    "quality_infrastructure",
+    "quality_custom_wow_compatibility"
+  ],
+  "root_kind": "git",
+  "schema_version": 1
+}

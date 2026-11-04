@@ -1,0 +1,7 @@
+Ace3 (required embedded modules)
+Source: https://github.com/WoWUIDev/Ace3
+Revision: ac3d1225037e0dc74e025a72342c0f7824aae147
+License: Ace3-LICENSE.txt; individual source headers also apply.
+
+Includes Forever AceDB surname/ruleset fixes newer than Release-r1403.
+Update deliberately from upstream and rerun regression/package checks.

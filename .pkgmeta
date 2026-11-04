@@ -14,3 +14,11 @@ ignore:
   - RELEASE_PROCESS.md
   - CurseForge_Description.md
   - .gitattributes
+  - .codex
+  - .qa
+  - .github
+  - AGENTS.md
+  - tests
+  - scripts
+  - VERSION
+  - .gitignore

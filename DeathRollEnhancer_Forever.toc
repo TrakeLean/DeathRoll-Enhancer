@@ -1,0 +1,20 @@
+## Interface: 16001
+## Title: |cFFFF0000Death|r|cffffffffRoll|r Enhancer
+## Version: @project-version@
+## Author: 0xTrk
+## Notes: |cFFFF0000Version @project-version@|r - SKEM Edition. |n|n|cffffffffHighlights:|r|n- Wrong-roll range detection and suspicious roll tracking|n- /dr merge and /dr dedupe for history cleanup|n- /dr sendstats supports Party/Raid/Guild/Officer/Instance/Say/Yell|n- History tab channel selector for quick stats broadcast|n- "Most Likely to Cheat" fun stat|n|n|cffbbbbbbBy 0xTrk - Powered by Ace3|r
+## DefaultState: enabled
+## IconTexture: Interface\Addons\DeathRollEnhancer\Media\Logo.tga
+## SavedVariables: DeathRollEnhancerDB, DeathRollEnhancer_DebugExport
+## OptionalDeps: Ace3, LibSharedMedia-3.0, LibDBIcon-1.0, LibUIDropDownMenu
+
+# Required libraries (pinned and bundled)
+embeds.xml
+
+# Addon modules
+Core.lua
+Database.lua
+UI.lua
+Dialogs.lua
+Events.lua
+Minimap.lua

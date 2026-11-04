@@ -1,3 +1,17 @@
+## 2.3.10 — correctness and Forever compatibility (2026-11-04)
+
+- Accept only validated server system rolls; enforce turn ownership and bind delayed rolls to their originating game/request.
+- Preserve challenge opener ranges, opening-one results, zero wagers, expiry, and current displayed terms. Repair popup initialization and callback ownership.
+- Parse localized roll formats, preserve full surnames/UTF-8/realm identities, guard restricted values, and support full names in commands.
+- Add stable game IDs, safe editor/delete/settlement references, deterministic same-second ordering, and conservative legacy migration/deduplication.
+- Persist pending trade wagers across reload; refuse ambiguous payments and clear manually settled records.
+- Restore active UI state after tab switches, release secondary windows, and cancel stale layout work.
+- Embed pinned required Ace3 modules with upstream Forever fixes; add regression tests and deterministic local packaging.
+- Replace Blizzard popups with addon-owned confirmations, with combat deferral, expiry, Escape/controller dismissal, and stale-callback protection, following Questie's Forever fix.
+- Respect temporary chat lockdown and report failed challenge sends, following ShamanPower and FrontierScout.
+- Ship Forever/Camelot manifests and add a test-gated GitHub release workflow.
+- Validation: 38 Lua 5.1 regression/package tests. In-game validation on the target server/client build is still outstanding.
+
 # DeathRoll Enhancer - Changelog
 
 ## Version 2.3.9 - Stats Broadcast Hotfix

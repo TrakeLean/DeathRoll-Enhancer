@@ -20,6 +20,49 @@ UI.opponentRoll = nil
 UI.gameState = "WAITING" -- WAITING, ROLLING, FINISHED
 UI.rollHistory = {}
 
+function DRE:ReleaseWindowOnClose(window, reference)
+    self.transientWindows = self.transientWindows or {}
+    self.transientWindows[window] = true
+    window:SetCallback("OnClose", function(widget)
+        if not self.transientWindows[widget] then return end
+        self.transientWindows[widget] = nil
+        if reference and self[reference] == widget then self[reference] = nil end
+        AceGUI:Release(widget)
+    end)
+end
+
+function DRE:AfterUI(delay, callback)
+    local generation = UI.tabGeneration or 0
+    C_Timer.After(delay, function()
+        if not self.disabled and generation == (UI.tabGeneration or 0) then callback() end
+    end)
+end
+
+function DRE:SetWagerInputs(amount)
+    UI.inputWager = amount or 0
+    if UI.goldEdit then UI.goldEdit:SetText(tostring(math.floor(UI.inputWager / 10000))) end
+    if UI.silverEdit then UI.silverEdit:SetText(tostring(math.floor(UI.inputWager % 10000 / 100))) end
+    if UI.copperEdit then UI.copperEdit:SetText(tostring(UI.inputWager % 100)) end
+end
+
+function DRE:RestoreGameControls()
+    local game = self.gameState
+    if game and game.isActive then
+        UI.currentTarget = game.target
+        self:SetWagerInputs(game.wager)
+        if UI.rollEdit then UI.rollEdit:SetText(tostring(game.currentRoll)) end
+        local state = game.pendingRoll and "WAITING_FOR_ROLL_RESULT"
+            or ((game.playerTurn or self:IsSamePlayer(game.target, self:GetUnitPlayerName("player")))
+                and "ROLLING" or "WAITING_FOR_OPPONENT")
+        self:UpdateGameUIState(state)
+    else
+        if UI.rollEdit and UI.inputRoll then UI.rollEdit:SetText(tostring(UI.inputRoll)) end
+        self:SetWagerInputs(UI.inputWager or 0)
+        self:UpdateGameUIState(UI.gameState == "GAME_OVER" and "GAME_OVER" or "WAITING")
+        self:UpdateChallengeButtonText()
+    end
+end
+
 -- Initialize UI system
 function DRE:InitializeUI()
     self.UI = self.UI or {}
@@ -150,6 +193,10 @@ function DRE:ShowMainWindow()
     
     if UI.mainWindow then
         UI.mainWindow:Show()
+        if UI.currentTab == "deathroll" and self.gameState and self.gameState.isActive then
+            self:RestoreGameControls()
+        end
+        self:QueueLayoutRefresh()
         self:UpdateMainTabLayout()
         self:UpdateRollHistoryPanelVisibility()
         -- Check for recent rolls when reopening UI
@@ -230,6 +277,11 @@ function DRE:ShowMainWindow()
         {text="Settings", value="settings"}
     })
     tabGroup:SetCallback("OnGroupSelected", function(container, event, group)
+        if not (self.gameState and self.gameState.isActive) then
+            if UI.rollEdit then UI.inputRoll = tonumber(UI.rollEdit:GetText()) end
+            if UI.goldEdit then UI.inputWager = self:CalculateWagerFromUI() end
+        end
+        UI.tabGeneration = (UI.tabGeneration or 0) + 1
         self:ReleaseEmbeddedRollHistory()
         container:ReleaseChildren()
         -- Clear UI references when switching tabs to prevent cross-contamination
@@ -242,6 +294,7 @@ function DRE:ShowMainWindow()
         UI.historyBox = nil
         UI.historyScroll = nil
         UI.historyDropdown = nil
+        UI.statsBroadcastChannelDropdown = nil
         UI.settingsScroll = nil
         UI.settingsContent = nil
         UI.tradeWagerHelp = nil
@@ -296,12 +349,12 @@ function DRE:ShowMainWindow()
 
     frame.frame:HookScript("OnSizeChanged", function()
         self:RefreshVisibleUILayout()
-        C_Timer.After(0, function()
+        self:AfterUI(0, function()
             self:RefreshVisibleUILayout()
         end)
     end)
 
-    C_Timer.After(0, function()
+    self:AfterUI(0, function()
         self:QueueLayoutRefresh()
         self:UpdateRollHistoryPanelVisibility()
     end)
@@ -590,13 +643,12 @@ function DRE:CreateGameSection(container)
     end
     
     self:UpdateWagerInputMode()
-    C_Timer.After(0, function()
+    self:AfterUI(0, function()
         self:UpdateGameSectionLayout()
         self:RefreshRollHistoryDisplay()
     end)
     
-    -- Update button text with current target initially
-    self:UpdateChallengeButtonText()
+    self:RestoreGameControls()
 end
 
 function DRE:UpdateGameSectionLayout()
@@ -738,7 +790,7 @@ function DRE:RefreshRollHistoryDisplay()
 
         self:UpdateRollHistoryPanelLayout()
 
-        C_Timer.After(0, function()
+        self:AfterUI(0, function()
             if not (UI and UI.rollHistoryScroll and UI.rollHistoryContent) then
                 return
             end
@@ -772,7 +824,7 @@ function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
         return
     end
 
-    local myName = UnitName("player")
+    local myName = DRE:GetUnitPlayerName("player")
     if not myName then
         self:DebugPrint("AddRollToHistory: Could not get player name")
         return
@@ -951,7 +1003,7 @@ function DRE:CreateStatsSection(container)
     self:CreateFunStatsSection(statsGroup)
     
     -- Force ScrollFrame to recalculate content area
-    C_Timer.After(0.1, function()
+    self:AfterUI(0.1, function()
         if statsGroup and statsGroup.content then
             statsGroup:DoLayout()
         end
@@ -1221,7 +1273,7 @@ function DRE:CreateHistorySection(container)
     historyScroll:AddChild(historyLabel)
     
     -- Force ScrollFrame to recalculate content area
-    C_Timer.After(0.1, function()
+    self:AfterUI(0.1, function()
         if historyGroup and historyGroup.content then
             historyGroup:DoLayout()
         end
@@ -1243,7 +1295,7 @@ function DRE:CreateHistorySection(container)
     -- Show first player's history by default
     self:UpdateHistoryDisplay(playerNames[1])
 
-    C_Timer.After(0, function()
+    self:AfterUI(0, function()
         self:UpdateHistorySectionLayout()
     end)
 end
@@ -1257,7 +1309,7 @@ function DRE:RefreshHistoryLayout()
 
     UI.historyScroll:DoLayout()
 
-    C_Timer.After(0, function()
+    self:AfterUI(0, function()
         if not (UI and UI.historyScroll and UI.historyScroll.scrollbar) then
             return
         end
@@ -1449,6 +1501,7 @@ function DRE:CreateSettingsSection(container)
     addButton(dataGroup, "Export Data", function()
         local exportString = self:ExportData()
         local frame = AceGUI:Create("Frame")
+        self:ReleaseWindowOnClose(frame)
         frame:SetTitle("Export Data")
         frame:SetLayout("Fill")
         frame:SetWidth(600)
@@ -1467,7 +1520,7 @@ function DRE:CreateSettingsSection(container)
         self:ShowEditGameDialog()
     end)
     addButton(dataGroup, "Reset All Data", function()
-        StaticPopup_Show("DEATHROLL_RESET_CONFIRM")
+        DRE:ShowDialog("DEATHROLL_RESET_CONFIRM")
     end)
 
     local funStatSections = {
@@ -1519,7 +1572,7 @@ function DRE:CreateSettingsSection(container)
     UI.settingsScroll = settingsScroll
     UI.settingsContent = settingsGroup
 
-    C_Timer.After(0.1, function()
+    self:AfterUI(0.1, function()
         if UI and UI.settingsContent and UI.settingsContent.DoLayout then
             UI.settingsContent:DoLayout()
         end
@@ -1593,6 +1646,7 @@ function DRE:ShowHistory(playerName)
     
     -- Create history window
     local histFrame = AceGUI:Create("Frame")
+    self:ReleaseWindowOnClose(histFrame)
     histFrame:SetTitle("History with " .. playerName)
     histFrame:SetLayout("Fill")
     histFrame:SetWidth(500)
@@ -1647,6 +1701,7 @@ function DRE:UpdateStatsDisplay()
     end
 
     -- Rebuild the statistics tab so sectioned fun stats stay in sync with live edits/deletes/cleanup.
+    UI.tabGeneration = (UI.tabGeneration or 0) + 1
     UI.tabGroup:ReleaseChildren()
     self:CreateStatsSection(UI.tabGroup)
     if UI.tabGroup.DoLayout then
@@ -1820,7 +1875,7 @@ function DRE:CreateSpicyDuelSection(container)
     challengeButton:SetText("Challenge Target to Spicy Duel")
     challengeButton:SetFullWidth(true)
     challengeButton:SetCallback("OnClick", function()
-        local target = UnitName("target")
+        local target = DRE:GetUnitPlayerName("target")
         if not target or target == "" then
             self:Print("Please target a player first!")
             return
@@ -1891,157 +1946,69 @@ end
 
 -- Handle game button clicks based on current state
 function DRE:HandleGameButtonClick()
-    local gameState = UI.gameState or "WAITING"
-    
-    if gameState == "WAITING" or gameState == "GAME_OVER" then
-        -- Initial challenge state or starting new game after previous ended
-        if gameState == "GAME_OVER" then
-            -- Reset to WAITING state first to clear previous game
-            self:UpdateGameUIState("WAITING")
-        end
-        
-        -- Check if we have a recent target roll (challenge to accept)
-        if UI.recentTargetRoll then
-            -- Accept the challenge - start DeathRoll with their roll result
-            local targetName = UnitName("target")
-            if targetName and targetName == UI.recentTargetRoll.playerName then
-                local wager = self:CalculateWagerFromUI()
-                self:DebugPrint("Accepting challenge from " .. targetName .. " with roll " .. UI.recentTargetRoll.roll)
-                self:StartDeathRoll(targetName, UI.recentTargetRoll.roll, wager, self:IsTradeWagerModeEnabled())
-            else
-                self:Print("Target changed - please target " .. (UI.recentTargetRoll.playerName or "the challenger") .. " to accept their challenge")
-            end
-        else
-            -- Start a new challenge
-            self:StartChallengeFlow()
-        end
-    elseif gameState == "ROLLING" then
-        -- Player needs to roll
+    if self.gameState and self.gameState.isActive then
         self:PerformRoll()
-    elseif gameState == "WAITING_FOR_OPPONENT" then
-        -- Waiting for opponent, button should be disabled
-        self:Print("Waiting for opponent to roll...")
+        return
+    end
+    local observed = UI.recentTargetRoll
+    if observed then
+        self:AcceptObservedChallenge(observed)
+    else
+        self:StartChallengeFlow()
     end
 end
 
--- Accept an incoming challenge from targeted player
+function DRE:AcceptObservedChallenge(observed)
+    if self.gameState and self.gameState.isActive then return false end
+    local target = self:GetUnitPlayerName("target")
+    if not observed or not self:IsSamePlayer(observed.playerName, target)
+        or not observed.timestamp or GetTime() - observed.timestamp > (self.recentRollTimeWindow or 60) then
+        UI.recentTargetRoll, UI.incomingChallenge = nil, nil
+        self:UpdateChallengeButtonText()
+        self:Print("That roll is no longer a current challenge. Ask your target to roll again.")
+        return false
+    end
+    local wager = self:CalculateWagerFromUI()
+    local valid, reason = self:ValidateGameInputs(target, observed.maxRoll, wager)
+    if not valid then self:Print(reason); return false end
+    if not self:IsBoundedInteger(observed.roll, 1, observed.maxRoll) then return false end
+    local trackTrade = self:IsTradeWagerModeEnabled()
+    self:StartActualGame(target, observed.maxRoll, wager, observed.roll, trackTrade)
+    self:AddRollToHistory(target, observed.roll, observed.maxRoll, false, nil)
+    if observed.roll == 1 then
+        self:HandleGameEnd(target, "WIN", wager, observed.maxRoll)
+    else
+        self:PerformRoll()
+    end
+    return true
+end
+
 function DRE:AcceptIncomingChallenge()
     local challenge = UI.incomingChallenge
-    if not challenge then
-        self:Print("No incoming challenge to accept!")
-        return
-    end
-    
-    local challenger = challenge.player
-    local theirRoll = challenge.roll
-    local maxRoll = challenge.maxRoll
-    local wager = 0 -- Could be made configurable
-    local trackWagerByTrade = self:IsTradeWagerModeEnabled()
-    
-    self:ChatPrint("Accepting " .. challenger .. "'s DeathRoll challenge!")
-    self:ChatPrint(challenger .. " rolled " .. theirRoll .. " (1-" .. maxRoll .. ")")
-    
-    -- Start the game with their roll
-    if theirRoll == 1 then
-        self:ChatPrint(challenger .. " rolled 1 and lost! You won!")
-        self:HandleGameEnd(challenger, "WIN", wager, maxRoll, {
-            opponent = challenger,
-            trackWagerByTrade = trackWagerByTrade
-        })
-    else
-        self:ChatPrint("Your turn! Roll 1-" .. theirRoll)
-        -- Start the game - they already rolled, now it's your turn
-        self:StartActualGame(challenger, maxRoll, wager, theirRoll, trackWagerByTrade)
-    end
-    
-    -- Clear the challenge data
-    UI.incomingChallenge = nil
-    
-    -- Update UI to normal state
-    self:UpdateChallengeButtonText()
+    if not challenge then return false end
+    return self:AcceptObservedChallenge({ playerName = challenge.player, roll = challenge.roll,
+        maxRoll = challenge.maxRoll, timestamp = challenge.timestamp })
 end
 
--- Deny an incoming challenge
 function DRE:DenyIncomingChallenge()
-    local challenge = UI.incomingChallenge
-    if not challenge then
-        return
-    end
-    
-    self:ChatPrint("Denied " .. challenge.player .. "'s DeathRoll challenge.")
-    
-    -- Clear the challenge data
-    UI.incomingChallenge = nil
-    
-    -- Update UI to normal state
+    UI.incomingChallenge, UI.recentTargetRoll = nil, nil
+    self:ClearRecentRollsForPlayer(self:GetUnitPlayerName("target"))
     self:UpdateChallengeButtonText()
 end
 
--- Accept a recent roll detected in chat or use your roll to challenge
 function DRE:AcceptRecentRoll()
-    local rollData = UI.recentTargetRoll
-    if not rollData then
-        self:Print("No recent roll found!")
-        return
-    end
-    
-    local rollOwner = rollData.player
-    local rollResult = rollData.roll
-    local maxRoll = rollData.maxRoll
-    local currentTarget = UnitName("target")
-    local wager = 0 -- Could be made configurable
-    local trackWagerByTrade = self:IsTradeWagerModeEnabled()
-    
-    if rollOwner == UnitName("player") then
-        -- You rolled - challenge the current target with your roll
-        if not currentTarget then
-            self:Print("No target selected to challenge!")
-            return
-        end
-        
-        self:ChatPrint("Challenging " .. currentTarget .. " with your roll of " .. rollResult .. " (1-" .. maxRoll .. ")!")
-        
-        -- Start game with your roll as the starting point
-        if rollResult == 1 then
-            self:ChatPrint("You rolled 1 and lost! " .. currentTarget .. " wins!")
-            self:HandleGameEnd(currentTarget, "LOSS", wager, maxRoll, {
-                opponent = currentTarget,
-                trackWagerByTrade = trackWagerByTrade
-            })
-        else
-            -- Start the game - you already rolled, now target needs to roll
-            self:StartActualGame(currentTarget, maxRoll, wager, rollResult, trackWagerByTrade)
-        end
-    else
-        -- Someone else rolled - accept their challenge
-        self:ChatPrint("Accepting " .. rollOwner .. "'s DeathRoll! They rolled " .. rollResult .. " (1-" .. maxRoll .. ")")
-        
-        -- Start game with their roll as the starting point
-        if rollResult == 1 then
-            self:ChatPrint(rollOwner .. " rolled 1 and lost! You won!")
-            self:HandleGameEnd(rollOwner, "WIN", wager, maxRoll, {
-                opponent = rollOwner,
-                trackWagerByTrade = trackWagerByTrade
-            })
-        else
-            -- Start the game - they already rolled, now it's your turn
-            self:StartActualGame(rollOwner, maxRoll, wager, rollResult, trackWagerByTrade)
-        end
-    end
-    
-    -- Clear the recent roll data
-    UI.recentTargetRoll = nil
+    return self:AcceptObservedChallenge(UI.recentTargetRoll)
 end
 
 -- Start the challenge flow
 function DRE:StartChallengeFlow()
-    local target = UnitName("target")
+    local target = DRE:GetUnitPlayerName("target")
     
     -- Check if we have a target
     if UnitExists("target") then
         -- Check if target is yourself (self-dueling)
         if UnitIsUnit("target", "player") then
-            target = UnitName("player")
+            target = DRE:GetUnitPlayerName("player")
             self:Print("Self-duel mode activated!")
         else
             -- Check if target is a player (not NPC)
@@ -2051,7 +2018,7 @@ function DRE:StartChallengeFlow()
             end
             
             -- Target is a valid player
-            target = UnitName("target")
+            target = DRE:GetUnitPlayerName("target")
         end
     else
         -- No target selected
@@ -2082,52 +2049,49 @@ function DRE:StartChallengeFlow()
         return
     end
     
-    -- Store current target and game info for UI updates
-    UI.currentTarget = target
-    UI.initialRoll = roll
-    UI.currentWager = totalWager
-
-    -- Send challenge whisper (if enabled and not self-duel)
-    if target ~= UnitName("player") then
+    local valid, reason = self:ValidateGameInputs(target, roll, totalWager)
+    if not valid then self:Print(reason); return end
+    if not usingTradeWager then
+        valid, reason = self:ValidateWager(gold, silver, copper)
+        if not valid then self:Print(reason); return end
+    end
+    if self:StartDeathRoll(target, roll, totalWager, usingTradeWager)
+        and not self:IsSamePlayer(target, self:GetUnitPlayerName("player")) then
         self:SendChallengeWhisper(target, roll, totalWager)
     end
-
-    -- Skip rolling state since we auto-roll, go straight to waiting for opponent
-    self:UpdateGameUIState("WAITING_FOR_OPPONENT")
-
-    -- Start the challenge
-    self:StartDeathRoll(target, roll, totalWager, usingTradeWager)
 end
 
 -- Perform a roll in the active game
 function DRE:PerformRoll()
-    if not self.gameState or not self.gameState.isActive then
-        self:Print("No active game!")
-        return
+    local game = self.gameState
+    if not game or not game.isActive or self.disabled then return false end
+    if game.pendingRoll then return false end
+    if not game.playerTurn and not self:IsSamePlayer(game.target, self:GetUnitPlayerName("player")) then
+        self:RestoreGameControls()
+        return false
     end
-
-    local rollRange = self.gameState.currentRoll
-    if not rollRange or rollRange < 1 then
-        self:Print("Invalid roll range!")
-        return
-    end
-
-    -- Update UI to show we're waiting for the roll result
+    if not self:IsBoundedInteger(game.currentRoll, 1, self.MAX_ROLL) then return false end
+    local request, range = {}, game.currentRoll
+    game.pendingRoll = request
     self:UpdateGameUIState("WAITING_FOR_ROLL_RESULT")
-
-    -- Perform the roll using WoW's built-in roll system with a small delay
+    local function isCurrent()
+        return not self.disabled and self.gameState == game and game.isActive and game.pendingRoll == request
+    end
     C_Timer.After(0.1, function()
-        RandomRoll(1, rollRange)
-    end)
-
-    -- Fallback timeout to reset UI if roll detection fails (especially for self-duels)
-    -- Account for the 0.1s delay before the roll
-    C_Timer.After(3.2, function()
-        if self.UI and self.UI.gameState == "WAITING_FOR_ROLL_RESULT" then
-            self:DebugPrint("Roll detection timeout - resetting UI to ROLLING state")
-            self:UpdateGameUIState("ROLLING")
+        if not isCurrent() then return end
+        local ok, reason = pcall(RandomRoll, 1, range)
+        if not ok and isCurrent() then
+            game.pendingRoll = nil
+            self:RestoreGameControls()
+            self:Print("Unable to roll: " .. tostring(reason))
         end
     end)
+    C_Timer.After(3.2, function()
+        if not isCurrent() then return end
+        game.pendingRoll = nil
+        self:RestoreGameControls()
+    end)
+    return true
 end
 
 -- UpdateGameUIState function moved to Core.lua to avoid scoping issues
@@ -2135,15 +2099,11 @@ end
 
 -- Clean up UI
 function DRE:CleanupUI()
-    self:ReleaseEmbeddedRollHistory()
-
-    UI.rollHistoryGroup = nil
-    UI.rollHistoryScroll = nil
-    UI.rollHistoryContent = nil
-    UI.rollHistoryBox = nil
-
-    if UI.mainWindow then
-        UI.mainWindow:Hide()
-        UI.mainWindow = nil
-    end
+    UI.tabGeneration = (UI.tabGeneration or 0) + 1
+    UI.layoutRefreshToken = (UI.layoutRefreshToken or 0) + 1
+    -- This window owns persistent raw frame hooks. Keep it out of AceGUI's pool.
+    if UI.mainWindow then UI.mainWindow:Hide() end
+    local windows = {}
+    for window in pairs(self.transientWindows or {}) do windows[#windows + 1] = window end
+    for _, window in ipairs(windows) do window:Hide() end
 end

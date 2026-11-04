@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "custom_specialists": {
+    "wow_compatibility": {
+      "description": "WoW client compatibility, localization, and addon distribution readiness",
+      "instructions": "Review the active addon against WoW client contracts and current primary API sources. Focus on localized RANDOM_ROLL_RESULT parsing, cross-realm and UTF-8 player identity, deprecated or restricted chat APIs, UI lifecycle contracts with AceGUI, and dependency packaging/load order. Distinguish source-confirmed defects from client-dependent concerns. Do not promise future compatibility or infer support from TOC numbers alone. Report precise file references, severity, reproduction conditions and minimal corrections. Remain read-only and do not repeat preparation.",
+      "evidence": [
+        "Core.lua",
+        "Events.lua",
+        "UI.lua",
+        "DeathRollEnhancer.toc",
+        ".pkgmeta"
+      ],
+      "reason": "The addon advertises multiple WoW client families, parses English-only rolls, uses direct client globals, and packages without embedded dependencies; a client-contract review is required beyond generic QA."
+    }
+  },
+  "commands": [
+    {
+      "purpose": "test",
+      "command": "python3 -m unittest discover -s tests -v",
+      "working_directory": ".",
+      "evidence": "tests/test_addon.py"
+    },
+    {
+      "purpose": "package",
+      "command": "python3 scripts/build_release.py --version 2.3.10 --output dist/DeathRollEnhancer-2.3.10.zip",
+      "working_directory": ".",
+      "evidence": "scripts/build_release.py"
+    }
+  ]
+}

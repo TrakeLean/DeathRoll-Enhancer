@@ -30,7 +30,7 @@ local function ParseDateTimeToEpoch(dateText)
         return 0
     end
 
-    local parsedTime = time({
+    local ok, parsedTime = pcall(time, {
         year = tonumber(year),
         month = tonumber(month),
         day = tonumber(day),
@@ -39,7 +39,7 @@ local function ParseDateTimeToEpoch(dateText)
         sec = 0
     })
 
-    return tonumber(parsedTime) or 0
+    return ok and tonumber(parsedTime) or 0
 end
 
 local function GetGameTimestamp(game)
@@ -55,50 +55,112 @@ local function GetGameTimestamp(game)
     return ParseDateTimeToEpoch(game.date)
 end
 
-local function BuildGameDedupKey(game)
-    if not game then
-        return nil
+local function SameGameRecord(first, second)
+    for key, value in pairs(first) do if second[key] ~= value then return false end end
+    for key, value in pairs(second) do if first[key] ~= value then return false end end
+    return true
+end
+
+local function GameComesBefore(first, second)
+    local firstTime, secondTime = GetGameTimestamp(first), GetGameTimestamp(second)
+    if firstTime ~= secondTime then return firstTime < secondTime end
+    return (tonumber(first.sequence) or 0) < (tonumber(second.sequence) or 0)
+end
+
+local function HasPlayerTotals(player)
+    return (player.gamesPlayed or 0) > 0 or (player.goldWon or 0) > 0 or (player.goldLost or 0) > 0
+end
+
+local function InvalidateLegacyStreakCheckpoint(profile, game)
+    local legacy = profile.legacyStreaks
+    if legacy and (legacy.checkpointSequence or 0) > 0
+        and (tonumber(game.sequence) or 0) <= legacy.checkpointSequence then
+        -- An outcome covered by the snapshot changed. Its current streak is no
+        -- longer trustworthy; replay retained outcomes, keeping historical maxima.
+        legacy.checkpointSequence = 0
+        legacy.currentStreak = 0
+        legacy.rebuiltFromRetainedHistory = true
     end
-
-    local timestamp = tonumber(game.timestamp) or 0
-    local result = tostring(game.result or "")
-    local goldAmount = tonumber(game.goldAmount) or 0
-    local initialRoll = tonumber(game.initialRoll) or 0
-    local dateText = tostring(game.date or "")
-
-    if timestamp > 0 then
-        return string.format("t:%d|r:%s|g:%d|i:%d", timestamp, result, goldAmount, initialRoll)
-    end
-
-    return string.format("d:%s|r:%s|g:%d|i:%d", dateText, result, goldAmount, initialRoll)
 end
 
 local function DeduplicateRecentGames(playerData)
-    if not playerData then
-        return 0
-    end
-
-    local recentGames = playerData.recentGames
-    if type(recentGames) ~= "table" or #recentGames <= 1 then
-        return 0
-    end
-
-    local seen = {}
-    local deduped = {}
-    local removed = 0
-
-    for _, game in ipairs(recentGames) do
-        local key = BuildGameDedupKey(game)
-        if key and not seen[key] then
-            seen[key] = true
-            table.insert(deduped, game)
-        else
+    local seen, deduped, removed = {}, {}, 0
+    for _, game in ipairs(playerData.recentGames or {}) do
+        local existing = game.id and seen[game.id]
+        if existing and SameGameRecord(existing, game) then
             removed = removed + 1
+        else
+            if game.id then seen[game.id] = game end
+            deduped[#deduped + 1] = game
         end
     end
-
     playerData.recentGames = deduped
     return removed
+end
+
+function DRE:AllocateGameIdentity(game)
+    local profile = self.db.profile
+    profile.nextGameSequence = (profile.nextGameSequence or 0) + 1
+    game.sequence = profile.nextGameSequence
+    game.id = "dre:" .. game.sequence
+end
+
+-- Capture missing historical detail before any operation can change the rows.
+-- Old releases pruned rows while keeping lifetime totals. Never erase that data.
+function DRE:EnsureHistorySchema()
+    if not self.db or not self.db.profile then return end
+    local profile = self.db.profile
+    if self.historySchemaProfile == profile then return end
+    profile.history = profile.history or {}
+    profile.pendingTradeWagers = profile.pendingTradeWagers or {}
+    local counter, rows, incomplete = tonumber(profile.nextGameSequence) or 0, {}, false
+    for playerName, player in pairs(profile.history) do
+        local totals = { wins = 0, losses = 0, goldWon = 0, goldLost = 0 }
+        for index, game in ipairs(player.recentGames or {}) do
+            local amount = tonumber(game.goldAmount) or 0
+            if IsWinResult(game.result) then totals.wins = totals.wins + 1; totals.goldWon = totals.goldWon + amount end
+            if IsLossResult(game.result) then totals.losses = totals.losses + 1; totals.goldLost = totals.goldLost + amount end
+            counter = math.max(counter, tonumber(game.sequence) or 0,
+                type(game.id) == "string" and tonumber(game.id:match("^dre:(%d+)$")) or 0)
+            rows[#rows + 1] = { player = playerName, index = index, game = game }
+        end
+        if not player.legacyTotals then
+            player.legacyTotals = {}
+            player.legacySnapshot = {}
+            for key, represented in pairs(totals) do
+                local saved = tonumber(player[key]) or 0
+                player.legacySnapshot[key] = saved
+                player.legacyTotals[key] = math.max(0, saved - represented)
+            end
+        end
+        for _, value in pairs(player.legacyTotals) do if value > 0 then incomplete = true end end
+    end
+    profile.nextGameSequence = counter
+    table.sort(rows, function(a, b)
+        local aTime, bTime = GetGameTimestamp(a.game), GetGameTimestamp(b.game)
+        if aTime ~= bTime then return aTime < bTime end
+        if a.player ~= b.player then return a.player < b.player end
+        return a.index > b.index -- legacy per-player arrays are newest first
+    end)
+    local seen = {}
+    for _, row in ipairs(rows) do
+        local game = row.game
+        if not game.id or not game.sequence or (seen[game.id] and not SameGameRecord(seen[game.id], game)) then
+            self:AllocateGameIdentity(game)
+        end
+        seen[game.id] = game
+    end
+    if incomplete and not profile.legacyStreaks then
+        local tracking = profile.goldTracking or {}
+        profile.legacyStreaks = {
+            checkpointSequence = profile.nextGameSequence,
+            currentStreak = tracking.currentStreak or 0,
+            bestWinStreak = tracking.bestWinStreak or 0,
+            worstLossStreak = tracking.worstLossStreak or 0,
+        }
+    end
+    profile.historySchemaVersion = 1
+    self.historySchemaProfile = profile
 end
 
 local function RecalculatePlayerAggregates(playerData)
@@ -107,10 +169,11 @@ local function RecalculatePlayerAggregates(playerData)
     end
 
     local recentGames = playerData.recentGames or {}
-    local wins = 0
-    local losses = 0
-    local goldWon = 0
-    local goldLost = 0
+    local baseline = playerData.legacyTotals or {}
+    local wins = baseline.wins or 0
+    local losses = baseline.losses or 0
+    local goldWon = baseline.goldWon or 0
+    local goldLost = baseline.goldLost or 0
 
     for _, game in ipairs(recentGames) do
         local goldAmount = tonumber(game and game.goldAmount) or 0
@@ -144,6 +207,7 @@ end
 
 -- Merge all history from sourceName into targetName, then remove sourceName.
 function DRE:MergePlayerHistory(sourceName, targetName)
+    self:EnsureHistorySchema()
     if not self.db or not self.db.profile or not self.db.profile.history then
         return false, "No data available"
     end
@@ -177,6 +241,10 @@ function DRE:MergePlayerHistory(sourceName, targetName)
     end
 
     local targetData = history[targetName]
+    targetData.legacyTotals = targetData.legacyTotals or {}
+    for key, value in pairs(sourceData.legacyTotals or {}) do
+        targetData.legacyTotals[key] = (targetData.legacyTotals[key] or 0) + value
+    end
     targetData.recentGames = targetData.recentGames or {}
     local mergedGames = sourceData.recentGames and #sourceData.recentGames or ((sourceData.wins or 0) + (sourceData.losses or 0))
 
@@ -187,7 +255,7 @@ function DRE:MergePlayerHistory(sourceName, targetName)
     end
 
     table.sort(targetData.recentGames, function(a, b)
-        return GetGameTimestamp(a) > GetGameTimestamp(b)
+        return GameComesBefore(b, a)
     end)
     local dedupedCount = DeduplicateRecentGames(targetData)
     RecalculatePlayerAggregates(targetData)
@@ -209,6 +277,9 @@ function DRE:MergePlayerHistory(sourceName, targetName)
     end
 
     history[sourceName] = nil
+    for _, pending in ipairs(self.db.profile.pendingTradeWagers or {}) do
+        if pending.playerName == sourceName then pending.playerName = targetName end
+    end
 
     local _, recalcMessage = self:RecalculateGoldTracking()
 
@@ -227,6 +298,7 @@ function DRE:MergePlayerHistory(sourceName, targetName)
 end
 
 function DRE:DeduplicateHistoryData()
+    self:EnsureHistorySchema()
     if not self.db or not self.db.profile or not self.db.profile.history then
         return false, "No data available"
     end
@@ -259,6 +331,7 @@ end
 
 -- Helper function to add game result to history
 function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll, metadata)
+    self:EnsureHistorySchema()
     if not self.db or not playerName then
         return
     end
@@ -276,6 +349,7 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll, metad
     end
     
     local playerData = self.db.profile.history[playerName]
+    playerData.legacyTotals = playerData.legacyTotals or { wins = 0, losses = 0, goldWon = 0, goldLost = 0 }
     
     -- Update game counts
     playerData.gamesPlayed = (playerData.gamesPlayed or 0) + 1
@@ -311,6 +385,7 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll, metad
         end
     end
 
+    self:AllocateGameIdentity(gameRecord)
     table.insert(playerData.recentGames, 1, gameRecord)
     
     -- Keep all games - complete history tracking
@@ -318,7 +393,7 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll, metad
     -- Update overall gold tracking
     self:UpdateGoldTracking(result, goldAmount)
 
-    return recordedAt
+    return recordedAt, gameRecord.id
 end
 
 -- Update gold tracking statistics
@@ -443,6 +518,7 @@ end
 
 -- Clean old data
 function DRE:CleanOldData(daysToKeep)
+    self:EnsureHistorySchema()
     if not self.db or not self.db.profile.history then
         return
     end
@@ -462,6 +538,7 @@ function DRE:CleanOldData(daysToKeep)
                 if gameTime == 0 or gameTime >= cutoffTime then
                     table.insert(newGames, game)
                 else
+                    InvalidateLegacyStreakCheckpoint(self.db.profile, game)
                     cleanedCount = cleanedCount + 1
                 end
             end
@@ -469,7 +546,7 @@ function DRE:CleanOldData(daysToKeep)
         end
 
         RecalculatePlayerAggregates(playerData)
-        if (playerData.gamesPlayed or 0) <= 0 then
+        if not HasPlayerTotals(playerData) then
             table.insert(playersToRemove, playerName)
         end
     end
@@ -494,6 +571,9 @@ function DRE:ResetAllData()
     
     -- Reset history
     self.db.profile.history = {}
+    self.db.profile.pendingTradeWagers = {}
+    self.db.profile.legacyStreaks = nil
+    -- Keep nextGameSequence: a stale dialog must not resolve to a new game.
 
     -- Reset suspicious-roll tracking
     self.db.profile.suspiciousRolls = {}
@@ -527,6 +607,10 @@ function DRE:ExportData()
         history = self.db.profile.history,
         suspiciousRolls = self.db.profile.suspiciousRolls,
         goldTracking = self.db.profile.goldTracking,
+        historySchemaVersion = self.db.profile.historySchemaVersion,
+        nextGameSequence = self.db.profile.nextGameSequence,
+        pendingTradeWagers = self.db.profile.pendingTradeWagers,
+        legacyStreaks = self.db.profile.legacyStreaks,
         settings = {
             gameplay = self.db.profile.gameplay,
             ui = self.db.profile.ui,
@@ -543,7 +627,7 @@ function DRE:ExportData()
         for k, v in pairs(tbl) do
             result = result .. indentStr
             if type(k) == "string" then
-                result = result .. '["' .. k .. '"] = '
+                result = result .. "[" .. string.format("%q", k) .. "] = "
             else
                 result = result .. "[" .. tostring(k) .. "] = "
             end
@@ -551,7 +635,7 @@ function DRE:ExportData()
             if type(v) == "table" then
                 result = result .. serialize(v, indent + 1) .. ",\n"
             elseif type(v) == "string" then
-                result = result .. '"' .. v .. '",\n'
+                result = result .. string.format("%q", v) .. ",\n"
             else
                 result = result .. tostring(v) .. ",\n"
             end
@@ -566,6 +650,7 @@ end
 
 -- Find and return the most recent game record for editing
 function DRE:GetLastGameRecord()
+    self:EnsureHistorySchema()
     if not self.db or not self.db.profile.history then
         return nil
     end
@@ -580,7 +665,7 @@ function DRE:GetLastGameRecord()
             local game = playerData.recentGames[1] -- Most recent is first
             local gameTime = GetGameTimestamp(game)
 
-            if gameTime > latestTime then
+            if not latestGame or GameComesBefore(latestGame, game) then
                 latestTime = gameTime
                 latestGame = game
                 latestPlayer = playerName
@@ -593,6 +678,7 @@ end
 
 -- Get all recent games for editing (last 50 games across all players)
 function DRE:GetRecentGamesForEditing(limit)
+    self:EnsureHistorySchema()
     limit = limit or 50
 
     if not self.db or not self.db.profile.history then
@@ -608,6 +694,7 @@ function DRE:GetRecentGamesForEditing(limit)
                 table.insert(allGames, {
                     playerName = playerName,
                     gameIndex = gameIndex,
+                    gameId = game.id,
                     game = game,
                     timestamp = game.timestamp or 0
                 })
@@ -615,36 +702,8 @@ function DRE:GetRecentGamesForEditing(limit)
         end
     end
 
-    -- Helper function to safely parse date strings
-    local function parseDateToEpoch(dateStr)
-        if not dateStr or type(dateStr) ~= "string" then
-            return 0
-        end
+    table.sort(allGames, function(a, b) return GameComesBefore(b.game, a.game) end)
 
-        return ParseDateTimeToEpoch(dateStr)
-    end
-
-    -- Sort by timestamp (newest first) - handle missing timestamps and date fields
-    table.sort(allGames, function(a, b)
-        local aTime = a.timestamp or 0
-        local bTime = b.timestamp or 0
-
-        -- If timestamp is 0 or missing, try to parse the date field
-        if aTime == 0 and a.game and a.game.date then
-            aTime = parseDateToEpoch(a.game.date)
-        end
-
-        if bTime == 0 and b.game and b.game.date then
-            bTime = parseDateToEpoch(b.game.date)
-        end
-
-        -- If still equal, maintain original order
-        if aTime == bTime then
-            return false
-        end
-        return aTime > bTime
-    end)
-    
     -- Limit results
     local result = {}
     for i = 1, math.min(limit, #allGames) do
@@ -661,6 +720,7 @@ end
 
 -- Edit a specific game record by player and game index
 function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, newInitialRoll)
+    self:EnsureHistorySchema()
     if not self.db or not self.db.profile.history or not playerName then
         return false, "No data available"
     end
@@ -684,6 +744,13 @@ function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, new
         return false, "Invalid result value. Use Won or Lost."
     end
 
+    if not self:IsBoundedInteger(tonumber(newGoldAmount), 0, self.MAX_WAGER)
+        or (newInitialRoll ~= nil and not self:IsBoundedInteger(tonumber(newInitialRoll), 0, self.MAX_ROLL)) then
+        return false, "Invalid wager or starting roll"
+    end
+    if IsWinResult(oldGame.result) ~= IsWinResult(newResult) then
+        InvalidateLegacyStreakCheckpoint(self.db.profile, oldGame)
+    end
     -- Update the game record
     oldGame.result = newResult
     oldGame.goldAmount = math.max(0, tonumber(newGoldAmount) or 0)
@@ -702,6 +769,7 @@ end
 
 -- Delete a specific game record by player and game index
 function DRE:DeleteGameRecord(playerName, gameIndex)
+    self:EnsureHistorySchema()
     if not self.db or not self.db.profile.history or not playerName then
         return false, "No data available"
     end
@@ -715,12 +783,18 @@ function DRE:DeleteGameRecord(playerName, gameIndex)
         return false, "Invalid game index"
     end
     
-    -- Remove the game from the list
+    -- Remove only settlements linked to the deleted record.
+    InvalidateLegacyStreakCheckpoint(self.db.profile, playerData.recentGames[gameIndex])
+    local deletedId = playerData.recentGames[gameIndex].id
+    local pending = self.db.profile.pendingTradeWagers or {}
+    for index = #pending, 1, -1 do
+        if pending[index].gameId == deletedId then table.remove(pending, index) end
+    end
     table.remove(playerData.recentGames, gameIndex)
     RecalculatePlayerAggregates(playerData)
     
     -- If player has no more games, optionally remove them entirely
-    if (playerData.gamesPlayed or 0) == 0 then
+    if not HasPlayerTotals(playerData) then
         self.db.profile.history[playerName] = nil
         local success, message = self:RecalculateGoldTracking()
         if not success then
@@ -752,13 +826,14 @@ function DRE:FindGameRecordIndexByTimestamp(playerName, recordedAt)
         return nil
     end
 
+    local foundIndex, foundGame
     for gameIndex, game in ipairs(playerData.recentGames) do
         if game and tonumber(game.timestamp) == tonumber(recordedAt) then
-            return gameIndex, game
+            if foundIndex then return nil end
+            foundIndex, foundGame = gameIndex, game
         end
     end
-
-    return nil
+    return foundIndex, foundGame
 end
 
 function DRE:UpdateGameWagerByTimestamp(playerName, recordedAt, newGoldAmount)
@@ -770,8 +845,49 @@ function DRE:UpdateGameWagerByTimestamp(playerName, recordedAt, newGoldAmount)
     return self:EditGameRecord(playerName, gameIndex, game.result, newGoldAmount or 0, game.initialRoll)
 end
 
+function DRE:FindGameRecordById(gameId)
+    if type(gameId) ~= "string" or not self.db then return nil end
+    self:EnsureHistorySchema()
+    local foundPlayer, foundIndex, foundGame
+    for playerName, player in pairs(self.db.profile.history) do
+        for index, game in ipairs(player.recentGames or {}) do
+            if game.id == gameId then
+                if foundGame then return nil end -- ambiguous/corrupt identity: refuse mutation
+                foundPlayer, foundIndex, foundGame = playerName, index, game
+            end
+        end
+    end
+    return foundPlayer, foundIndex, foundGame
+end
+
+function DRE:EditGameRecordById(gameId, result, wager, initialRoll)
+    local player, index = self:FindGameRecordById(gameId)
+    if not player then return false, "The selected game no longer exists or is ambiguous. Reopen the editor." end
+    local success, message = self:EditGameRecord(player, index, result, wager, initialRoll)
+    if success then
+        local pending = self.db.profile.pendingTradeWagers or {}
+        for i = #pending, 1, -1 do
+            if pending[i].gameId == gameId then table.remove(pending, i) end
+        end
+    end
+    return success, message
+end
+
+function DRE:DeleteGameRecordById(gameId)
+    local player, index = self:FindGameRecordById(gameId)
+    if not player then return false, "The selected game no longer exists or is ambiguous. Reopen the editor." end
+    return self:DeleteGameRecord(player, index)
+end
+
+function DRE:UpdateGameWagerById(gameId, wager)
+    local player, index, game = self:FindGameRecordById(gameId)
+    if not player then return false, "Unable to find the recorded game" end
+    return self:EditGameRecord(player, index, game.result, wager, game.initialRoll)
+end
+
 -- Recalculate and fix global gold tracking totals from individual player data
 function DRE:RecalculateGoldTracking()
+    self:EnsureHistorySchema()
     if not self.db or not self.db.profile.history then
         return false, "No data available"
     end
@@ -783,7 +899,7 @@ function DRE:RecalculateGoldTracking()
     -- Sum up all individual player gold totals
     for playerName, playerData in pairs(self.db.profile.history) do
         RecalculatePlayerAggregates(playerData)
-        if (playerData.gamesPlayed or 0) <= 0 then
+        if not HasPlayerTotals(playerData) then
             table.insert(playersToRemove, playerName)
         end
         totalWon = totalWon + (playerData.goldWon or 0)
@@ -819,6 +935,7 @@ end
 
 -- Recalculate streaks from complete game history
 function DRE:RecalculateStreaks()
+    self:EnsureHistorySchema()
     if not self.db or not self.db.profile.history or not self.db.profile.goldTracking then
         return
     end
@@ -831,55 +948,30 @@ function DRE:RecalculateStreaks()
                 table.insert(allGames, {
                     result = game.result,
                     timestamp = game.timestamp or 0,
+                    sequence = game.sequence,
                     date = game.date
                 })
             end
         end
     end
 
-    -- Sort games by timestamp/date (oldest first)
-    table.sort(allGames, function(a, b)
-        local aTime = a.timestamp or 0
-        local bTime = b.timestamp or 0
+    table.sort(allGames, GameComesBefore)
 
-        -- If timestamp is missing, try to parse date
-        if aTime == 0 and a.date then
-            aTime = ParseDateTimeToEpoch(a.date)
-        end
-
-        if bTime == 0 and b.date then
-            bTime = ParseDateTimeToEpoch(b.date)
-        end
-
-        return aTime < bTime
-    end)
-
-    -- Calculate streaks by replaying game history
-    local currentStreak = 0
-    local bestWinStreak = 0
-    local worstLossStreak = 0
+    -- Incomplete legacy history has a known streak checkpoint, but cannot be
+    -- reconstructed from its retained rows. Replay only games after that point.
+    local legacy = self.db.profile.legacyStreaks
+    local currentStreak = legacy and legacy.currentStreak or 0
+    local bestWinStreak = legacy and legacy.bestWinStreak or 0
+    local worstLossStreak = legacy and legacy.worstLossStreak or 0
 
     for _, game in ipairs(allGames) do
-        if game.result == "Won" or game.result == "WIN" then
-            if currentStreak >= 0 then
-                currentStreak = currentStreak + 1
-            else
-                currentStreak = 1
-            end
-
-            if currentStreak > bestWinStreak then
-                bestWinStreak = currentStreak
-            end
-
-        elseif game.result == "Lost" or game.result == "LOSS" then
-            if currentStreak <= 0 then
-                currentStreak = currentStreak - 1
-            else
-                currentStreak = -1
-            end
-
-            if currentStreak < worstLossStreak then
-                worstLossStreak = currentStreak
+        if not legacy or (game.sequence or 0) > (legacy.checkpointSequence or 0) then
+            if IsWinResult(game.result) then
+                currentStreak = currentStreak >= 0 and (currentStreak + 1) or 1
+                bestWinStreak = math.max(bestWinStreak, currentStreak)
+            elseif IsLossResult(game.result) then
+                currentStreak = currentStreak <= 0 and (currentStreak - 1) or -1
+                worstLossStreak = math.min(worstLossStreak, currentStreak)
             end
         end
     end

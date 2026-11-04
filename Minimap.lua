@@ -66,7 +66,9 @@ function DRE:InitializeMinimap()
     end
     
     -- Register the minimap icon
-    LibDBIcon:Register("DeathRollEnhancer", minimapLDB, self.db.profile.minimap)
+    if not LibDBIcon:IsRegistered("DeathRollEnhancer") then
+        LibDBIcon:Register("DeathRollEnhancer", minimapLDB, self.db.profile.minimap)
+    end
     
     -- Update visibility based on settings
     self:UpdateMinimapVisibility()

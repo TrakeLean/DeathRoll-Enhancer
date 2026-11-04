@@ -1,4 +1,4 @@
-## Interface: 120001, 120000, 11508, 20505, 30403, 40402, 50503
+## Interface: 16001, 120001, 120000, 11508, 20505, 30403, 40402, 50503
 ## Title: |cFFFF0000Death|r|cffffffffRoll|r Enhancer
 ## Version: @project-version@
 ## Author: 0xTrk
@@ -8,9 +8,13 @@
 ## SavedVariables: DeathRollEnhancerDB, DeathRollEnhancer_DebugExport
 ## OptionalDeps: Ace3, LibSharedMedia-3.0, LibDBIcon-1.0, LibUIDropDownMenu
 
+# Required libraries (pinned and bundled)
+embeds.xml
+
 # Addon modules
 Core.lua
 Database.lua
 UI.lua
+Dialogs.lua
 Events.lua
 Minimap.lua

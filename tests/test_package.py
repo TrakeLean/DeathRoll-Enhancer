@@ -21,6 +21,7 @@ class PackageTests(unittest.TestCase):
         self.assertLess(toc.index('embeds.xml'), toc.index('Core.lua'))
         self.assertIn('Media/Logo.tga', files)
         self.assertIn('Dialogs.lua', files)
+        self.assertIn('Group.lua', files)
         load_lines = lambda text: [line for line in text.splitlines() if line and not line.startswith('#')]
         for suffix in ('Forever', 'Camelot'):
             name = f'DeathRollEnhancer_{suffix}.toc'
@@ -40,6 +41,7 @@ class PackageTests(unittest.TestCase):
                 self.assertFalse(any('/tests/' in n or '/.qa/' in n or '/.git/' in n for n in names))
                 self.assertIn('DeathRollEnhancer/Libs/Ace3-LICENSE.txt', names)
                 self.assertIn('DeathRollEnhancer/LICENSE.txt', names)
+                self.assertIn('DeathRollEnhancer/Group.lua', names)
                 toc = archive.read('DeathRollEnhancer/DeathRollEnhancer.toc')
                 self.assertIn(b'## Version: 2.3.10-dev', toc)
                 self.assertNotIn(b'@project-version@', toc)

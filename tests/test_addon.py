@@ -4,7 +4,7 @@ import unittest
 from lupa.lua51 import LuaRuntime
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULES = ['Core.lua', 'Database.lua', 'UI.lua', 'Dialogs.lua', 'Events.lua']
+MODULES = ['Core.lua', 'Database.lua', 'UI.lua', 'Dialogs.lua', 'Events.lua', 'Group.lua']
 
 
 def runtime():

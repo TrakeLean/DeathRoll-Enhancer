@@ -40,7 +40,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.3.13"
+local localFallbackVersion = "2.4.0"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
     local metadataVersion = nil
@@ -242,6 +242,7 @@ end
 
 function DRE:OnDisable()
     self.disabled = true
+    self:CancelGroupRound(true)
     self.tradeTracking = nil
     self.pendingChallenge = nil
     self.acceptedChallenge = nil
@@ -363,6 +364,14 @@ function DRE:HandleTrackedTradeCompletion()
     state.completed = true -- one payment may be considered only once, including ambiguous payments
     if not self:IsBoundedInteger(state.myGold, 0, self.MAX_WAGER)
         or not self:IsBoundedInteger(state.theirGold, 0, self.MAX_WAGER) then return end
+    -- Group payouts make earlier debts to the same participant ambiguous, even after reload.
+    for _, pending in ipairs(trades) do
+        if pending.manualAssignmentRequired and self:IsSamePlayer(pending.playerName, state.partner)
+            and (state.myGold > 0 or state.theirGold > 0) then
+            self:Print("This player also joined a group round. Use /dr edit to assign any earlier 1v1 payment; no wager was changed.")
+            return
+        end
+    end
     local matchIndex, tradeAmount
     for index, pending in ipairs(trades) do
         if self:IsSamePlayer(pending.playerName, state.partner) and state.myGold > 0 and state.theirGold > 0 then
@@ -417,6 +426,7 @@ end
 
 -- Challenge System: Handle incoming challenge whisper
 function DRE:HandleChallengeWhisper(message, sender)
+    if self:HasActiveGame() then return end
     if not self:IsAccessibleValue(message) or type(message) ~= "string" then return end
     sender = self:NormalizePlayerName(sender)
     if not sender then return end
@@ -474,7 +484,7 @@ end
 function DRE:AcceptChallenge(challenge)
     challenge = challenge or self.pendingChallenge
     if not challenge or challenge ~= self.pendingChallenge then return false end
-    if (time() - challenge.timestamp) > 30 or (self.gameState and self.gameState.isActive) then
+    if (time() - challenge.timestamp) > 30 or self:HasActiveGame() then
         self.pendingChallenge = nil
         self:Print("This challenge is no longer available.")
         return false
@@ -933,7 +943,9 @@ function DRE:SlashCommand(input)
         clearSuspiciousPlayer = table.concat(args, " ", 2)
     end
 
-    if mergeSource and mergeTarget then
+    if command == "group" then
+        self:GroupCommand(args[2])
+    elseif mergeSource and mergeTarget then
         -- Recalculation refreshes History, so remember the user's selection first.
         local selectedPlayer = self.UI and self.UI.historyDropdown and self.UI.historyDropdown:GetValue()
         local success, message = self:MergePlayerHistory(mergeSource, mergeTarget)
@@ -1049,6 +1061,7 @@ function DRE:SlashCommand(input)
         self:Print("       /dr accept - Accept pending challenge")
         self:Print("       /dr decline - Decline pending challenge")
         self:Print("       /dr cancel - Cancel the active game without recording a result")
+        self:Print("       /dr group - Host a group DeathRoll round")
         self:Print("       /dr edit - Edit recent game records")
         self:Print("       /dr merge <oldName> <newName> - Merge player history after rename")
         self:Print("       /dr fixgold - Recalculate gold tracking totals")
@@ -2115,6 +2128,7 @@ end
 
 -- Check recent rolls for a challenge from the current target
 function DRE:CheckRecentRollsForChallenge()
+    if self:HasActiveGame() then return end
     local currentTarget = DRE:GetUnitPlayerName("target")
     if not currentTarget then
         self:DebugPrint("CheckRecentRollsForChallenge: No target selected")
@@ -2154,6 +2168,10 @@ end
 
 -- Handle detected roll from any event source
 function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
+    if self:IsGroupRoundActive() then
+        self:HandleGroupRoll(playerName, roll, maxRoll)
+        return -- group rolls must never become 1v1 challenge candidates
+    end
     playerName = self:NormalizePlayerName(playerName)
     if not playerName or not self:IsBoundedInteger(maxRoll, 1, self.MAX_ROLL)
         or not self:IsBoundedInteger(roll, 1, maxRoll) then return end
@@ -2198,6 +2216,7 @@ end
 
 -- Check if targeted player rolled and show challenge notification
 function DRE:CheckTargetedPlayerChallenge(playerName, roll, maxRoll)
+    if self:HasActiveGame() then return end
     self:DebugPrint("CheckTargetedPlayerChallenge: " .. playerName .. " rolled " .. roll .. " (1-" .. maxRoll .. ")")
     
     -- Only show if UI is open and we have them targeted
@@ -2233,6 +2252,7 @@ end
 
 -- Store an incoming challenge for the active DeathRoll UI
 function DRE:ShowChallengeNotification(playerName, roll, maxRoll)
+    if self:HasActiveGame() then return end
     self:DebugPrint("ShowChallengeNotification: " .. tostring(playerName) .. " challenges you to DeathRoll 1-" .. tostring(maxRoll))
 
     if not self.UI then
@@ -2270,6 +2290,7 @@ end
 
 -- Check if UI is open and auto-start challenge when target rolls
 function DRE:CheckUIAutoChallenge(playerName, roll, maxRoll)
+    if self:HasActiveGame() then return end
     self:DebugPrint("CheckUIAutoChallenge called: player=" .. playerName .. ", roll=" .. roll .. ", maxRoll=" .. maxRoll)
     
     -- Check if DeathRoll UI is open and visible
@@ -2374,6 +2395,7 @@ function DRE:FindRecentTargetRoll(targetName)
 end
 
 function DRE:UpdateChallengeButtonText()
+    if self:IsGroupRoundActive() then return end
     -- Validate UI exists and is ready
     if not self.UI then
         self:DebugPrint("UpdateChallengeButtonText: UI not initialized")
@@ -2558,7 +2580,7 @@ end
 -- Main function to start a DeathRoll challenge (called from UI)
 function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade)
     -- Check for active game first to prevent concurrent games
-    if self.gameState and self.gameState.isActive then
+    if self:HasActiveGame() then
         self:Print("A game is already in progress! Finish it or use /dr cancel.")
         return
     end
@@ -2573,7 +2595,7 @@ function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade)
         self:Print("Starting self-duel! You'll play against yourself.")
 
         -- Start the actual game immediately for self-dueling
-        self:StartActualGame(target, roll, wager, nil, trackWagerByTrade)
+        if not self:StartActualGame(target, roll, wager, nil, trackWagerByTrade) then return false end
 
         -- Update UI state to rolling
         if self.UpdateGameUIState then
@@ -2582,7 +2604,7 @@ function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade)
         return true
     end
 
-    self:StartActualGame(target, roll, wager, roll, trackWagerByTrade)
+    if not self:StartActualGame(target, roll, wager, roll, trackWagerByTrade) then return false end
     self:PerformRoll()
     return true
 end
@@ -2966,7 +2988,7 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWager
     local valid, reason = self:ValidateGameInputs(target, initialRoll, wager or 0)
     if not valid then self:Print(reason); return false end
     if not self:IsBoundedInteger(currentRoll or initialRoll, 1, initialRoll) then return false end
-    if self.gameState and self.gameState.isActive then return false end
+    if self:HasActiveGame() or self.disabled then return false end
     local myName = DRE:GetUnitPlayerName("player")
     local isSelfDuel = (target == myName)
 
@@ -3024,10 +3046,12 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWager
     
     -- Ensure system messages are registered to track rolls
     self:RegisterEvent("CHAT_MSG_SYSTEM")
+    return true
 end
 
 -- Local recovery only: cancellation never records an outcome or a pending payment.
 function DRE:CancelCurrentGame()
+    if self:IsGroupRoundActive() then return self:CancelGroupRound() end
     local game = self.gameState
     if not (game and game.isActive) then
         self:Print("No active game to cancel.")
@@ -3374,6 +3398,10 @@ end
 
 -- Spicy Duel Game Logic
 function DRE:StartSpicyDuel(target)
+    if self:HasActiveGame() or self.disabled then
+        self:Print("Finish or cancel the active game first.")
+        return false
+    end
     if not target or target == "" then
         self:Print("Invalid target for Spicy Duel!")
         return
@@ -3617,9 +3645,14 @@ function DRE:UpdateGameUIState(state)
     -- Update UI state
     self.UI.gameState = state
     if self.UI.cancelGameButton then
-        self.UI.cancelGameButton:SetDisabled(not (self.gameState and self.gameState.isActive))
+        self.UI.cancelGameButton:SetDisabled(not ((self.gameState and self.gameState.isActive) or self:IsGroupRoundActive()))
     end
     
+    if self:IsGroupRoundActive() and self.UI.gameButton then
+        self.UI.gameButton:SetText("Group round in progress")
+        self.UI.gameButton:SetDisabled(true)
+        return
+    end
     -- Validate gameButton exists
     if not self.UI.gameButton then
         self:DebugPrint("No gameButton found in UI - UI may not be fully initialized")

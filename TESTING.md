@@ -6,7 +6,7 @@ Run the host-side regression suite with Python 3.11+ and Lua 5.1 through Lupa:
 python3 -m venv .venv
 .venv/bin/python -m pip install -r tests/requirements.txt
 .venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/build_release.py --version 2.3.13 --output dist/DeathRollEnhancer-2.3.13.zip
+.venv/bin/python scripts/build_release.py --version 2.4.0 --output dist/DeathRollEnhancer-2.4.0.zip
 ```
 
 The tests execute the actual addon modules with mocked WoW/Ace boundaries. They cover trusted roll events, turn order, self-duels, localized/positional roll formats, full player identities, challenge expiry and terms, popup lifecycle, stable record IDs, safe legacy migration, trade settlement, stale timers, widget reuse, and package references. They also compile all active and embedded Lua files under Lua 5.1. Locale fixture strings exercise parser behavior; they do not certify every client's translations.
@@ -22,7 +22,7 @@ A server using a modified or older client still needs its exact build checked. R
 ## In-game acceptance checks
 
 1. Back up `WTF` SavedVariables before testing migration. Install the ZIP's `DeathRollEnhancer` folder in the target client's `Interface/AddOns`. Enable Lua errors (`/console scriptErrors 1`) and test without a separately installed Ace3. Optional minimap/media libraries remain optional.
-2. Open `/dr`, all four tabs, `/dr config`, `/drh`, `/dr edit`, and Export. Close/reopen each; resize the main window. Switch tabs during your turn, the opponent's turn, and a pending roll.
+2. Open `/dr`, all five tabs, `/dr config`, `/drh`, `/dr edit`, and Export. Close/reopen each; resize the main window. Switch tabs during your turn, the opponent's turn, and a pending roll.
 3. Play both challenge directions with two clients. Check initial maximum, wager, opener=1, normal wins/losses, and self-duels. Out-of-turn rolls and crafted emotes must not alter outcomes; wrong ranges on the expected turn must be rejected.
 4. Test a full surname, a UTF-8 name, and—where the client supports realms—a remote realm-qualified name. Compare actual target, whisper sender, and system-roll identities. On a non-English client verify its `RANDOM_ROLL_RESULT` format.
 5. Send/accept/decline/expire challenges, including zero wager after a nonzero wager. Test dialog replacement, expiry during combat, close/Escape/controller B, and accept after leaving combat. Enable the native controller UI and check for blocked actions. During restricted chat states the addon should ignore inaccessible values, not try to decode them.
@@ -34,6 +34,15 @@ A server using a modified or older client still needs its exact build checked. R
 11. Broadcast stats through available channels. Failures/restrictions must not falsely report success. Re-enable the addon and verify controls and minimap registration recover.
 
 Legacy rows without reliable chronology are preserved. Their relative cross-player ordering cannot be recovered. When older releases retained totals but discarded detailed rows, a migration checkpoint preserves known streak history; outcome edits/deletions to pre-checkpoint records invalidate the current-streak checkpoint and replay the retained rows while preserving historical maxima. Missing older outcomes still cannot be reconstructed. `/dr dedupe` removes only duplicate records with proven matching IDs and content, not merely matching dates/results/wagers.
+
+## Group round acceptance checks
+
+1. Use three nearby players; install the addon only on the host. Open `/dr group`, add full names in order, select the channel and start at 100. Complete a full rotation, then a losing roll of 1. Confirm exactly one loser, no 1v1 result, and no new pending trade wager.
+2. Mix client languages and test same-first-name/different-surname participants. Wrong players, wrong ranges, forged emotes, and repeated rolls out of turn must not advance the round. A valid roll equal to the current maximum must still advance the turn.
+3. Switch tabs and close/reopen the window mid-round. Verify the correct turn/range and disabled roster controls. Test host roll failure/timeout, then cancel and restart. Restart must display and use the original roster/order/range even after editing the next-round draft.
+4. Leave chat range/group or trigger chat restrictions. The local round must remain usable with a visible announcement error where the client reports one; retry with Announce. Say delivery and actual roll visibility still depend on range. Party selection must not silently send to Raid/Instance. Cancel if a participant disconnects or leaves; do not skip them or declare a result automatically.
+5. Start with an earlier unpaid 1v1 game involving a participant. Finish the group round and trade its payout: the old record must remain unchanged, with instructions to assign any earlier payment through `/dr edit`. Check this again after reload. Trades for unrelated pending opponents should still settle normally. Settle group payouts before starting new trade-tracked 1v1 games: the trade API cannot distinguish a delayed group payout from a new 1v1 payment.
+6. Verify at narrow/normal window sizes and with the controller. Disable/reload during a round: no result is recorded, and the host must start a fresh round. The group log is deliberately session-only.
 
 ## Forever research sources
 

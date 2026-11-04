@@ -2,7 +2,7 @@
 ## Title: |cFFFF0000Death|r|cffffffffRoll|r Enhancer
 ## Version: @project-version@
 ## Author: 0xTrk
-## Notes: |cFFFF0000Version @project-version@|r - 2SChoppy Edition. |n|n|cffffffffHighlights:|r|n- Wrong-roll range detection and suspicious roll tracking|n- /dr merge and /dr dedupe for history cleanup|n- /dr sendstats supports Party/Raid/Guild/Officer/Instance/Say/Yell|n- History tab channel selector for quick stats broadcast|n- "Most Likely to Cheat" fun stat|n|n|cffbbbbbbBy 0xTrk - Powered by Ace3|r
+## Notes: |cFFFF0000Version @project-version@|r - 2SChoppy Edition. |n|n|cffffffffHighlights:|r|n- Host group DeathRolls with /dr group|n- Wrong-roll range detection and suspicious roll tracking|n- /dr merge and /dr dedupe for history cleanup|n- /dr sendstats supports Party/Raid/Guild/Officer/Instance/Say/Yell|n- History tab channel selector for quick stats broadcast|n- "Most Likely to Cheat" fun stat|n|n|cffbbbbbbBy 0xTrk - Powered by Ace3|r
 ## DefaultState: enabled
 ## IconTexture: Interface\Addons\DeathRollEnhancer\Media\Logo.tga
 ## SavedVariables: DeathRollEnhancerDB, DeathRollEnhancer_DebugExport
@@ -17,4 +17,5 @@ Database.lua
 UI.lua
 Dialogs.lua
 Events.lua
+Group.lua
 Minimap.lua

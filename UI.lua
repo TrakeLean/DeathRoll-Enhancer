@@ -193,6 +193,7 @@ function DRE:ShowMainWindow()
     
     if UI.mainWindow then
         UI.mainWindow:Show()
+        if UI.currentTab == "group" then self:RefreshGroupUI() end
         if UI.currentTab == "deathroll" and self.gameState and self.gameState.isActive then
             self:RestoreGameControls()
         end
@@ -272,6 +273,7 @@ function DRE:ShowMainWindow()
     tabGroup:SetFullHeight(true)
     tabGroup:SetTabs({
         {text="DeathRoll", value="deathroll"},
+        {text="Group", value="group"},
         {text="Statistics", value="statistics"}, 
         {text="History", value="history"},
         {text="Settings", value="settings"}
@@ -283,6 +285,7 @@ function DRE:ShowMainWindow()
         end
         UI.tabGeneration = (UI.tabGeneration or 0) + 1
         self:ReleaseEmbeddedRollHistory()
+        UI.groupWidgets = nil
         container:ReleaseChildren()
         -- Clear UI references when switching tabs to prevent cross-contamination
         UI.statsLabel = nil
@@ -330,6 +333,8 @@ function DRE:ShowMainWindow()
             self:CreateGameSection(container)
             -- Check for recent rolls when switching to deathroll tab
             self:CheckRecentRollsForChallenge()
+        elseif group == "group" then
+            self:CreateGroupSection(container)
         elseif group == "statistics" then
             self:CreateStatsSection(container)
         elseif group == "history" then
@@ -1957,6 +1962,7 @@ end
 
 -- Handle game button clicks based on current state
 function DRE:HandleGameButtonClick()
+    if self:IsGroupRoundActive() then return end
     if self.gameState and self.gameState.isActive then
         self:PerformRoll()
         return
@@ -1970,7 +1976,7 @@ function DRE:HandleGameButtonClick()
 end
 
 function DRE:AcceptObservedChallenge(observed)
-    if self.gameState and self.gameState.isActive then return false end
+    if self:HasActiveGame() then return false end
     local target = self:GetUnitPlayerName("target")
     if not observed or not self:IsSamePlayer(observed.playerName, target)
         or not observed.timestamp or GetTime() - observed.timestamp > (self.recentRollTimeWindow or 60) then
@@ -1984,7 +1990,7 @@ function DRE:AcceptObservedChallenge(observed)
     if not valid then self:Print(reason); return false end
     if not self:IsBoundedInteger(observed.roll, 1, observed.maxRoll) then return false end
     local trackTrade = self:IsTradeWagerModeEnabled()
-    self:StartActualGame(target, observed.maxRoll, wager, observed.roll, trackTrade)
+    if not self:StartActualGame(target, observed.maxRoll, wager, observed.roll, trackTrade) then return false end
     self:AddRollToHistory(target, observed.roll, observed.maxRoll, false, nil)
     if observed.roll == 1 then
         self:HandleGameEnd(target, "WIN", wager, observed.maxRoll)
@@ -2013,6 +2019,7 @@ end
 
 -- Start the challenge flow
 function DRE:StartChallengeFlow()
+    if self:HasActiveGame() or self.disabled then return false end
     local target = DRE:GetUnitPlayerName("target")
     
     -- Check if we have a target

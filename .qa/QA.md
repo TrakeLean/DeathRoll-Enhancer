@@ -112,7 +112,7 @@ Commands use POSIX shell syntax. For PowerShell or cmd.exe, use the command work
 ## Human-maintained notes
 
 <!-- project-quality:human:start -->
-- Active addon files load from DeathRollEnhancer.toc in this order: Core.lua, Database.lua, UI.lua, Dialogs.lua, Events.lua, Minimap.lua. The versions/ directory contains archived snapshots, not current runtime modules.
+- Active addon files load from DeathRollEnhancer.toc in this order: Core.lua, Database.lua, UI.lua, Dialogs.lua, Events.lua, Group.lua, Minimap.lua. The versions/ directory contains archived snapshots, not current runtime modules.
 - Required Ace3 modules are pinned and embedded (Libs/SOURCES.txt), loaded by embeds.xml before Core.lua. Runtime is WoW Lua with Ace3; host Lua 5.1 can verify syntax and isolated logic, but cannot validate protected APIs, event ordering, frame rendering, or live client compatibility.
 - Baseline ad635ef had no automated tests. The repository now has Lua 5.1 regression tests using Lupa (tests/requirements.txt), package-reference checks, and a deterministic local ZIP builder. See TESTING.md. Tests use mocked client boundaries and do not certify in-game behavior.
 - Critical workflows: fresh install/library loading; authoritative system-roll parsing and alternating turns; challenge acceptance; tab switching during play; SavedVariables history edit/delete/merge/dedupe; trade-wager settlement.
@@ -121,4 +121,5 @@ Commands use POSIX shell syntax. For PowerShell or cmd.exe, use the command work
 - Release packaging uses .pkgmeta and CurseForge version tokens. Verify dependency load order and an extracted install directory named DeathRollEnhancer before claiming install readiness.
 - Client target and in-game smoke testing remain required to substantiate compatibility. Do not infer supported clients solely from TOC interface numbers.
 - All initial reviewer reports were reconciled before fixes. The user subsequently authorized the primary agent to fix them; reviewers remain read-only. The user subsequently authorized research-backed Forever fixes, pushing, and release publication.
+- Group.lua owns host-only group rounds and the Group tab. Group state/logs are session-only, exclusively consume authoritative rolls during play, and never create 1v1 history or trade wagers. Old unpaid 1v1 entries for group participants are marked manualAssignmentRequired to avoid cross-mode payment ambiguity; only explicit editor assignment or normal expiry resolves those entries.
 <!-- project-quality:human:end -->

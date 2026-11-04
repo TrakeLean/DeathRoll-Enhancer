@@ -1,3 +1,13 @@
+## 2.4.0 — 2SChoppy Edition (2026-11-04)
+
+- Add host-controlled group DeathRolls through the Group tab or `/dr group`: 2-40 players, fixed turn order, a shared decreasing roll maximum, and the first roll of 1 ends the round with that player losing.
+- Only the host needs the addon. Participants use ordinary `/roll`; the host can add targets, announce turns, roll their own turn, cancel, and restart the original setup.
+- Accept only validated server roll messages from the expected full player name with the exact current maximum. Preserve localized roll formats, Forever surnames, and realm identities.
+- Lock active rosters, prevent overlapping game modes, retire stale roll timers, and keep group rolls/results out of 1v1 history, suspicion records, and automatic wager creation.
+- Preserve older unpaid 1v1 games with group participants, but require explicit `/dr edit` payment assignment so group payouts cannot overwrite them. This protection survives reload.
+- Keep announcement audiences explicit; report blocked chat with an Announce retry. Group logs are bounded and session-only; reload or addon disable ends the local round without recording an outcome.
+- Validation: 72 host regression/package tests pass, including 16 group scenarios. Live multi-player/client validation remains outstanding.
+
 ## 2.3.13 — 2SChoppy Edition (2026-11-04)
 
 - Add a local Cancel button and `/dr cancel` to recover abandoned games without recording an outcome or payment; retire their pending roll callbacks.

@@ -84,15 +84,15 @@
       "is_monorepo": false
     }
   },
-  "evidence_sha256": "a972a45c890eb64beaecc296fb335073322748aa63556dd40ef447f1de0d4e41",
+  "evidence_sha256": "02d41b813db1f6ddb99cf332d208c61285236679a67a7d4ec3c85e008bf187fb",
   "fingerprints": {
-    ".github/workflows/release.yml": "6b6e7a82f794f6c21b30707328e61bdaa1c30e04a434fc57f2ac497dd204231c",
+    ".github/workflows/release.yml": "ddad4bb4475120b774e8e7db10005f9a67626c8e6e8a5405b06878f75dfcc898",
     ".pkgmeta": "10608943568d35a7eae9c376cea0ba2287c0682594745997165e8b89f1c0722a",
-    "Core.lua": "c03e21293a4152d5219b7803b5268cf993cd5dd2242e98b45b874682d141137c",
-    "DeathRollEnhancer.toc": "33aedaddf491a7a442cbeb51f2a1bf51e0e8351a76af9f7f305fd98649e6a206",
+    "Core.lua": "84bfdb8d4f57aeacad7045cd266547d1fd535d5f600a9533a91f2c434b1d4a11",
+    "DeathRollEnhancer.toc": "e3121905560e10c5c8d9e0c8c0ceaacefd87ee68ab25acc7d739224744464923",
     "Events.lua": "f09392ca82c4010651bb5a14c931f8e5ad69a8f858e0f0598d576a00c9a469d2",
-    "README.md": "eab38be50fd387e73c737f855b26df5d09ebfc246085174e229aa0d95ba18665",
-    "UI.lua": "c3e296db9bb7079f0b4b9ff4ce8682f3850347ea0e1fafac6b953300179bf171",
+    "README.md": "80dd69df14600db4821535b5d1cfef57c81c74fa34e5ceca983ee810247c0564",
+    "UI.lua": "e14dcb2e0daf59190558d2f6c535b02d3fcfff0148354042a0cb2e97f42272e1",
     "scripts/build_release.py": "1f1e72a2c1963c1dd1b23b60e2e00fce7a1c9c4b59ef8a231268ab2240218418",
     "tests/requirements.txt": "c355c313ec4744320b1e0d22e7e70465d899a48e8c62293578ddff95d0672c6b",
     "tests/test_addon.py": "287d2ccdbdab010ad7489acfbd93e767342598bd7e833874ecddca40202780bd"
@@ -120,14 +120,14 @@
     },
     ".qa/QA.md": {
       "kind": "managed_section",
-      "sha256": "96acdff7b25b22dd42d22b9ffafd50a85b074f0ab6762d2da6f3ca5b29fd8449"
+      "sha256": "5a91a8c0f00bead5fb6e7ddfcefb690314cb7be56be8590c5e83584ed5c14e39"
     },
     "AGENTS.md": {
       "kind": "managed_section",
       "sha256": "ecd9b36fbb1e89847f6d1d7fa7ae0b3c0f1a4228579bcfe08c4dae41aacc37b8"
     }
   },
-  "managed_qa_sha256": "96acdff7b25b22dd42d22b9ffafd50a85b074f0ab6762d2da6f3ca5b29fd8449",
+  "managed_qa_sha256": "5a91a8c0f00bead5fb6e7ddfcefb690314cb7be56be8590c5e83584ed5c14e39",
   "plugin_version": "0.2.0",
   "requested_agents": [
     "quality_correctness",

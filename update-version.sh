@@ -21,7 +21,7 @@ TEMP_FILE=$(mktemp)
 cat > "$TEMP_FILE" << EOF
 # DeathRoll Enhancer - Changelog
 
-## Version $NEW_VERSION - SKEM Edition
+## Version $NEW_VERSION - 2SChoppy Edition
 
 ### Bug Fixes
 - [Add your changes here]

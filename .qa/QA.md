@@ -63,12 +63,12 @@ Commands use POSIX shell syntax. For PowerShell or cmd.exe, use the command work
 | Purpose | Command | Working directory | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | test | `python3 -m unittest discover -s tests -v` | `.` | `tests/test_addon.py` | configured |
-| package | `python3 scripts/build_release.py --version 2.3.11 --output dist/DeathRollEnhancer-2.3.11.zip` | `.` | `scripts/build_release.py` | configured |
+| package | `python3 scripts/build_release.py --version 2.3.12 --output dist/DeathRollEnhancer-2.3.12.zip` | `.` | `scripts/build_release.py` | configured |
 
 ### Critical workflows
 
 - **test**: `python3 -m unittest discover -s tests -v`
-- **package**: `python3 scripts/build_release.py --version 2.3.11 --output dist/DeathRollEnhancer-2.3.11.zip`
+- **package**: `python3 scripts/build_release.py --version 2.3.12 --output dist/DeathRollEnhancer-2.3.12.zip`
 
 ### Security boundaries
 

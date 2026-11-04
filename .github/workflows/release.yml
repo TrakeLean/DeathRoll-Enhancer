@@ -62,4 +62,4 @@ jobs:
           version=$(cat VERSION)
           gh release create "v$version" "dist/DeathRollEnhancer-$version.zip" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "DeathRoll Enhancer $version" --notes-file dist/release-notes.md
+            --title "DeathRoll Enhancer $version - 2SChoppy Edition" --notes-file dist/release-notes.md

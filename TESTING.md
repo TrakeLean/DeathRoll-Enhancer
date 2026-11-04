@@ -6,7 +6,7 @@ Run the host-side regression suite with Python 3.11+ and Lua 5.1 through Lupa:
 python3 -m venv .venv
 .venv/bin/python -m pip install -r tests/requirements.txt
 .venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/build_release.py --version 2.3.11 --output dist/DeathRollEnhancer-2.3.11.zip
+.venv/bin/python scripts/build_release.py --version 2.3.12 --output dist/DeathRollEnhancer-2.3.12.zip
 ```
 
 The tests execute the actual addon modules with mocked WoW/Ace boundaries. They cover trusted roll events, turn order, self-duels, localized/positional roll formats, full player identities, challenge expiry and terms, popup lifecycle, stable record IDs, safe legacy migration, trade settlement, stale timers, widget reuse, and package references. They also compile all active and embedded Lua files under Lua 5.1. Locale fixture strings exercise parser behavior; they do not certify every client's translations.

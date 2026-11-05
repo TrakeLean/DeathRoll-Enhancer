@@ -40,7 +40,7 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.4.1"
+local localFallbackVersion = "2.4.2"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
     local metadataVersion = nil
@@ -943,7 +943,9 @@ function DRE:SlashCommand(input)
         clearSuspiciousPlayer = table.concat(args, " ", 2)
     end
 
-    if command == "group" then
+    if command == "minimap" then
+        self:HandleMinimapSlashCommand(table.concat(args, " ", 2))
+    elseif command == "group" then
         self:GroupCommand(args[2])
     elseif mergeSource and mergeTarget then
         -- Recalculation refreshes History, so remember the user's selection first.
@@ -1057,6 +1059,7 @@ function DRE:SlashCommand(input)
     else
         self:Print("Usage: /dr or /deathroll - Opens the main window")
         self:Print("       /dr config - Opens configuration")
+        self:Print("       /dr minimap [show|hide|lock|unlock] - Manage the minimap icon")
         self:Print("       /dr debug - Show debug chat buffer")
         self:Print("       /dr accept - Accept pending challenge")
         self:Print("       /dr decline - Decline pending challenge")

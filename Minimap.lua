@@ -8,7 +8,7 @@ if not DRE then return end
 local LibDBIcon = LibStub("LibDBIcon-1.0", true)
 local LDB = LibStub("LibDataBroker-1.1", true)
 
--- Create data broker object - LibDBIcon can work without LibDataBroker in many cases
+-- Create the data object used by the bundled LibDataBroker and LibDBIcon.
 local minimapLDB = {
     type = "data source",
     text = "DeathRoll",

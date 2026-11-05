@@ -427,7 +427,7 @@ function DRE:CreateGameSection(container)
 
     local autoRollButton = AceGUI:Create("Button")
     autoRollButton:SetText("Use My Gold")
-    autoRollButton:SetWidth(110)
+    autoRollButton:SetAutoWidth(true)
     autoRollButton:SetCallback("OnClick", function()
         local autoRoll = self:CalculateAutoRoll()
         rollEdit:SetText(tostring(autoRoll))
@@ -723,15 +723,23 @@ end
 function DRE:UpdateGameControlsLayout(controlsWidth, isStacked)
     local availableWidth = math.max(120, (controlsWidth or 0) - 24)
     local compactMode = isStacked or availableWidth < 235
-    local stackRollControls = isStacked or availableWidth < 250
+    -- AceGUI reserves 15 pixels on each side of a button label. Measure the
+    -- actual font so larger captions can also trigger the full-width row.
+    local buttonMinWidth = 110
+    if UI.autoRollButton then
+        UI.autoRollButton:SetAutoWidth(true)
+        buttonMinWidth = math.max(buttonMinWidth, UI.autoRollButton.frame.width or 0)
+    end
+    local rollLabelAndSpacing = 42 -- 34px label plus 8px of breathing room
+    local stackRollControls = isStacked or availableWidth < math.max(250, rollLabelAndSpacing + 82 + buttonMinWidth)
+    local rollEditWidth
 
     if UI.rollEdit then
         UI.rollEdit:SetFullWidth(false)
-        local rollEditWidth = 0
         if stackRollControls then
             rollEditWidth = math.max(78, availableWidth - 42)
         else
-            rollEditWidth = math.max(82, math.min(140, availableWidth - 154))
+            rollEditWidth = math.max(82, math.min(140, availableWidth - rollLabelAndSpacing - buttonMinWidth))
         end
         UI.rollEdit:SetWidth(rollEditWidth)
     end
@@ -739,7 +747,7 @@ function DRE:UpdateGameControlsLayout(controlsWidth, isStacked)
     if UI.autoRollButton then
         UI.autoRollButton:SetFullWidth(stackRollControls)
         if not stackRollControls then
-            UI.autoRollButton:SetWidth(110)
+            UI.autoRollButton:SetWidth(math.max(buttonMinWidth, availableWidth - rollLabelAndSpacing - (rollEditWidth or 82)))
         end
     end
 

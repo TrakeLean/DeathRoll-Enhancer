@@ -35,6 +35,7 @@ def runtime_files(root=ROOT):
         if path.is_file():
             add(path)
     add(root / 'Libs' / 'Ace3-LICENSE.txt')
+    add(root / 'Libs' / 'LibDBIcon-LICENSE.txt')
     add(root / 'Libs' / 'SOURCES.txt')
     add(root / 'LICENSE')
     add(root / 'README.md')

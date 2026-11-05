@@ -15,6 +15,7 @@ class PackageTests(unittest.TestCase):
         files = {str(p.relative_to(ROOT)) for p in builder.runtime_files()}
         for library in ('LibStub/LibStub.lua', 'AceAddon-3.0/AceAddon-3.0.lua',
                         'AceDB-3.0/AceDB-3.0.lua', 'AceGUI-3.0/AceGUI-3.0.lua',
+                        'LibDataBroker-1.1/LibDataBroker-1.1.lua', 'LibDBIcon-1.0/LibDBIcon-1.0.lua',
                         'AceConfig-3.0/AceConfigDialog-3.0/AceConfigDialog-3.0.lua'):
             self.assertIn('Libs/' + library, files)
         toc = (ROOT / 'DeathRollEnhancer.toc').read_text()
@@ -40,6 +41,7 @@ class PackageTests(unittest.TestCase):
                 self.assertTrue(all(n.startswith('DeathRollEnhancer/') for n in names))
                 self.assertFalse(any('/tests/' in n or '/.qa/' in n or '/.git/' in n for n in names))
                 self.assertIn('DeathRollEnhancer/Libs/Ace3-LICENSE.txt', names)
+                self.assertIn('DeathRollEnhancer/Libs/LibDBIcon-LICENSE.txt', names)
                 self.assertIn('DeathRollEnhancer/LICENSE.txt', names)
                 self.assertIn('DeathRollEnhancer/Group.lua', names)
                 toc = archive.read('DeathRollEnhancer/DeathRollEnhancer.toc')

@@ -10,3 +10,12 @@ Local compatibility patch: AceGUIWidget-Heading.lua guards the optional
 issecretvalue function for older Classic clients. Local widget revision 21.1
 replaces an already loaded upstream 21 while yielding to future 22+. Behavior is otherwise
 unchanged; tests/test_clients.py executes the bundled widget with/without it.
+
+LibDBIcon-1.0 (minor 57) and LibDataBroker-1.1 (minor 4)
+Source: https://repos.wowace.com/wow/libdbicon-1-0/tags/v12.1.2/
+Revision: SVN r168, release v12.1.2 (2026-10-21)
+Files: LibDBIcon-1.0/LibDBIcon-1.0.lua, LibDataBroker-1.1/LibDataBroker-1.1.lua
+Vendored unmodified from the same upstream release.
+License: LibDBIcon-LICENSE.txt (upstream project license).
+License source: https://www.curseforge.com/wow/addons/libdbicon-1-0/license
+Load after LibStub and CallbackHandler, before addon modules.

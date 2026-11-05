@@ -1,7 +1,7 @@
-# DeathRoll Enhancer v2.4.1 - 2SChoppy Edition
+# DeathRoll Enhancer v2.4.2 - 2SChoppy Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.4.1-brightgreen)
+![Version](https://img.shields.io/badge/Version-2.4.2-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with Ace3 and feature-detected compatibility paths; target-client validation is described below.
@@ -42,7 +42,7 @@ History records now have stable IDs. Migration preserves old rows and lifetime t
 
 For commands taking two full names, quote each one: `/dr merge "Alice Smith" "Alice Jones"`. `/dr sendstats Alice Smith party` supports full names too.
 
-The official Forever interface is included, but this build still needs in-game testing on the intended server/client. See [verification and client smoke tests](TESTING.md). Optional LibDBIcon and media integrations still require their optional libraries.
+The official Forever interface is included, but this build still needs in-game testing on the intended server/client. See [verification and client smoke tests](TESTING.md). The minimap libraries are bundled; only the optional media integration requires LibSharedMedia.
 
 Challenge and data confirmations use addon-owned dialogs to avoid the Forever controller popup issue reported by Questie. Chat sends honor temporary client lockdown. The package includes both Forever and Camelot manifests. See [research sources and applicability](TESTING.md#forever-research-sources).
 
@@ -192,7 +192,8 @@ View detailed analytics including:
 
 **Author:** 0xTrk
 **Framework:** Ace3
-**Dependencies:** LibSharedMedia-3.0, LibDBIcon-1.0
+**Bundled libraries:** Ace3, LibDataBroker-1.1, LibDBIcon-1.0
+**Optional integration:** LibSharedMedia-3.0
 **License:** GPL v3
 
 ## 📖 Version History

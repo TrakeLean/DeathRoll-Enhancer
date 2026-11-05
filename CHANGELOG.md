@@ -1,3 +1,11 @@
+## 2.4.2 — 2SChoppy Edition (2026-11-05)
+
+- Bundle LibDataBroker and LibDBIcon so the minimap icon works when DeathRoll Enhancer is the only enabled addon.
+- Restore `/dr minimap show`, `hide`, `lock`, and `unlock` routing; preserve saved visibility, lock state, and position.
+- Size **Use My Gold** to its caption and available row width, with a full-width row in narrow windows.
+- Include pinned minimap dependencies and their license in the installable ZIP.
+- Validation: all 82 host regression/package tests pass. In-game rendering and minimap dragging still need client verification.
+
 ## 2.4.1 — 2SChoppy Edition (2026-11-04)
 
 - Update client metadata for Retail 12.1.5, Classic Era/Hardcore 1.15.9, TBC Anniversary 2.5.6, Wrath Classic 3.4.5, Cataclysm Classic 4.4.2, Mists Classic 5.5.4, Titan Reforged 3.80.2, and Forever 1.60.1.

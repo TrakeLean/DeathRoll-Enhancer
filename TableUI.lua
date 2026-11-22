@@ -5,6 +5,8 @@ local AceGUI = LibStub("AceGUI-3.0")
 local white = "Interface\\Buttons\\WHITE8X8"
 local goldTable = "Interface\\AddOns\\DeathRollEnhancer\\Media\\GoldTable"
 local coinGlints = "Interface\\AddOns\\DeathRollEnhancer\\Media\\GoldTableGlints"
+local coinLogo = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo"
+local gripSize = 24
 local gold = {0.94, 0.73, 0.45}
 local ink = {0.99, 0.94, 0.86}
 local muted = {0.71, 0.67, 0.72}
@@ -319,17 +321,16 @@ local function windowWidget()
     bar:SetHeight(40)
     fill(bar, "BACKGROUND", 0.11, 0.09, 0.12):SetAllPoints()
     rule(bar, "BOTTOM", 0, 0.31, 0.23, 0.25)
-    local mark = fill(bar, "ARTWORK", 0.84, 0.56, 0.30)
-    mark:SetSize(10, 10)
-    mark:SetPoint("LEFT", 18, 0)
-    mark:SetRotation(math.pi / 4)
-    local pip = fill(bar, "OVERLAY", 0.17, 0.10, 0.13)
-    pip:SetSize(3, 3)
-    pip:SetPoint("CENTER", mark)
+    local logo = bar:CreateTexture(nil, "ARTWORK")
+    logo:SetTexture(coinLogo)
+    logo:SetSize(30, 30)
+    logo:SetPoint("LEFT", 10, 0)
     local title = lettering(bar, 15, ink)
-    title:SetPoint("LEFT", 40, 0)
+    title:SetPoint("LEFT", logo, "RIGHT", 8, 0)
+    title:SetWordWrap(false)
     local version = lettering(bar, 10, gold)
     version:SetPoint("RIGHT", -51, 0)
+    title:SetPoint("RIGHT", version, "LEFT", -10, 0)
     local close = CreateFrame("Button", nil, bar)
     close:SetSize(34, 32)
     close:SetPoint("RIGHT", -3, 0)
@@ -340,11 +341,12 @@ local function windowWidget()
     close:SetScript("OnLeave", function() cross:SetTextColor(unpack(muted)) end)
     close:SetScript("OnClick", function() frame:Hide() end)
     local grip = CreateFrame("Button", nil, frame)
-    grip:SetSize(16, 16)
+    grip:SetSize(gripSize, gripSize)
     grip:SetPoint("BOTTOMRIGHT", -1, 1)
-    local gripMark = lettering(grip, 13, gold)
-    gripMark:SetPoint("CENTER")
-    gripMark:SetText("◢")
+    local grabber = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
+    grip:SetNormalTexture(grabber .. "Up")
+    grip:SetHighlightTexture(grabber .. "Highlight")
+    grip:SetPushedTexture(grabber .. "Down")
     local content = CreateFrame("Frame", nil, frame)
     local widget = {type = "DRETableWindow", frame = frame, content = content}
     function widget:SetInviteArt(challenge)
@@ -373,8 +375,9 @@ local function windowWidget()
     bar:RegisterForDrag("LeftButton")
     bar:SetScript("OnDragStart", function() frame:StartMoving() end)
     bar:SetScript("OnDragStop", save)
-    grip:SetScript("OnMouseDown", function() frame:StartSizing("BOTTOMRIGHT") end)
-    grip:SetScript("OnMouseUp", save)
+    grip:RegisterForDrag("LeftButton")
+    grip:SetScript("OnDragStart", function() frame:StartSizing("BOTTOMRIGHT") end)
+    grip:SetScript("OnDragStop", save)
     frame:SetScript("OnHide", function() widget:Fire("OnClose") end)
     function widget:SetInsets(top, bottom)
         content:ClearAllPoints()
@@ -398,6 +401,7 @@ local function windowWidget()
         self.status = nil
         frame:SetParent(UIParent)
         frame:SetFrameLevel(DRE.UI.mainWindow and DRE.UI.mainWindow.frame:GetFrameLevel() + 40 or 100)
+        grip:SetFrameLevel(frame:GetFrameLevel() + 3)
         frame:ClearAllPoints()
         frame:SetPoint("CENTER")
         frame:SetResizeBounds(350, 200)
@@ -681,6 +685,7 @@ local function clearFighter(slot)
     slot.unit, slot.name = nil, nil
     slot.binding, slot.motion, slot.ready = nil, nil, nil
     slot.boundNativeForm = nil
+    slot.standIn = nil
     if slot.model then
         slot.model:SetScript("OnModelLoaded", nil)
         slot.model:Hide()
@@ -689,24 +694,46 @@ local function clearFighter(slot)
     slot.portrait:Hide()
 end
 
+-- Local character art for names the client has never seen. The same name keeps
+-- its avatar across tabs and shuffles until WoW can supply the actual player.
+local standIns = {
+    {3524, "Dwarf_Male"}, {2141, "Tauren_Male"}, {5566, "Human_Male"},
+    {4259, "Orc_Male"}, {2306, "Nightelf_Female"}, {10357, "Troll_Male"},
+    {3167, "Human_Male"}, {7006, "Gnome_Male"}, {8769, "Human_Female"}, {3597, "Dwarf_Male"},
+}
+function DRE:SetStandInPortrait(portrait, name)
+    local key, hash = name:lower(), 0
+    for i = 1, #key do hash = (hash * 37 + key:byte(i)) % 65521 end
+    local avatar = standIns[hash % #standIns + 1]
+    portrait:SetTexture("Interface\\Icons\\Achievement_Character_" .. avatar[2])
+    if SetPortraitTextureFromCreatureDisplayID then
+        pcall(SetPortraitTextureFromCreatureDisplayID, portrait, avatar[1])
+    end
+    return avatar[1]
+end
+
 local function showFighter(slot, name, unit, refreshUnit, unitMatchesName)
     if slot.name == name and slot.unit == unit and not (unit and refreshUnit == unit) then return end
     clearFighter(slot)
     slot.name, slot.unit = name, unit
     if slot.nameLabel then slot.nameLabel:SetText(slot.displayName or name) end
+    if not name then return end
     local portrait = slot.portrait
-    portrait:SetTexture("Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo")
-    portrait:SetAlpha(0.4)
+    portrait:SetAlpha(1)
     portrait:Show()
-    if not unit then return end
-    if SetPortraitTexture and pcall(SetPortraitTexture, portrait, unit) then portrait:SetAlpha(1) end
+    slot.standIn = not unit
+    local displayID
+    if not unit or not SetPortraitTexture or not pcall(SetPortraitTexture, portrait, unit) then
+        displayID = DRE:SetStandInPortrait(portrait, name)
+    end
     local model = slot.model
-    if not model or slot.portraitOnly then return end
+    if not model or slot.portraitOnly or (not unit and not model.SetDisplayInfo) then return end
 
     -- SetUnit can fail or finish loading later. Keep the portrait until this binding is ready.
     local loaded, accepted = false, false
     local function reveal()
-        if not accepted or slot.binding ~= reveal or not (unitMatchesName or matchesUnit)(unit, name) then return end
+        if not accepted or slot.binding ~= reveal then return end
+        if unit and not (unitMatchesName or matchesUnit)(unit, name) then return end
         if slot.applyCamera then
             slot:applyCamera()
         else
@@ -727,8 +754,12 @@ local function showFighter(slot, name, unit, refreshUnit, unitMatchesName)
         reveal()
     end)
     slot.boundNativeForm = slot.useNativeForm
-    local ok, success = pcall(model.SetUnit, model, unit, false, slot.useNativeForm)
-    accepted = ok and DRE:IsAccessibleValue(success) and success == true
+    if unit then
+        local ok, success = pcall(model.SetUnit, model, unit, false, slot.useNativeForm)
+        accepted = ok and DRE:IsAccessibleValue(success) and success == true
+    else
+        accepted = pcall(model.SetDisplayInfo, model, displayID)
+    end
     if not accepted then model:Hide()
     elseif loaded then reveal() end
 end
@@ -809,6 +840,7 @@ function DRE.BindGroupSeat(seat, name, unit, refreshUnit)
     local matchingModel = seat.boundNativeForm == seat.useNativeForm
     if seat.appearance ~= appearance then
         seat.appearance, seat.portraitOnly = appearance, portraitOnly
+        if seat.standIn then seat.name = nil end
         if name and name == seat.name then
             seat.binding = nil
             local showModel = not portraitOnly and seat.ready and matchingModel
@@ -821,7 +853,7 @@ function DRE.BindGroupSeat(seat, name, unit, refreshUnit)
         end
     end
     if unit and not portraitOnly and not matchingModel then refreshUnit = unit end
-    if name and name == seat.name and (not unit or (seat.ready and not refreshUnit)) then
+    if name and name == seat.name and (not unit or (not seat.standIn and seat.ready and not refreshUnit)) then
         -- A selected character can move between target, focus and roster tokens.
         -- Keep its loaded appearance; a pending request keeps its captured portrait.
         if seat.unit ~= unit then
@@ -1112,7 +1144,8 @@ end
 function DRE:PrepareTableWindow(window, pages, sections)
     local frame = window.frame
     frame:SetResizeBounds(self.tableMinWidth, self.tableMinHeight)
-    window:SetStatusText("DEV   /   " .. self.version)
+    window:SetTitle(self.displayName .. " |cffd9b072- Forever Celebration|r")
+    window:SetStatusText("v" .. self.version)
     local hero = CreateFrame("Frame", nil, frame)
     hero:SetPoint("TOPLEFT", 1, -41)
     hero:SetPoint("TOPRIGHT", -1, -41)
@@ -1173,10 +1206,11 @@ function DRE:PrepareTableWindow(window, pages, sections)
             -- Leave space for the setup fields or roll history and settlement.
             -- Width also limits the table's height on tall, narrow windows.
             local windowHeight = frame:GetHeight()
+            local reserved = header.phase == "result" and 300 or (playing and 250 or 326)
             height = math.max(duelBannerHeight, math.min(
                 frame:GetWidth() * (playing and 0.54 or 0.42),
                 windowHeight * (playing and 0.65 or 0.52),
-                windowHeight - (playing and 250 or 326)))
+                windowHeight - reserved))
         end
         local current = hero:GetHeight()
         if header.phase == "setup" then
@@ -1315,7 +1349,7 @@ function DRE:PrepareTableWindow(window, pages, sections)
         tabs[i] = tab
     end
     local function sizeTabs(_, width)
-        for _, tab in ipairs(tabs) do tab:SetWidth((width - 16) / #tabs) end
+        for _, tab in ipairs(tabs) do tab:SetWidth((width - gripSize) / #tabs) end
     end
     nav:SetScript("OnSizeChanged", sizeTabs)
     sizeTabs(nav, window:GetWidth())

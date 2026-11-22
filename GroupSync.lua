@@ -50,7 +50,7 @@ local function snapshot(host)
     host.lastRound = r
     -- One base-36 digit per seat carries team (0..2), score/lives (0..2),
     -- elimination and tiebreak participation. Normal turns can omit all names.
-    local tied, rows, flags = {}, {}, {}
+    local tied, rows, flags, faces = {}, {}, {}, {}
     local realm = not (RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled()) and GetNormalizedRealmName and GetNormalizedRealmName()
     for _, i in ipairs(r and r.tiebreak or {}) do tied[i] = true end
     for i, name in ipairs(players) do
@@ -61,6 +61,7 @@ local function snapshot(host)
         local wireName = name
         if realm and realm ~= "" and not name:find("-",1,true) then wireName = name .. "-" .. realm end
         rows[i] = wireName .. ":" .. flags[i]
+        if r and r.seatRolls then faces[i] = r.seatRolls[i] or 0 end
     end
     local header = {r and r.status or "setup", mode, channel, opening, host.roundNumber}
     if r then
@@ -72,11 +73,14 @@ local function snapshot(host)
     end
     local meta, detail = table.concat(header, ","), r and r.pointResult or ""
     return meta .. "|" .. table.concat(rows, ";") .. "|" .. detail, table.concat(players,"\n"),
-        meta .. "|" .. table.concat(flags) .. "|" .. detail, players
+        meta .. "|" .. table.concat(flags) .. "|" .. detail, players,
+        #faces > 0 and ("|" .. table.concat(faces, ",")) or ""
 end
 
 local channels = {NONE=true, PARTY=true, RAID=true, INSTANCE_CHAT=true, SAY=true}
 local function decode(body, knownNames)
+    local legacy, faces = body:match("^([^|]*|[^|]*|[^|]*)|([%d,]+)$")
+    body = legacy or body
     local meta, roster, detail = body:match("^([^|]+)|([^|]*)|([^|]*)$")
     if not meta or #detail > 255 or detail:find("[%c]") then return end
     local h = split(meta, ",")
@@ -112,7 +116,10 @@ local function decode(body, knownNames)
     local players = DRE:ParseGroupRoster(text, setup)
     if not players or table.concat(players, "\n") ~= text then return end
     local draft = {roster=text, mode=mode, initialRoll=tostring(h[4]), channel=channel, teams=teams}
-    if setup then return draft end
+    if setup then
+        if faces then return end
+        return draft
+    end
     local count = #players
     local current, turn, rolls, steps, remaining, last, face, winning, scoring, high, winner, loser = unpack(h,6,17)
     if current < 1 or current > h[4] or turn < 1 or turn > count or remaining > count or last > count
@@ -123,6 +130,17 @@ local function decode(body, knownNames)
         currentRoll=current, turn=turn, rollCount=rolls, seatSteps=steps, remaining=remaining, eliminated=out,
         lastSeat=last > 0 and last or nil, lastPlayer=players[last], lastRoll=face > 0 and face or nil,
         winner=players[winner], loser=players[loser], winningTeam=winning > 0 and winning or nil, log={}}
+    if faces then
+        local values = split(faces, ",")
+        if #values ~= count then return end
+        r.seatRolls = {}
+        for i, value in ipairs(values) do
+            if #value > 6 then return end
+            local n = number(value, r.initialRoll)
+            if not n then return end
+            if n > 0 then r.seatRolls[i] = n end
+        end
+    end
     if mode == "teams" then r.teams = teams
     elseif mode == "twoLives" then r.lives = scores
     elseif mode == "highRoller" then
@@ -205,9 +223,10 @@ local function pump(host)
 end
 local function enqueue(host, peer, full)
     local job = host.jobs[peer]
-    local parts = full and host.fullParts or host.parts
+    local baseline = peer.badges and host.badgeFullParts or host.fullParts
+    local parts = full and baseline or (peer.badges and host.badgeParts or host.parts)
     if job then
-        if job.parts ~= parts then job.latest = job.latest and host.fullParts or parts end
+        if job.parts ~= parts then job.latest = job.latest and baseline or parts end
     else
         job = {peer=peer,parts=parts,index=1,attempts=0}
         host.jobs[peer] = job
@@ -220,13 +239,15 @@ local function enqueue(host, peer, full)
 end
 function DRE:PublishSharedTable()
     local host = self.sharedTable
-    local body, roster, compact, players = snapshot(host)
-    if body == host.body then return end
-    host.body, host.rev = body, host.rev + 1
+    local body, roster, compact, players, faces = snapshot(host)
+    if body .. faces == host.body then return end
+    host.body, host.rev = body .. faces, host.rev + 1
     local changed = roster ~= host.roster
     if changed then host.roster, host.rosterRev, host.names = roster, host.rev, players end
     host.fullParts = packets(host, "=" .. host.rosterRev .. ":" .. body)
     host.parts = changed and host.fullParts or packets(host, "@" .. host.rosterRev .. ":" .. compact)
+    host.badgeFullParts = faces == "" and host.fullParts or packets(host, "=" .. host.rosterRev .. ":" .. body .. faces)
+    host.badgeParts = changed and host.badgeFullParts or (faces == "" and host.parts or packets(host, "@" .. host.rosterRev .. ":" .. compact .. faces))
     checkpoint(host)
     for _,peer in pairs(host.peers) do
         if authorized(host,peer) then enqueue(host,peer) end
@@ -269,7 +290,19 @@ local function hostTable(restore)
     if restore then
         DRE.groupDraft, DRE.groupRound = restore.draft, restore.round
         s.lastRound = restore.round
-        if s.lastRound then s.lastRound.pendingRoll = nil end
+        local r = s.lastRound
+        if r then
+            r.pendingRoll = nil
+            if not r.seatRolls then
+                -- Older checkpoints stored only the last throw.
+                r.seatRolls = {}
+                local resetOnOne = r.mode == "twoLives" or r.mode == "elimination" or r.mode == "teams"
+                local awarded = r.mode == "highRoller" and r.pointResult and not r.tiebreak
+                if r.lastSeat and not (resetOnOne and r.lastRoll == 1) and not awarded then
+                    r.seatRolls[r.lastSeat] = r.lastRoll
+                end
+            end
+        end
     end
     DRE.sharedTable = s
     DRE:RefreshGroupUI()
@@ -280,7 +313,9 @@ local function joinTable(name, id)
     name = DRE:NormalizePlayerName(name)
     if not name or equalName(name,DRE:GetUnitPlayerName("player")) then return false,"Target another player who is hosting a table." end
     if DRE:HasActiveGame() or DRE.pendingChallenge or DRE.acceptedChallenge then return false,"Finish your current game or invitation first." end
-    local s = {role="guest", host=name, ticket=identifier(), id=id, rev=0, seen=GetTime(),
+    -- An uppercase B advertises badge snapshots. Legacy tickets are lowercase
+    -- hex; legacy hosts already accept and echo mixed-case opaque tickets.
+    local s = {role="guest", host=name, ticket="B"..identifier():sub(2), id=id, rev=0, seen=GetTime(),
         localDraft=DRE.groupDraft, localRound=DRE.groupRound}
     if not request(s) and not id then return false,"The table request could not be sent." end
     DRE.sharedTable, DRE.groupDraft, DRE.groupRound = s, nil, nil
@@ -359,6 +394,7 @@ local function handleJoin(host, payload, sender)
         peer = {name=name,key=key}
         host.peers[key] = peer
     elseif GetTime()-peer.seen < 1 then return end
+    peer.badges = ticket:sub(1,1) == "B"
     peer.ticket, peer.seen = ticket, GetTime()
     whisper(name, ("A:%s:%s:%s:%d"):format(ticket,host.id,host.epoch,host.rev))
     if needsBaseline or revision ~= host.rev or wanted == "-" then enqueue(host,peer,true) end

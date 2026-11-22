@@ -40,12 +40,12 @@ DRE.maxDebugMessages = 40
 
 -- Addon information
 local getMetadata = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
-DRE.title = (getMetadata and getMetadata(addonName, "Title")) or "DeathRoll Enhancer"
+DRE.title = ((getMetadata and getMetadata(addonName, "Title")) or "DeathRoll Enhancer"):gsub(" %(Dev%)$", "")
 DRE.displayName = DRE.title:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 DRE.devDuel = getMetadata and getMetadata(addonName, "X-DRE-DuelUI") == "1"
 
 -- Replaced by CurseForge packager on tagged builds.
-local localFallbackVersion = "2.4.2"
+local localFallbackVersion = "3.0.0"
 DRE.version = "@project-version@"
 if not DRE.version or DRE.version == "" or DRE.version:sub(1, 1) == "@" then
     local metadataVersion = getMetadata and getMetadata(addonName, "Version")
@@ -1551,7 +1551,7 @@ function DRE:SetupOptions()
                     },
                     sendWhisper = {
                         name = self.devDuel and "Send Challenge Invites" or "Send Challenge Whispers",
-                        desc = self.devDuel and "Send a silent invitation to opponents using the updated Forever dev build."
+                        desc = self.devDuel and "Send a silent invitation to opponents using DeathRoll Enhancer 3.0 or later on Forever."
                             or "Automatically whisper challenge details to your opponent when you start a game. They will see a popup if they have the addon.",
                         type = "toggle",
                         get = function() return self.db.profile.challengeSystem.sendWhisper end,

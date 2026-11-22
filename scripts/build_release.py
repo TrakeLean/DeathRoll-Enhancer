@@ -9,7 +9,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
-DEV_TEXTURES = ('DuelHeart', 'GoldTable', 'GoldTableGlints', 'GroupFeltTable', 'GroupSeatRim',
+TABLE_TEXTURES = ('DuelHeart', 'GoldTable', 'GoldTableGlints', 'GroupFeltTable', 'GroupSeatRim',
                 'GroupPortraitCorners', 'GroupTurnGlow', 'GroupGoblinArm')
 
 
@@ -36,9 +36,8 @@ def runtime_files(root=ROOT, dev=False):
             if line and not line.startswith('#'):
                 add(root / line.replace('\\', '/'))
     add(root / 'Media/Logo.tga')
-    if dev:
-        for texture in DEV_TEXTURES:
-            add(root / 'Media' / (texture + '.tga'))
+    for texture in TABLE_TEXTURES:
+        add(root / 'Media' / (texture + '.tga'))
     add(root / 'Libs' / 'Ace3-LICENSE.txt')
     add(root / 'Libs' / 'LibDBIcon-LICENSE.txt')
     add(root / 'Libs' / 'SOURCES.txt')
@@ -79,7 +78,7 @@ def build(output, version, root=ROOT, dev=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version', required=True)
-    parser.add_argument('--dev', action='store_true', help='Enable the Forever/Camelot development UI and include its art')
+    parser.add_argument('--dev', action='store_true', help='Process optional debug metadata (the Forever table UI ships in every build)')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     print(build(args.output, args.version, dev=args.dev))

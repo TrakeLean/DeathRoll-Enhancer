@@ -1,3 +1,27 @@
+## 3.0.0 — Forever Celebration (2026-11-22)
+
+The Duel and Group tables have been rebuilt for WoW Forever. Open the goblin coin on the minimap or type `/dr` to play. Classic remains the default.
+
+### Duels
+
+- **Classic** keeps the shrinking roll range. Try **Two Lives** to survive your first 1, **Cursed 7** to put both 1 and 7 in play as losing rolls, or **High Roller** to race your opponent to two points.
+- Each roll appears between the portraits before sliding into the roller’s badge. Hearts show remaining lives and gold coins show points. The table and portraits scale with the window.
+- Lose a duel with a registered wager and you can offer **Double or Nothing**. The rematch shows the increased stake.
+
+### Group tables
+
+- Host **2–40 players** in Classic, Elimination, Hot Potato, Two Lives, Teams or High Roller. Pick the seats, assign Gold and Red teams, or shuffle the rolling order.
+- Other addon users can target the host and choose **Join target** to follow the same roster, mode, turns and scores. Players can still take their turns with ordinary `/roll`. Chat announcements start at **None** and remember the channel you choose.
+- The goblin hand points to the next roller. Portraits keep each player’s latest roll across turns. Losing a life, an elimination that resets the range, or awarding a point clears the badges for the next round.
+- In **High Roller**, everyone rolls once. If the highest roll is tied, only those players reroll. Their badges stay visible and the other portraits fade. Everyone returns for the next point. First to two wins.
+
+### Statistics and settings
+
+- Filter duel and hosted group statistics by mode, or leave **All modes** selected. Review duel results and wagers by opponent in **History**. Group results are recorded separately.
+- Right-click the minimap coin to open Settings. Blizzard’s AddOns options now group related controls into sections.
+
+The redesigned portrait tables, shared table view and mode filters are available on WoW Forever. The same ZIP includes the existing DeathRoll interface for supported Retail and Classic clients.
+
 ## 2.4.2 — 2SChoppy Edition (2026-11-05)
 
 - Bundle LibDataBroker and LibDBIcon so the minimap icon works when DeathRoll Enhancer is the only enabled addon.

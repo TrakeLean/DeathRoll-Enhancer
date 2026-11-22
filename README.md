@@ -1,7 +1,7 @@
-# DeathRoll Enhancer v2.4.2 - 2SChoppy Edition
+# DeathRoll Enhancer v3.0.0 - 2SChoppy Edition
 
 ![Available on CurseForge](https://img.shields.io/badge/Available_on-CurseForge-6441A4?style=flat&logo=curseforge)
-![Version](https://img.shields.io/badge/Version-2.4.2-brightgreen)
+![Version](https://img.shields.io/badge/Version-3.0.0-brightgreen)
 ![WoW Compatibility](https://img.shields.io/badge/WoW-Classic%20|%20TBC%20|%20Wrath%20|%20Cata%20|%20Retail-blue)
 
 **The ultimate DeathRoll addon for World of Warcraft!** Transform your gambling experience with professional-grade statistics tracking, intuitive UI, comprehensive game management, and now **whisper-based challenge notifications**! Built with Ace3 and feature-detected compatibility paths; target-client validation is described below.
@@ -16,10 +16,14 @@ Finished games now save even when optional emotes are unavailable or restricted.
 
 Group rounds start with **Announce to → None**. Turns and results appear on the host’s table. Choosing a different destination saves it for future rounds and reloads. With **Say**, click **Announce** after each roll to send the current turn or result. Party, Raid, and Instance channels announce automatically. Full Forever surnames remain supported.
 
-### Shared tables in the Forever dev addon
+### The Forever 3.0 tables
+
+Duel in Classic, Two Lives, Cursed 7 or High Roller. See the last roll at each portrait, play Double or Nothing after a wagered loss, and filter your statistics by mode.
+
+### Shared tables on Forever
 
 1. The host opens **Group → Host table**. Add players by their full names. Anyone on the roster or in the host's party or raid can join the view.
-2. On another character with the updated dev addon, target the host and click **Group → Join target**. You can also type `/dr group join Full Host Name`. Joining lets party members watch. The host adds them to the roster to give them a turn.
+2. On another character with the 3.0 addon, target the host and click **Group → Join target**. You can also type `/dr group join Full Host Name`. Joining lets party members watch. The host adds them to the roster to give them a turn.
 3. The host controls the mode, starting roll, teams, roster, shuffle, and round. Joined players see the changes, including turns, scores, lives, and results, even with **Announce to → None**. On your turn, use **Roll Your Turn** or the displayed `/roll` range. Stay near the host so their client receives the roll.
 
 The table reconnects after a brief reload. Wait for the host to return before rolling. Guests can **Leave table** at any time. The host can close sharing with `/dr group leave` and continue locally. Players without the addon can still participate using ordinary rolls.
@@ -32,13 +36,13 @@ Open **Group** or `/dr group`. Add 2–40 players in turn order using **Add Targ
 - **Elimination** knocks out whoever rolls 1. The next remaining player clockwise starts again at the original maximum. The last player standing wins.
 - **Hot Potato** passes each safe roll to a randomly chosen different player. That player rolls with the new maximum. The first 1 ends the game.
 - **Two Lives** gives everyone two lives. Each 1 costs the roller a life and resets the maximum for the next player. The last player with a life wins.
-- **Teams** splits the roster between Gold and Crimson. On the Forever table, each portrait has a team-colored background and a thin matching border. The current roller gets a green ring. Left-click a portrait before starting to switch that player's team. **Shuffle order** changes who rolls first and keeps those assignments. The teams alternate, each cycling through its remaining players. A 1 knocks the roller out and resets the maximum. When one side runs out of players, everyone on the other team wins.
+- **Teams** splits the roster between Gold and Red. On the Forever table, each portrait has a team-colored background and a thin matching border. The current roller gets a green ring. Left-click a portrait before starting to switch that player's team. **Shuffle order** changes who rolls first and keeps those assignments. The teams alternate, each cycling through its remaining players. A 1 knocks the roller out and resets the maximum. When one side runs out of players, everyone on the other team wins.
 
 **Play again** restores the full roster in the same order and mode, with all lives and team members back in play.
 
 The roster locks during play. **Cancel Round** or `/dr cancel` ends a stuck round; **Restart Round** reuses the previous roster/order/maximum. Cancel before changing participants. **Roll Your Turn** rolls only for the host when eligible; everyone can use ordinary `/roll`. **Announce** sends the current turn/result for Say and retries other channels if chat was blocked. Slash shortcuts: `/dr group roll`, `/dr group announce`, `/dr group cancel`, `/dr group restart`.
 
-Payouts are manual. Settle them before starting new trade-tracked 1v1 games. Group results stay separate from 1v1 statistics. Earlier unpaid 1v1 games with group participants require `/dr edit` payment assignment. Reloading ends a local-only round. A Forever dev host can resume an explicitly shared round after a brief reload, including the last 20 log entries.
+Payouts are manual. Settle them before starting new trade-tracked 1v1 games. Group results stay separate from 1v1 statistics. Earlier unpaid 1v1 games with group participants require `/dr edit` payment assignment. Reloading ends a local-only round. A Forever host can resume an explicitly shared round after a brief reload, including the last 20 log entries.
 
 ## Version 2.3.13: game recovery and safer editing
 

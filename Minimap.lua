@@ -18,43 +18,62 @@ function DeathRollEnhancer_OnLauncherClick(_, button)
     end
 end
 
+local muted = "|cFFB6AEA0"
+local white = "|cFFFFF4DF"
+local gain = "|cFF82D69A"
+local loss = "|cFFF49A8F"
+
+local function addRow(tooltip, label, value, valueColor)
+    label = muted .. label .. "|r"
+    value = (valueColor or white) .. value .. "|r"
+    if tooltip.AddDoubleLine then
+        tooltip:AddDoubleLine(label, value)
+    else
+        tooltip:AddLine(label .. "  " .. value)
+    end
+end
+
+local function money(copper)
+    return GetCoinTextureString and GetCoinTextureString(copper) or DRE:FormatGold(copper)
+end
+
+local function showTooltip(tooltip)
+    if not tooltip or not tooltip.AddLine then return end
+    tooltip:AddLine("|cFFFFD474" .. DRE.displayName .. "|r  " .. muted .. "v" .. DRE.version .. "|r")
+
+    local profile = DRE.db and DRE.db.profile
+    local stats = profile and profile.goldTracking
+    local won = tonumber(stats and stats.totalWon) or 0
+    local lost = tonumber(stats and stats.totalLost) or 0
+    local streak = tonumber(stats and stats.currentStreak) or 0
+    if won > 0 or lost > 0 or streak ~= 0 then
+        tooltip:AddLine(" ")
+        if won > 0 or lost > 0 then
+            local net = won - lost
+            local sign = net > 0 and "+" or net < 0 and "-" or ""
+            local color = net > 0 and gain or net < 0 and loss or white
+            addRow(tooltip, "Net gold", sign .. money(math.abs(net)), color)
+            addRow(tooltip, "Gold won", money(won))
+            addRow(tooltip, "Gold lost", money(lost))
+        end
+        if streak ~= 0 then
+            local label = streak > 0 and "Win streak" or "Loss streak"
+            addRow(tooltip, label, math.abs(streak), streak > 0 and gain or loss)
+        end
+    end
+
+    tooltip:AddLine(" ")
+    addRow(tooltip, "Left-click", "Open DeathRoll")
+    addRow(tooltip, "Right-click", "Open settings")
+end
+
 -- Create the data object used by the bundled LibDataBroker and LibDBIcon.
 local minimapLDB = {
     type = "data source",
     text = "DeathRoll",
     icon = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo.tga",
     OnClick = DeathRollEnhancer_OnLauncherClick,
-    OnTooltipShow = function(tooltip)
-        if not tooltip or not tooltip.AddLine then return end
-        
-        tooltip:AddLine(DRE.title .. " v" .. DRE.version)
-        tooltip:AddLine(" ")
-        tooltip:AddLine("|cFFFFFFFFLeft Click:|r Open DeathRoll window")
-        tooltip:AddLine("|cFFFFFFFFRight Click:|r Open Settings tab")
-        
-        if DRE.db and DRE.db.profile.goldTracking then
-            local stats = DRE.db.profile.goldTracking
-            tooltip:AddLine(" ")
-            tooltip:AddLine("|cFFFFD700Statistics:|r")
-            
-            if stats.totalWon and stats.totalWon > 0 then
-                tooltip:AddLine("|cFF00FF00Gold Won:|r " .. DRE:FormatGold(stats.totalWon))
-            end
-            
-            if stats.totalLost and stats.totalLost > 0 then
-                tooltip:AddLine("|cFFFF0000Gold Lost:|r " .. DRE:FormatGold(stats.totalLost))
-            end
-            
-            if stats.currentStreak and stats.currentStreak ~= 0 then
-                local streakText = stats.currentStreak > 0 and 
-                    "|cFF00FF00Win Streak: " .. stats.currentStreak .. "|r" or
-                    "|cFFFF0000Loss Streak: " .. math.abs(stats.currentStreak) .. "|r"
-                tooltip:AddLine(streakText)
-            end
-        end
-        
-        tooltip:Show()
-    end,
+    OnTooltipShow = showTooltip,
 }
 
 -- If LibDataBroker is available, register with it for better compatibility

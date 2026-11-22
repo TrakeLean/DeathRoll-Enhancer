@@ -88,11 +88,33 @@ class SharedTableTests(unittest.TestCase):
                 self.assertEqual(target, dest.eval("DRE:GetUnitPlayerName('player')"))
                 dest.globals().fire('CHAT_MSG_ADDON',prefix,payload,channel,name+'-LocalRealm')
 
+    def test_join_during_tiebreak_hides_spectator_last_roll(self):
+        self.h("""
+            add('Arlo Strand'); choose('highRoller'); press(form().primary)
+            for _, value in ipairs({92,92,55}) do
+                local r = DRE.groupRound
+                assert(DRE:HandleGroupRoll(r.players[r.turn], value, 100))
+            end
+        """)
+        self.relay()
+        self.g("""
+            local r, b = DRE.groupRound, form().circle
+            assert(r.seatRolls[1]==92 and r.seatRolls[2]==92 and not r.seatRolls[3])
+            assert(b.seats[3].inactiveShade:IsShown() and not b.rollBadge:IsShown())
+        """)
+        self.h("assert(DRE:HandleGroupRoll('Mira Summer',89,100))")
+        self.relay()
+        self.g("assert(DRE.groupRound.turn==2 and DRE.groupRound.seatRolls[1]==89 and form().circle.seats[3].sittingOut)")
+        self.h("assert(DRE:HandleGroupRoll('Theo Stone',54,100))")
+        self.relay()
+        self.g("assert(DRE.groupRound.points[1]==1 and not next(DRE.groupRound.seatRolls) and not form().circle.seats[3].inactiveShade:IsShown())")
+
     def test_host_reload_keeps_round_and_allows_next_roll(self):
         self.relay()
         self.h("choose('highRoller'); press(form().primary); fire('CHAT_MSG_SYSTEM','Mira Summer rolls 83 (1-100)')")
         self.relay()
         new_host = client('Mira','Summer')
+        self.g("assert(DRE.groupRound.seatRolls[1]==83 and not DRE.groupRound.seatRolls[2])")
 
         # SavedVariables are serialized values. Transfer them without sharing Lua objects.
         def reload_value(value):
@@ -100,11 +122,13 @@ class SharedTableTests(unittest.TestCase):
                 return new_host.table_from({k: reload_value(v) for k,v in value.items()})
             return value
         data = reload_value(self.host.eval("DRE.db.char.sharedTable"))
+        data['round']['seatRolls'] = None  # Exercise an older host checkpoint.
         # The guest sees another roll before the host crashes. Its revision
         # now matches the restored host but refers to a different turn.
         self.h("fire('CHAT_MSG_SYSTEM','Theo Stone rolls 90 (1-100)')")
         self.relay()
         self.g("assert(DRE.groupRound.points[2]==1 and DRE.groupRound.turn==1)")
+        self.g("assert(not next(DRE.groupRound.seatRolls))")
         self.host = new_host
         self.h = new_host.execute
         self.h("DRE.db.char={sharedTable=...}; DRE:RestoreSharedTable(); advance(2)", data)
@@ -112,9 +136,22 @@ class SharedTableTests(unittest.TestCase):
         self.relay()
         self.h("assert(DRE.sharedTable.role=='host' and DRE.groupRound.highSeats[1]==1 and DRE.groupRound.turn==2)")
         self.g("assert(DRE:SharedHostOnline() and DRE.groupRound.highFace==83); press(form().primary)")
+        self.g("assert(DRE.groupRound.seatRolls[1]==83)")
         self.h("fire('CHAT_MSG_SYSTEM','Theo Stone rolls 77 (1-100)')")
         self.relay()
         self.g("assert(DRE.groupRound.points[1]==1 and DRE.groupRound.turn==1 and DRE.groupRound.rollCount==2)")
+
+    def test_legacy_guest_can_read_snapshot_without_seat_rolls(self):
+        self.h("press(form().primary); fire('CHAT_MSG_SYSTEM','Mira Summer rolls 32 (1-100)')")
+        self.guest.globals().advance(1)
+        for prefix, payload, channel, _ in self.drain(self.guest):
+            fields = payload.split(':')
+            if fields[0] == 'J':
+                fields[1] = fields[1].lower()
+                self.g("DRE.sharedTable.ticket=...", fields[1])
+                self.host.globals().fire('CHAT_MSG_ADDON', prefix, ':'.join(fields), channel, 'Theo Stone')
+        self.relay()
+        self.g("assert(DRE.groupRound.lastRoll==32 and not DRE.groupRound.seatRolls)")
 
     def test_guest_joining_at_result_keeps_prior_duel_payment_separate(self):
         self.h("press(form().primary); fire('CHAT_MSG_SYSTEM','Mira Summer rolls 1 (1-100)')")
@@ -187,6 +224,8 @@ class SharedTableTests(unittest.TestCase):
             self.relay()
             self.assertEqual(self.host.eval("DRE.groupRound.rollCount"),self.guest.eval("DRE.groupRound.rollCount"))
             self.assertEqual(self.host.eval("DRE.groupRound.turn"),self.guest.eval("DRE.groupRound.turn"))
+            self.assertEqual(dict(self.host.eval("DRE.groupRound.seatRolls").items()),
+                             dict(self.guest.eval("DRE.groupRound.seatRolls").items()))
         self.g("assert(DRE.groupRound.winner=='Mira Summer' and DRE.groupRound.points[1]==2 and #rolls==3)")
         self.g("assert(not DRE:GetHostedGroupStats() and #sent==0); press(form().secondary); assert(not DRE.sharedTable)")
         self.h("assert(DRE:GetHostedGroupStats().played==1 and #sent==0)")

@@ -67,10 +67,6 @@ Run the tests in `TESTING.md`, then use the dependency-aware builder:
 python3 scripts/build_release.py --version "$(cat VERSION)" --output "dist/DeathRollEnhancer-$(cat VERSION).zip"
 ```
 
-For two-player Forever testing, build the dev ZIP below and install it on both clients. The Forever and Camelot manifests enable the dev UI, its table artwork, and silent invitations with shared wager terms.
-
-```sh
-python3 scripts/build_release.py --dev --version "$(cat VERSION)" --output "dist/DeathRollEnhancer-$(cat VERSION)-Forever-Dev.zip"
-```
+For two-player Forever testing, install the same release ZIP on both clients. The Forever and Camelot manifests enable the table UI, its artwork, and silent invitations with shared wager terms.
 
 It validates every TOC/XML dependency, includes pinned libraries and licenses, replaces version tokens, and writes one installable `DeathRollEnhancer` directory. When copying manually, include `embeds.xml` and the complete `Libs/` directory before the runtime modules. Record the target-client smoke-test status in release notes. GitHub publication does not confirm CurseForge publication; that still depends on the separately configured webhook.

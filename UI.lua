@@ -1718,15 +1718,14 @@ local function historyLedger()
     local portrait = badge:CreateTexture(nil, "ARTWORK")
     portrait:SetAllPoints()
     local function updatePortrait()
-        portrait:SetTexture("Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo")
-        if not pane.selected or not SetPortraitTexture then return end
+        if not pane.selected then portrait:SetTexture(nil); return end
         for _, unit in ipairs({"player", "target"}) do
             local isPlayer = UnitIsPlayer(unit)
             if DRE:IsAccessibleValue(isPlayer) and isPlayer and DRE:IsSamePlayer(DRE:GetUnitPlayerName(unit), pane.selected) then
-                pcall(SetPortraitTexture, portrait, unit)
-                return
+                if SetPortraitTexture and pcall(SetPortraitTexture, portrait, unit) then return end
             end
         end
+        DRE:SetStandInPortrait(portrait, pane.selected)
     end
     badge:SetScript("OnShow", function()
         badge:RegisterEvent("PLAYER_TARGET_CHANGED")

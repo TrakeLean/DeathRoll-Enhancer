@@ -14,28 +14,27 @@ spec.loader.exec_module(builder)
 
 
 class PackageTests(unittest.TestCase):
-    def test_fresh_forever_install_of_release_and_dev(self):
-        version = '2.4.3-beta.1'
+    def test_fresh_install_of_packaged_clients(self):
+        version = '3.0.0'
         with tempfile.TemporaryDirectory() as directory:
-            for dev in (False, True):
-                with self.subTest(dev=dev), zipfile.ZipFile(builder.build(
-                        Path(directory) / 'addon.zip', version, dev=dev)) as archive:
+            for manifest_name in ('DeathRollEnhancer_Forever.toc', 'DeathRollEnhancer_Camelot.toc', 'DeathRollEnhancer.toc'):
+                with self.subTest(manifest=manifest_name), zipfile.ZipFile(builder.build(
+                        Path(directory) / 'addon.zip', version)) as archive:
                     def read(path):
                         return archive.read('DeathRollEnhancer/' + path.as_posix()).decode('utf-8-sig')
 
                     media = {n.split('/')[-1] for n in archive.namelist() if '/Media/' in n}
                     expected = {'Logo.tga'}
-                    if dev:
-                        expected.update(name + '.tga' for name in (
+                    expected.update(name + '.tga' for name in (
                             'DuelHeart', 'GoldTable', 'GoldTableGlints', 'GroupSeatRim', 'GroupTurnGlow',
                             'GroupFeltTable', 'GroupGoblinArm', 'GroupPortraitCorners'))
                     self.assertEqual(media, expected)
                     lua = LuaRuntime()
                     for fixture in ('wow_mock.lua', 'packaged_client.lua'):
                         lua.execute((ROOT / 'tests' / fixture).read_text(encoding='utf-8'))
-                    manifest = read(Path('DeathRollEnhancer_Forever.toc')).splitlines()
+                    manifest = read(Path(manifest_name)).splitlines()
                     metadata = dict(line[3:].split(': ', 1) for line in manifest if line.startswith('## '))
-                    self.assertEqual('(Dev)' in metadata['Title'], dev)
+                    self.assertNotIn('(Dev)', metadata['Title'])
                     lua.globals().tocMetadata = lua.table_from(metadata)
                     namespace = lua.table()
 
@@ -72,8 +71,10 @@ class PackageTests(unittest.TestCase):
                         assert(DRE.db.profile.ui.scale and LibStub('LibDBIcon-1.0'):IsRegistered('DeathRollEnhancer'))
                     """)
                     self.assertEqual(lua.eval('DRE.version'), version)
-                    self.assertEqual(lua.eval('not not DRE.devDuel'), dev)
-                    if dev:
+                    self.assertEqual(lua.eval('DRE.displayName'), 'DeathRoll Enhancer')
+                    uses_table = manifest_name != 'DeathRollEnhancer.toc'
+                    self.assertEqual(bool(lua.eval('DRE.devDuel')), uses_table)
+                    if uses_table:
                         lua.execute("""
                             local parent = LibStub('AceGUI-3.0'):Create('SimpleGroup')
                             local child = DRE:CreateTableDropdownField(parent, 'Channel', 1)
@@ -98,7 +99,11 @@ class PackageTests(unittest.TestCase):
                     self.assertEqual(lua.eval("table.concat(clientErrors, '\\n')"), '')
 
     def test_runtime_references_exist_and_required_libraries_load_first(self):
-        files = {p.relative_to(ROOT).as_posix() for p in builder.runtime_files(dev=True)}
+        files = {p.relative_to(ROOT).as_posix() for p in builder.runtime_files()}
+        ignored = {line.strip()[2:] for line in (ROOT / '.pkgmeta').read_text().splitlines()
+                   if line.strip().startswith('- ')}
+        self.assertTrue(files.isdisjoint(ignored))
+        self.assertIn('GroupSync.lua', files)
         for library in ('LibStub/LibStub.lua', 'AceAddon-3.0/AceAddon-3.0.lua',
                         'AceDB-3.0/AceDB-3.0.lua', 'AceGUI-3.0/AceGUI-3.0.lua',
                         'LibDataBroker-1.1/LibDataBroker-1.1.lua', 'LibDBIcon-1.0/LibDBIcon-1.0.lua',
@@ -121,7 +126,7 @@ class PackageTests(unittest.TestCase):
             self.assertIn('## Interface: 16001', specialized)
             self.assertIn('## X-DRE-DuelUI: 1', specialized)
             self.assertEqual([line for line in specialized.splitlines() if line.startswith('## Title:')],
-                             ['## Title: DeathRoll Enhancer (Dev)'])
+                             [line for line in toc.splitlines() if line.startswith('## Title:')])
             self.assertEqual(load_lines(toc), load_lines(specialized))
 
     def test_installable_deterministic_archive(self):
@@ -154,6 +159,6 @@ class PackageTests(unittest.TestCase):
                         self.assertIn(b'## Version: 2.3.10-dev', manifest)
                         self.assertEqual(titles(manifest), titles(toc))
                         self.assertNotIn(b'(Dev)', manifest)
-                        self.assertNotIn(b'X-DRE-DuelUI', manifest)
+                        self.assertEqual(b'## X-DRE-DuelUI: 1' in manifest, name.endswith(('_Forever.toc', '_Camelot.toc')))
                         self.assertNotIn(b'@project-version@', manifest)
                         self.assertEqual(modules(toc), modules(manifest))

@@ -535,7 +535,7 @@ class ForeverDuelTests(unittest.TestCase):
             units.target = {'Alice', 'Smith'}
             event(banner, 'PLAYER_TARGET_CHANGED')
             loaded(them)
-            assert(slot.nameLabel:GetText() == 'Alice Jones' and not them:IsShown() and slot.portrait:IsShown())
+            assert(slot.nameLabel:GetText() == 'Alice Jones' and slot.standIn and them.alpha == 0 and slot.portrait:IsShown())
             units.focus = {'Alice', 'Jones'}
             event(banner, 'PLAYER_FOCUS_CHANGED')
             assert(them.bound == 'focus' and them.alpha == 0)
@@ -754,8 +754,8 @@ class ForeverDuelTests(unittest.TestCase):
             tick(0.07)
             roll('Me Smith', 1, 100)
             assert(widgets().phase == 'result')
-            tick(0.21)
-            idleAt(266)
+            tick(0.28)
+            idleAt(216) -- leave the settlement and rematch terms visible
             assert(window:GetWidth() == 568 and window:GetHeight() == 516)
             assert(not DRE.db.profile.ui.frameStatus.height)
             action()
@@ -1818,7 +1818,7 @@ class ForeverDuelTests(unittest.TestCase):
             units.target = {'Alice', 'Smith'}
             receiveOffer(20000, 'fixed')
             stale()
-            assert(not model:IsShown() and banner.portrait:IsShown() and not banner.unit)
+            assert(banner.standIn and model.alpha == 0 and banner.portrait:IsShown() and not banner.unit)
             banner:GetScript('OnEvent')(banner, 'NAME_PLATE_UNIT_ADDED', 'nameplate9')
             assert(not banner.unit)
             units.nameplate9 = {'Alice', 'Jones'}

@@ -1,4 +1,4 @@
--- The Forever checkout opts into this view through its development manifest.
+-- The Forever and Camelot manifests enable the table interface.
 local DRE = LibStub("AceAddon-3.0"):GetAddon("DeathRollEnhancer")
 if not DRE.devDuel then return end
 local AceGUI = LibStub("AceGUI-3.0")
@@ -194,7 +194,7 @@ function DRE:InviteToDuel(target, roll, wager, trackTrade, terms)
     C_Timer.After(timeout, function()
         if self.outgoingChallenge == invite then
             self:WithdrawDuelInvite()
-            self:Print("Invitation to " .. target .. " expired. Both players need the updated dev build for silent invites. For a manual duel, turn off Send Challenge Invites.")
+            self:Print("Invitation to " .. target .. " expired. Both players need DeathRoll Enhancer 3.0 or later on Forever for silent invites. For a manual duel, turn off Send Challenge Invites.")
         end
     end)
     return true

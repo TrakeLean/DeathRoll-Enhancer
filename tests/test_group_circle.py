@@ -363,7 +363,7 @@ class GroupCircleTests(unittest.TestCase):
             roll('Mira Summer', 50, 100)
             roll('Theo Stone', 1, 50)
             assert(round.status == 'active' and round.remaining == 2 and round.currentRoll == 100)
-            assert(board.seats[2]:GetAlpha() < 1 and w.status:GetText() == 'Arlo Strand rolls 1–100')
+            assert(board.seats[2].inactiveShade:IsShown() and w.status:GetText() == 'Arlo Strand rolls 1–100')
             assert(board.rollBadge.seat == board.seats[2] and board.rollBadge.number:GetText() == '1')
             assert(w.lastRoll:GetText() == 'Theo Stone is out · 2 players left')
             assert(DRE:GetGroupAnnouncement(round):find('Theo Stone is out', 1, true))
@@ -383,7 +383,7 @@ class GroupCircleTests(unittest.TestCase):
             assert(stats.regulars['theo stone'].losses == 1 and stats.regulars['arlo strand'].losses == 1)
             click(w.primary)
             assert(DRE.groupRound.mode == 'elimination' and DRE.groupRound.remaining == 3)
-            assert(board.seats[2]:GetAlpha() == 1)
+            assert(not board.seats[2].inactiveShade:IsShown() and board.seats[2].faceAlpha == 1)
             roll('Mira Summer', 1, 100)
             DRE:CancelGroupRound(true)
             assert(stats.played == 1 and stats.losses == 0)
@@ -428,12 +428,13 @@ class GroupCircleTests(unittest.TestCase):
             assert(round.turn == 3 and round.currentRoll == 100 and round.remaining == 3)
             assert(board.seats[2].nameLabel:GetText() == 'Theo Stone')
             assert(board.seats[2].score.caption:GetText() == '1')
+            assert(not board.seats[2].inactiveShade:IsShown())
             assert(board.seats[1].score.borderRed == board.seats[2].score.borderRed) -- tied leaders
             assert(DRE:GetGroupAnnouncement(round):find('Theo Stone has one life left', 1, true))
             roll('Arlo Strand', 9, 100)
             roll('Mira Summer', 8, 9)
             roll('Theo Stone', 1, 8)
-            assert(round.remaining == 2 and board.seats[2]:GetAlpha() < 1)
+            assert(round.remaining == 2 and board.seats[2].inactiveShade:IsShown())
             assert(board.seats[2].score.caption:GetText() == '0')
             roll('Arlo Strand', 1, 100)
             assert(board.seats[1].score.borderRed > board.seats[3].score.borderRed)
@@ -443,7 +444,7 @@ class GroupCircleTests(unittest.TestCase):
             assert(w.status:GetText() == 'Mira Summer wins Two Lives')
             assert(DRE:GetHostedGroupStats().regulars['theo stone'].losses == 1)
             click(w.primary)
-            assert(DRE.groupRound.lives[2] == 2 and board.seats[2]:GetAlpha() == 1)
+            assert(DRE.groupRound.lives[2] == 2 and not board.seats[2].inactiveShade:IsShown())
             assert(board.seats[2].score.caption:GetText() == '2')
         """)
 
@@ -471,6 +472,32 @@ class GroupCircleTests(unittest.TestCase):
             assert(seat.score:IsShown() and seat.score.anchor == seat)
         """)
 
+    def test_seat_badges_persist_across_rotation_and_clear_on_life_loss(self):
+        self.lua.execute("""
+            local names = {'Mira Summer', 'Theo Stone', 'Arlo Strand'}
+            edit(names)
+            w.mode:Fire('OnValueChanged', 'twoLives')
+            click(w.primary)
+            local r = DRE.groupRound
+            roll(names[1], 80, 100)
+            roll(names[2], 41, 80)
+            roll(names[3], 19, 41)
+            roll(names[1], 12, 19)
+            assert(r.seatRolls[1] == 12 and r.seatRolls[2] == 41 and r.seatRolls[3] == 19)
+            for i = 2, 3 do
+                local badge = board.seats[i].lastRollBadge
+                assert(badge:IsShown() and badge.number:GetText() == tostring(r.seatRolls[i]))
+            end
+            assert(board.rollBadge.seat == board.seats[1] and board.rollBadge.number:GetText() == '12')
+            roll(names[2], 1, 12)
+            assert(not next(r.seatRolls) and r.lives[2] == 1)
+            for _, seat in ipairs(board.seats) do
+                assert(not seat.lastRollBadge or not seat.lastRollBadge:IsShown())
+            end
+            roll(names[3], 68, 100)
+            assert(r.seatRolls[3] == 68 and not r.seatRolls[1] and not r.seatRolls[2])
+        """)
+
     def test_high_roller_scores_complete_rounds_and_replays_ties(self):
         self.lua.execute("""
             local names = {'Mira Summer', 'Theo Stone', 'Arlo Strand', 'Fia Day'}
@@ -487,6 +514,7 @@ class GroupCircleTests(unittest.TestCase):
             local function expectFaces(...)
                 for i, alpha in ipairs({...}) do
                     near(board.seats[i].face:GetAlpha(), alpha)
+                    assert(board.seats[i].inactiveShade:IsShown() == (board.seats[i].sittingOut == true))
                     near(board.seats[i]:GetAlpha(), 1) -- parent of the name and coins
                 end
             end
@@ -510,6 +538,9 @@ class GroupCircleTests(unittest.TestCase):
             roll(names[4], 50, 100)
             assert(round.points[2] == 0 and round.points[3] == 0 and round.scoringRound == 1)
             assert(w.lastRoll:GetText():find('Tied at 50', 1, true))
+            for i = 2, 4 do assert(round.seatRolls[i] == 50) end
+            assert(not round.seatRolls[1] and not board.seats[1].lastRollBadge:IsShown())
+            assert(board.seats[2].lastRollBadge:IsShown() and board.seats[3].lastRollBadge:IsShown())
             assert(round.turn == 2 and round.seatSteps % 4 == 1 and not DRE:RollGroupTurn())
             assert(DRE:GetGroupAnnouncement(round):find('Round 1 tiebreak: Theo Stone, /roll 100', 1, true))
             badge:GetScript('OnUpdate')(badge, 1.4)
@@ -518,13 +549,14 @@ class GroupCircleTests(unittest.TestCase):
             roll(names[2], 10, 50) -- the opening range still applies
             assert(round.turn == 2 and round.rollCount == 4)
             roll(names[2], 80, 100)
+            assert(round.seatRolls[2] == 80 and round.seatRolls[3] == 50)
             roll(names[3], 80, 100)
             roll(names[4], 1, 100)
             assert(round.turn == 2 and #round.tiebreak == 2 and round.scoringRound == 1)
-            badge:GetScript('OnUpdate')(badge, 1.15)
-            expectFaces(0.35, 1, 1, 0.175) -- last roller fades back to the dimmed level
+            assert(not round.seatRolls[4] and not board.seats[4].lastRollBadge:IsShown())
+            assert(not badge:IsShown() and not badge.rollingSeat) -- the last roller is now sitting out
+            expectFaces(0.35, 1, 1, 0.35)
             DRE:RefreshGroupUI()
-            badge:GetScript('OnUpdate')(badge, 0.2)
             expectFaces(0.35, 1, 1, 0.35)
             roll(names[2], 1, 100)
             roll(names[4], 100, 100) -- dropped from the second tiebreak
@@ -535,6 +567,7 @@ class GroupCircleTests(unittest.TestCase):
             badge:GetScript('OnUpdate')(badge, 1.4)
             expectFaces(1, 1, 1, 1)
             assert(round.points[3] == 1 and board.seats[3].score.caption:GetText() == '1')
+            assert(not next(round.seatRolls) and not badge:IsShown())
             assert(board.seats[3].score.pips[1].path:match('UI%-GoldIcon$'))
             pass({80,50,75,1})
             assert(round.points[1] == 1 and round.points[3] == 1)
@@ -569,20 +602,20 @@ class GroupCircleTests(unittest.TestCase):
                 assert(rawget(seat.backing, 'mask'))
                 function seat.backing:SetColorTexture(r, g, b, a)
                     assert(a == 1)
-                    self.tint = r > g and (g > b and 'gold' or 'crimson') or 'green'
+                    self.tint = r > g and (g > b and 'gold' or 'red') or 'green'
                 end
             end
             w.mode:Fire('OnValueChanged', 'teams')
-            assert(mira.backing.tint == 'gold' and theo.backing.tint == 'crimson')
+            assert(mira.backing.tint == 'gold' and theo.backing.tint == 'red')
             assert(mira.team == 1 and theo.team == 2 and mira.portraitButton:IsShown())
             local random = math.random
             math.random = function() return 1 end
             click(w.shuffle)
             math.random = random
             assert(board.seats[1] == theo and theo.team == 2 and mira.team == 1)
-            assert(mira.backing.tint == 'gold' and theo.backing.tint == 'crimson')
+            assert(mira.backing.tint == 'gold' and theo.backing.tint == 'red')
             mira.portraitButton:GetScript('OnClick')(mira.portraitButton, 'LeftButton')
-            assert(mira.backing.tint == 'crimson')
+            assert(mira.backing.tint == 'red')
             w.mode:Fire('OnValueChanged', 'classic')
             assert(mira.backing.tint == 'green' and theo.backing.tint == 'green')
             assert(not mira.portraitButton.ring:IsShown() and not theo.portraitButton.ring:IsShown())
@@ -593,23 +626,23 @@ class GroupCircleTests(unittest.TestCase):
             edit({'Mira Summer','Theo Stone'})
             w.mode:Fire('OnValueChanged', 'teams')
             local mira, theo = board.seats[1].portraitButton.ring, board.seats[2].portraitButton.ring
-            local gold, crimson = board.seats[1].portraitButton.outline, board.seats[2].portraitButton.outline
-            assert(gold:IsShown() and crimson:IsShown())
+            local gold, red = board.seats[1].portraitButton.outline, board.seats[2].portraitButton.outline
+            assert(gold:IsShown() and red:IsShown())
             assert(not mira:IsShown() and not theo:IsShown())
             click(w.primary)
             assert(mira:IsShown() and not theo:IsShown())
-            assert(not gold:IsShown() and crimson:IsShown())
+            assert(not gold:IsShown() and red:IsShown())
             roll('Mira Summer', 37, 100)
             board.frame:GetScript('OnUpdate')(board.frame, 0.16)
             assert(not mira:IsShown() and theo:IsShown())
-            assert(gold:IsShown() and not crimson:IsShown())
+            assert(gold:IsShown() and not red:IsShown())
             assert(not board.turnRing.halo:IsShown() and not board.trailingRing.halo:IsShown())
             roll('Theo Stone', 1, 37)
             assert(not mira:IsShown() and not theo:IsShown())
-            assert(gold:IsShown() and crimson:IsShown())
+            assert(gold:IsShown() and red:IsShown())
             click(w.secondary)
             w.mode:Fire('OnValueChanged', 'classic')
-            assert(not gold:IsShown() and not crimson:IsShown())
+            assert(not gold:IsShown() and not red:IsShown())
             click(w.primary)
             assert(board.turnRing:IsShown() and board.turnRing.halo:IsShown())
         """)
@@ -637,28 +670,31 @@ class GroupCircleTests(unittest.TestCase):
                 end
             end
             DRE:RefreshGroupUI()
-            local restingCrimson = board.seats[1].backing.red
+            local restingRed = board.seats[1].backing.red
             click(w.primary)
             local round = DRE.groupRound
-            assert(board.seats[1].backing.red > restingCrimson)
+            assert(board.seats[1].backing.red > restingRed)
             assert(round.teamRemaining[1] == 2 and round.teamRemaining[2] == 1)
             switch(1)
             assert(round.teams[names[1]] == 2)
-            assert(DRE:GetGroupAnnouncement(round):find('Crimson team: Mira Summer', 1, true))
+            assert(DRE:GetGroupAnnouncement(round):find('Red team: Mira Summer', 1, true))
             roll(names[1], 20, 100)
             roll(names[2], 1, 20)
             assert(round.turn == 1 and round.teamRemaining[1] == 1)
             assert(board.seats[2].backing.red < board.seats[3].backing.red)
+            assert(board.seats[2].inactiveShade:IsShown() and not board.seats[3].inactiveShade:IsShown())
             roll(names[1], 4, 100)
+            near(board.seats[2].model.modelAlpha, 0.35)
             assert(round.turn == 3)
             roll(names[3], 1, 4)
-            assert(w.status:GetText() == 'Team Crimson wins')
+            assert(w.status:GetText() == 'Team Red wins')
             local stats = DRE:GetHostedGroupStats().byMode.teams
             assert(stats.losses == 0 and stats.regulars['theo stone'].losses == 1)
             click(w.secondary)
             switch(1)
             assert(w.primary.disabled and round.teams[names[1]] == 2)
             assert(DRE:RestartGroupRound() and DRE.groupRound.teams[names[1]] == 2)
+            assert(not board.seats[2].inactiveShade:IsShown() and board.seats[2].model.modelAlpha == 1)
         """)
 
     def test_odd_teams_rotate_fairly_and_score_the_entire_winning_team(self):
@@ -677,7 +713,7 @@ class GroupCircleTests(unittest.TestCase):
             roll(names[1], 1, 100)
             roll(names[2], 1, 100)
             roll(names[3], 5, 100)
-            assert(DRE:GetGroupAnnouncement(round):find('Crimson team: Fia Day, /roll 5', 1, true))
+            assert(DRE:GetGroupAnnouncement(round):find('Red team: Fia Day, /roll 5', 1, true))
             roll(names[4], 1, 5)
             assert(round.remaining == 2 and w.status:GetText() == 'Team Gold wins')
             assert(DRE:GetGroupAnnouncement(round):find('Team Gold wins', 1, true))
@@ -750,7 +786,7 @@ class GroupCircleTests(unittest.TestCase):
             local seat = board.seats[2]
             assert(seat.nameLabel:GetText() == 'Theo Stone' and seat.unit == 'target')
             assert(seat.portrait:IsShown() and seat.portrait.portraitUnit == 'target')
-            assert(board.seats[3].unit == 'party1' and not board.seats[4].model)
+            assert(board.seats[3].unit == 'party1' and board.seats[4].standIn)
             board.frame:Hide()
             reject = false
             board.frame:Show()
@@ -845,6 +881,27 @@ class GroupCircleTests(unittest.TestCase):
             end
         """)
 
+    def test_stand_in_is_stable_and_yields_to_a_real_player(self):
+        self.lua.execute("""
+            edit({'Mira Summer','Arlo Strand'})
+            local seat = board.seats[2]
+            local avatar = DRE:SetStandInPortrait(seat.portrait, 'Arlo Strand')
+            assert(avatar == DRE:SetStandInPortrait(seat.portrait, 'arlo strand'))
+            assert(seat.standIn and not seat.unit)
+            local old = assert(seat.model:GetScript('OnModelLoaded'))
+            old()
+            assert(seat.ready and not seat.portrait:IsShown())
+            delayed = true
+            units.party1 = {'Arlo','Strand'}
+            unitEvent('GROUP_ROSTER_UPDATE')
+            flushUnits()
+            assert(seat.unit == 'party1' and not seat.standIn and not seat.ready)
+            old()
+            assert(seat.portrait:IsShown() and seat.portrait.character == 'Arlo Strand')
+            seat.model:GetScript('OnModelLoaded')()
+            assert(seat.ready and seat.model.character == 'Arlo Strand')
+        """)
+
     def test_appearance_switch_preserves_inflight_arrow_and_marks_only_current_roller(self):
         self.lua.execute("""
             edit({'Mira Summer','Theo Stone','Arlo Strand','Fia Day'})
@@ -868,7 +925,7 @@ class GroupCircleTests(unittest.TestCase):
             assert(ring.seat == theo and angle > math.pi/4 and angle < dest)
             option.set(nil, 'models')
             assert(theo.model:IsShown() and not theo.portrait:IsShown())
-            assert(not board.seats[3].model and board.seats[3].portrait:IsShown())
+            assert(board.seats[3].standIn and board.seats[3].portrait:IsShown())
             near(board.angle, angle)
             near(board.elapsed, 0.08)
             near(board.destination, dest)
@@ -972,7 +1029,7 @@ class GroupCircleTests(unittest.TestCase):
             units.party3 = {'Ira','Sky'}
             units.party4 = {'Jo','Lake'}
             edit({'Mira Summer','Theo Stone','Arlo Strand','Fia Day','Ira Sky','Jo Lake','Kim Hill'})
-            assert(board.seats[7].portrait:IsShown() and not board.seats[7].model)
+            assert(board.seats[7].portrait:IsShown() and board.seats[7].standIn)
             for i = 1, 6 do
                 local seat = board.seats[i]
                 assert(seat.ready and seat.cornerCover:IsShown())

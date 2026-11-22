@@ -19,10 +19,10 @@ local modeRules = {
     elimination = "Roll 1 and you're out. The next player restarts at the opening roll. Last player standing wins.",
     hotPotato = "A safe roll passes to a random other player. First roll of 1 loses.",
     twoLives = "Each 1 costs a life and resets the roll. Lose both lives and you're out. Last player standing wins.",
-    teams = "Gold and Crimson take turns. A 1 knocks you out and resets the roll. Last team standing wins.",
+    teams = "Gold and Red take turns. A 1 knocks you out and resets the roll. Last team standing wins.",
     highRoller = "Everyone rolls once. Highest roll earns a point. Only players tied for highest reroll. First to 2 points wins.",
 }
-local teamNames = {"Gold", "Crimson"}
+local teamNames = {"Gold", "Red"}
 
 -- Keep teams with the players when the host shuffles or edits the roster.
 -- Fill open seats on the smaller side, with Gold first on a tie.
@@ -351,7 +351,7 @@ function DRE:StartGroupRound(rosterText, initialRoll, channelHint, mode, previou
     end
     self.groupRound = { status = "active", players = players, initialRoll = initialRoll,
         currentRoll = initialRoll, turn = 1, rollCount = 0, seatSteps = 0, channel = channel, log = {},
-        mode = mode, eliminated = {}, remaining = #players }
+        mode = mode, eliminated = {}, seatRolls = {}, remaining = #players }
     if mode == "twoLives" then
         self.groupRound.lives = {}
         for i = 1, #players do self.groupRound.lives[i] = 2 end
@@ -406,7 +406,10 @@ end
 
 local function handleGroupOne(round)
     local seat = round.turn
-    if round.mode ~= "classic" and round.mode ~= "hotPotato" then round.currentRoll = round.initialRoll end
+    if round.mode ~= "classic" and round.mode ~= "hotPotato" then
+        round.currentRoll = round.initialRoll
+        round.seatRolls = {}
+    end
     if round.lives then
         round.firstLifeLost = round.firstLifeLost or seat
         round.lives[seat] = round.lives[seat] - 1
@@ -446,6 +449,7 @@ local function scoreHighRoll(round, roll)
         local seat = round.highSeats[1]
         local player = round.players[seat]
         round.points[seat] = round.points[seat] + 1
+        round.seatRolls = {}
         round.pointResult = player .. " scores with " .. round.highFace .. "."
         if round.tiebreak and seat == round.hostSeat then round.hostTiebreakWins = (round.hostTiebreakWins or 0) + 1 end
         round.tiebreak = nil
@@ -461,6 +465,8 @@ local function scoreHighRoll(round, roll)
             end
         end
         round.tiebreak = round.highSeats
+        round.seatRolls = {}
+        for _, seat in ipairs(round.tiebreak) do round.seatRolls[seat] = round.highFace end
         nextSeat = round.tiebreak[1]
         round.pointResult = string.format("Tied at %d. Only the %d tied players reroll.", round.highFace, #round.tiebreak)
     end
@@ -478,6 +484,7 @@ function DRE:HandleGroupRoll(playerName, roll, maximum)
     if not self:IsBoundedInteger(maximum, 1, self.MAX_ROLL) or maximum ~= round.currentRoll
         or not self:IsBoundedInteger(roll, 1, maximum) then return false end
     round.pendingRoll = nil
+    round.seatRolls[round.turn] = roll
     round.rollCount = round.rollCount + 1
     round.lastPlayer, round.lastRoll, round.lastSeat = name, roll, round.turn
     self:AddGroupLog(round, string.format("%s: %d (1-%d)", name, roll, maximum))
@@ -734,6 +741,15 @@ local function newSeat(board)
     seat.nameLabel:SetNonSpaceWrap(true)
     seat.lead = stroke(board.frame, "BACKGROUND", 1, gold, 0.42)
     seat.portraitButton = portraitButton(board, seat)
+    -- Shade above both the 2D portrait and the separately rendered PlayerModel.
+    seat.inactiveShade = CreateFrame("Frame", nil, seat)
+    seat.inactiveShade:SetFrameLevel(seat:GetFrameLevel() + 3)
+    seat.inactiveShade:SetAllPoints(seat)
+    local shade = seat.inactiveShade:CreateTexture(nil, "ARTWORK")
+    shade:SetAllPoints(seat)
+    shade:SetColorTexture(0.045, 0.045, 0.055, 0.62)
+    maskPortrait(seat.inactiveShade, shade)
+    seat.inactiveShade:Hide()
     return seat
 end
 
@@ -838,7 +854,7 @@ local function bindSeats(board, force)
     end
     for i, name in ipairs(board.players) do
         local seat, unit = board.seats[i], units[i]
-        if appearance ~= "flat" and unit and not seat.triedModel then
+        if appearance ~= "flat" and not seat.triedModel then
             seat.triedModel = true
             local ok, model = pcall(CreateFrame, "PlayerModel", nil, seat.face)
             if ok and model then
@@ -959,19 +975,30 @@ local function sweep(frame, elapsed)
     if t == 1 then frame:SetScript("OnUpdate", nil) end
 end
 
-local function updateRollBadge(board)
-    local badge, round = board.rollBadge, board.round
-    local seat = round and round.status ~= "cancelled" and round.lastSeat and board.seats[round.lastSeat]
-    badge.seat = seat or nil
-    badge:SetShown(not not seat)
-    if not seat then return end
-    badge.number:SetText(tostring(round.lastRoll))
+local function createRollBadge(frame)
+    local badge = CreateFrame("Frame", nil, frame)
+    badge:EnableMouse(false)
+    local plate = CreateFrame("Frame", nil, badge, "BackdropTemplate")
+    plate:SetAllPoints()
+    plate:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1})
+    plate:SetBackdropColor(0.13, 0.08, 0.06, 1)
+    plate:SetBackdropBorderColor(0.73, 0.52, 0.28, 1)
+    badge.plate = plate
+    badge.caption = CreateFrame("Frame", nil, badge)
+    badge.caption:SetSize(1, 1)
+    badge.caption:SetPoint("CENTER", badge, "CENTER")
+    badge.number = badge.caption:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    badge.font, badge.baseFontSize, badge.fontFlags = badge.number:GetFont()
+    badge.number:SetPoint("CENTER")
+    badge.number:SetTextColor(unpack(gold))
+    badge:Hide()
+    return badge
+end
+
+local function placeRollBadge(board, badge, seat, value)
+    badge.number:SetText(tostring(value))
     local textWidth = badge.number:GetStringWidth()
-    badge:SetWidth(math.max(badge:GetHeight(), textWidth + badge.padding))
-    -- Size the reveal against the live portrait, including when resized mid-roll.
-    local diameter = seat:GetWidth()
-    badge.startScale = math.min(diameter * 0.38 / math.max(1, badge.number:GetStringHeight()),
-                                diameter * 0.9 / math.max(1, textWidth))
+    badge:SetWidth(math.max(badge:GetHeight(), textWidth + board.rollBadge.padding))
     badge:SetFrameLevel(seat:GetFrameLevel() + 5)
     badge.caption:SetFrameLevel(badge.plate:GetFrameLevel() + 1)
     badge:ClearAllPoints()
@@ -981,6 +1008,43 @@ local function updateRollBadge(board)
     else
         badge:SetPoint("BOTTOM", seat, "BOTTOM", 0, 1)
     end
+    return textWidth
+end
+
+local function updateRollBadge(board)
+    local badge, round = board.rollBadge, board.round
+    local last = round and round.status ~= "cancelled" and round.lastSeat
+    local faces = last and round.seatRolls
+    for i, seat in ipairs(board.seats) do
+        local value = faces and i ~= last and not seat.sittingOut and faces[i]
+        local saved = seat.lastRollBadge
+        if value then
+            if not saved then
+                saved = createRollBadge(seat)
+                seat.lastRollBadge = saved
+            end
+            if badge.fontSize and saved.fontSize ~= badge.fontSize then
+                saved.number:SetFont(badge.font, badge.fontSize, badge.fontFlags)
+                saved.fontSize = badge.fontSize
+            end
+            saved:SetHeight(badge:GetHeight())
+            placeRollBadge(board, saved, seat, value)
+            saved:Show()
+        elseif saved then
+            saved:Hide()
+        end
+    end
+    local seat = last and board.seats[last]
+    if seat and seat.sittingOut then seat = nil end
+    badge.seat = seat or nil
+    -- A reset still plays its final throw, then the transient badge disappears.
+    badge.transient = faces and not faces[last]
+    badge:SetShown(badge.seat ~= nil and (not badge.transient or badge.rollingSeat == seat))
+    if not seat then return end
+    local textWidth = placeRollBadge(board, badge, seat, round.lastRoll)
+    local diameter = seat:GetWidth()
+    badge.startScale = math.min(diameter * 0.38 / math.max(1, badge.number:GetStringHeight()),
+                                diameter * 0.9 / math.max(1, textWidth))
 end
 
 local function setFaceAlpha(seat, alpha)
@@ -994,6 +1058,7 @@ local function settleRollBadge(badge)
     badge:SetScript("OnUpdate", nil)
     setFaceAlpha(badge.rollingSeat, badge.rollingSeat.faceAlpha)
     badge.rollingSeat = nil
+    if badge.transient then badge:Hide() end
     badge.plate:SetAlpha(1)
     badge.caption:SetScale(1)
     badge.caption:ClearAllPoints()
@@ -1222,6 +1287,7 @@ local function releaseSeat(seat)
     seat:SetScript("OnUpdate", nil)
     seat.exitElapsed, seat.exitBoard = nil, nil
     seat:Hide()
+    if seat.lastRollBadge then seat.lastRollBadge:Hide() end
     seat.lead:Hide()
     if seat.name then DRE.BindGroupSeat(seat, nil, nil) end
     seat:SetAlpha(1)
@@ -1326,27 +1392,13 @@ local function circleWidget()
     board.coin = frame:CreateTexture(nil, "ARTWORK", nil, 1)
     board.coin:SetTexture("Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo")
     board.coin:SetPoint("CENTER")
-    local badge = CreateFrame("Frame", nil, frame)
-    badge:EnableMouse(false)
-    local plate = CreateFrame("Frame", nil, badge, "BackdropTemplate")
-    plate:SetAllPoints()
-    plate:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1})
-    plate:SetBackdropColor(0.13, 0.08, 0.06, 1)
-    plate:SetBackdropBorderColor(0.73, 0.52, 0.28, 1)
-    badge.plate = plate
-    badge.caption = CreateFrame("Frame", nil, badge)
-    badge.caption:SetSize(1, 1)
-    badge.caption:SetPoint("CENTER", badge, "CENTER")
-    badge.number = badge.caption:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    badge.font, badge.baseFontSize, badge.fontFlags = badge.number:GetFont()
-    badge.number:SetPoint("CENTER")
-    badge.number:SetTextColor(unpack(gold))
-    badge:Hide()
+    local badge = createRollBadge(frame)
     board.rollBadge = badge
     function board:AnimateRollBadge()
         settleRollBadge(badge)
         local seat = badge.seat
         if not seat then return end
+        badge:Show()
         badge.rollingSeat, badge.elapsed = seat, 0
         badge:SetScript("OnUpdate", animateRollBadge)
         animateRollBadge(badge, 0)
@@ -1484,21 +1536,23 @@ local function circleWidget()
                 seat.nameLabel:SetText(caption)
                 resize = true
             end
-            -- Tiebreak seats are in roster order. Keep names and coins at full
-            -- opacity while the roll animation fades the face to its target.
-            seat.faceAlpha = 1
-            if tiedSeats then
-                if tiedSeats[tiedIndex] == i then tiedIndex = tiedIndex + 1
-                else seat.faceAlpha = 0.35 end
-            end
-            if badge.rollingSeat ~= seat then setFaceAlpha(seat, seat.faceAlpha) end
+            -- Tiebreak seats are in roster order, even after a repeated tie.
+            seat.sittingOut = tiedSeats and tiedSeats[tiedIndex] ~= i
+            if tiedSeats and not seat.sittingOut then tiedIndex = tiedIndex + 1 end
             local out = round and round.eliminated and round.eliminated[i]
+            local inactive = seat.sittingOut or (out and not round.loser)
+            seat.faceAlpha = inactive and 0.35 or 1
+            seat.inactiveShade:SetShown(not not inactive)
+            seat.nameLabel:SetAlpha(inactive and 0.55 or 1)
+            seat.portraitButton.outline:SetAlpha(inactive and 0.5 or 1)
+            if seat.score then seat.score:SetAlpha(inactive and 0.55 or 1) end
+            if badge.rollingSeat ~= seat then setFaceAlpha(seat, seat.faceAlpha) end
             local palette = teamBackdrops[seat.team] or forestBackdrop
             local backdrop = palette.normal
             if out or seat.faceAlpha < 1 then backdrop = palette.dim
             elseif active and round.turn == i then backdrop = palette.active end
             seat.backing:SetColorTexture(backdrop[1], backdrop[2], backdrop[3], 1)
-            if not self.seatMoves then seat:SetAlpha(out and not round.loser and 0.5 or 1) end
+            if not self.seatMoves then seat:SetAlpha(1) end
             local color = ivory
             if out then color = red
             elseif round and (round.winner == players[i] or (round.winningTeam and round.winningTeam == seat.team)) then color = gold
@@ -1753,7 +1807,7 @@ local function refreshTable(self, w, round, active, busy, canRoll)
             local counts
             draft.teams, counts = assignTeams(players, draft.teams)
             valid = valid and counts[1] > 0 and counts[2] > 0
-            detail = ("Gold %d · Crimson %d · Left-click a portrait to switch teams."):format(counts[1], counts[2])
+            detail = ("Gold %d · Red %d · Left-click a portrait to switch teams."):format(counts[1], counts[2])
             if #players >= 2 and (counts[1] == 0 or counts[2] == 0) then
                 detail = "Each team needs a player. Left-click a portrait to switch teams."
             end

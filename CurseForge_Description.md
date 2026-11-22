@@ -1,73 +1,49 @@
-# DeathRoll Enhancer
+# DeathRoll Enhancer · Forever Celebration
 
-DeathRoll Enhancer is a World of Warcraft addon for running DeathRoll games with better tracking, cleaner UI, and safer game flow. It focuses on fast play, clear game state, and long-term stats.
+Challenge a friend to a DeathRoll or host a table for up to 40 players. In Classic, each roll sets the next player’s maximum. Roll 34 and your opponent rolls 1–34. The first player to roll a 1 loses.
 
-![image](https://media.forgecdn.net/attachments/1311/246/img1.png)
+![Ability Power rolls 34 in a Classic duel. Attack Damage rolls 1–34 next.](https://media.forgecdn.net/attachments/2255/940/00-classic-duel-png.png)
 
-## Core Features
+## Duel on WoW Forever
 
-### Interface
-- Resizable, moveable main window
-- Tabbed layout: DeathRoll, Statistics, History, and Settings
-- Minimap icon for quick open/config access
-- Live roll history and game-state feedback during active games
-- History-tab channel selector to broadcast selected player stats to party, raid, guild, officer, instance, say, or yell
+Target a player, open the minimap coin or type `/dr`, and choose **Duel**. Set the starting roll, pick a mode and enter an optional wager. The table shows whose turn it is, the next range and the chance of rolling a 1.
 
-### Game Flow
-- Automatic roll detection from chat events
-- Whisper-based challenge flow for addon users
-- Self-duel support for practice
-- Wager inputs (gold/silver/copper) with optional trade-based wager tracking
-- Invalid roll-range detection (flags suspicious rolls during active games)
+- **Classic** follows the shrinking roll range.
+- **Two Lives** gives each player two hearts. Rolling a 1 costs a heart and resets the range.
+- **Cursed 7** ends the duel on either a 1 or a 7.
+- **High Roller** awards a point for the higher roll. First to two points wins.
 
-### Data and Stats
-- Per-player win/loss and gold history
-- Global profit/loss and streak tracking
-- Fun stats (nemesis, best/worst matchup, high roller, and more)
-- "Most Likely to Cheat" fun stat based on flagged invalid roll ranges
-- Edit/delete recent game records
-- Merge renamed player records into one history entry
-- Deduplicate repeated history rows and recalculate totals after bad merges/imports
+![Ability Power and Oh Eks each have one heart left in a Two Lives duel](https://media.forgecdn.net/attachments/2255/941/01-two-lives-duel-png.png)
 
-## Commands
+Lost a wagered duel? **Double or Nothing** offers a rematch. After a 5g loss, winning the rematch brings you even. Losing brings your total loss to 10g.
 
-- `/dr` or `/deathroll` - Open the main window
-- `/dr config` - Open configuration options
-- `/dr accept` - Accept a pending challenge
-- `/dr decline` - Decline a pending challenge
-- `/dr edit` - Edit recent game records
-- `/dr merge <oldName> <newName>` - Merge player history after a rename
-- `/dr dedupe` - Remove duplicate game rows and recalculate stats/totals
-- `/dr suspicious` or `/dr cheaters` - Show flagged invalid roll ranges
-- `/dr setsuspicious <player> <count>` - Manually set a player's suspicious-roll count
-- `/dr clearsuspicious <player>` - Clear a player's suspicious-roll entry
-- `/dr sendstats [player] [party|raid|guild|officer|instance|say|yell]` - Broadcast main stats against a player
-- `/dr fixgold` - Recalculate gold totals and streak data
-- `/dr size` - Print current window size details
-- `/drh [player]` - Show history for a specific player
+For optional trade tracking, turn on **Track Wager From Completed Trade**. Complete the gold trade with your duel opponent within five minutes of the result. If a payment could belong to more than one game, assign it in `/dr edit`.
 
-## Configuration
+## Host a group table
 
-Available via `/dr config` and the in-window Settings tab:
+![Eight-player Teams table with a goblin coin pointing to Ability Power](https://media.forgecdn.net/attachments/2255/939/03-teams-opening-png.png)
 
-- Challenge behavior (whispers, minimum roll threshold)
-- UI scale and window reset helpers
-- Chat/debug output toggles
-- Trade-based wager tracking
-- Fun stat visibility toggles
-- Data cleanup, export, and repair tools
+Open **Group → Host table**, add players by their full names, then choose the mode and rolling order. The host can shuffle the seats or assign players to Gold and Red. Other addon users can target the host and choose **Join target** to follow the same table. Players can also participate with ordinary `/roll` commands. Stay near the host so their client can see the rolls.
 
-## Compatibility and Dependencies
+Choose **Classic**, **Elimination**, **Hot Potato**, **Two Lives**, **Teams** or **High Roller**. The goblin hand points to the next player. In Teams, a 1 eliminates the roller and restarts the range. In High Roller, only the players tied for highest reroll for the point. Their roll badges stay visible while the other portraits fade. Everyone returns for the next point.
 
-- Targets Retail, Classic Era/Hardcore, TBC Anniversary, Wrath Classic, Cataclysm Classic, Mists Classic, Titan Reforged (China), and Forever; exact versions and in-game acceptance checks are in TESTING.md.
-- Preserves Forever first names/surnames. Includes modern and legacy API fallbacks; original 1.12/2.4.3/3.3.5 clients are outside this scope.
-- Group Say announcements use **Announce** after each roll; Party/Raid/Instance announcements are automatic.
-- Uses Ace3 with LibSharedMedia and LibDBIcon
-- Lightweight saved-variable storage for persistent history/stat tracking
+![Only Ability Power and Mr Chopped remain in the High Roller tiebreak after both roll 92](https://media.forgecdn.net/attachments/2255/945/06-high-roller-tiebreak-png.png)
 
-## Best For
+Chat announcements start off. The host can choose a channel, and the addon remembers that choice. Group payouts are settled manually.
 
-- Players who run frequent DeathRoll games
-- Guild/community events
-- Players who want long-term stats and wager tracking
-- Anyone who wants less manual bookkeeping during DeathRoll sessions
+## Statistics and history
+
+Filter duel or hosted group statistics by mode. Track wins, losses, recorded gold and streaks in duels, or see points earned, tiebreaks and regular players in hosted games. Open **History** to review the result and recorded wager for each duel against an opponent.
+
+![High Roller statistics for nine hosted games, including points and tiebreak results](https://media.forgecdn.net/attachments/2255/950/10-group-statistics-png.png)
+
+The gallery features Ability Power’s character and staged games on WoW Forever. Other named seats use character stand-ins. The eight-player Teams table, High Roller tiebreak and opponent history show these features in play.
+
+## Getting started
+
+- `/dr` opens the addon.
+- `/dr group` opens the group table.
+- `/dr config` opens settings.
+- `/drh Player Name` opens an opponent’s history.
+
+The redesigned portrait tables, shared spectator view and mode filters shown here are for **WoW Forever**. The addon also includes DeathRoll tracking for supported Retail and Classic clients.

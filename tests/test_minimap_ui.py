@@ -45,6 +45,43 @@ class MinimapAndLayoutTests(unittest.TestCase):
         lua.execute((ROOT / 'Minimap.lua').read_text())
         return lua
 
+    def test_tooltip_reads_current_totals_and_streak_on_each_hover(self):
+        self.minimap_runtime().execute('''
+            local hover = LibStub('LibDataBroker-1.1'):GetDataObjectByName('DeathRollEnhancer').OnTooltipShow
+            local rows = {}
+            local function plain(text) return (text:gsub('|c%x%x%x%x%x%x%x%x', ''):gsub('|r', '')) end
+            local tooltip = {
+                AddLine = function(_, line) rows[#rows+1] = plain(line) end,
+                AddDoubleLine = function(_, left, right) rows[#rows+1] = plain(left)..' / '..plain(right) end,
+            }
+            local function render()
+                rows = {}
+                hover(tooltip)
+                return table.concat(rows, '|')
+            end
+
+            local title = DRE.displayName..'  v'..DRE.version
+            local shortcuts = ' |Left-click / Open DeathRoll|Right-click / Open settings'
+            assert(render() == title..'|'..shortcuts)
+            local stats = DRE.db.profile.goldTracking
+            stats.totalWon, stats.totalLost, stats.currentStreak = 50101, 280101, 1
+            assert(render() == title..'| |Net gold / -23g|Gold won / 5g 1s 1c|Gold lost / 28g 1s 1c|Win streak / 1|'..shortcuts)
+            stats.totalWon, stats.totalLost, stats.currentStreak = 0, 0, -2
+            assert(render() == title..'| |Loss streak / 2|'..shortcuts)
+
+            GetCoinTextureString = function(copper)
+                assert(copper >= 0)
+                return 'coins('..copper..')'
+            end
+            tooltip.AddDoubleLine = nil
+            stats.totalWon, stats.totalLost = 101, 100
+            assert(render():find('Net gold  +coins(1)', 1, true))
+            stats.totalWon = 99
+            assert(render():find('Net gold  -coins(1)', 1, true))
+            stats.totalWon = 100
+            assert(render():find('Net gold  coins(0)', 1, true))
+        ''')
+
     def test_standalone_icon_interactions_and_reenable(self):
         self.minimap_runtime().execute('''
             DRE:InitializeMinimap()

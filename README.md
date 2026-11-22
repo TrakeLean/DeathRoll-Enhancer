@@ -14,15 +14,31 @@ One ZIP targets Retail, Classic Era/Hardcore, TBC Anniversary, Wrath Classic, Ca
 
 Finished games now save even when optional emotes are unavailable or restricted. Older clients can still open settings with `/dr config`; the Blizzard Settings entry is added only when that API exists. Target challenges avoid restricted unit comparisons, and ordinary chat no longer inherits an addon-message-only restriction.
 
-For group rounds using **Say**, click **Announce** after each roll to send the current turn/result. Party, Raid, and Instance channels continue announcing automatically. Full Forever surnames remain supported.
+Group rounds start with **Announce to → None**. Turns and results appear on the host’s table. Choosing a different destination saves it for future rounds and reloads. With **Say**, click **Announce** after each roll to send the current turn or result. Party, Raid, and Instance channels announce automatically. Full Forever surnames remain supported.
+
+### Shared tables in the Forever dev addon
+
+1. The host opens **Group → Host table**. Add players by their full names. Anyone on the roster or in the host's party or raid can join the view.
+2. On another character with the updated dev addon, target the host and click **Group → Join target**. You can also type `/dr group join Full Host Name`. Joining lets party members watch. The host adds them to the roster to give them a turn.
+3. The host controls the mode, starting roll, teams, roster, shuffle, and round. Joined players see the changes, including turns, scores, lives, and results, even with **Announce to → None**. On your turn, use **Roll Your Turn** or the displayed `/roll` range. Stay near the host so their client receives the roll.
+
+The table reconnects after a brief reload. Wait for the host to return before rolling. Guests can **Leave table** at any time. The host can close sharing with `/dr group leave` and continue locally. Players without the addon can still participate using ordinary rolls.
 
 ## Version 2.4.0: host-controlled group DeathRolls
 
-Open **Group** or `/dr group`. Add 2-40 players in turn order, using **Add Target** / **Add Me** or one exact full name per line. Choose the starting roll and announcement channel, then **Start Round**. The next player rolls using the announced maximum; the first player to roll **1 loses**, ending the round. Only the host needs the addon. Everyone must remain nearby so the host can see their system rolls.
+Open **Group** or `/dr group`. Add 2–40 players in turn order using **Add Target**, **Add Me**, or their exact full names. Choose the mode, starting roll and announcement channel, then click **Start Round**. Only the host needs the addon. Everyone must stay nearby so the host can see their rolls.
+
+- **Classic** ends when someone rolls 1. That player loses.
+- **Elimination** knocks out whoever rolls 1. The next remaining player clockwise starts again at the original maximum. The last player standing wins.
+- **Hot Potato** passes each safe roll to a randomly chosen different player. That player rolls with the new maximum. The first 1 ends the game.
+- **Two Lives** gives everyone two lives. Each 1 costs the roller a life and resets the maximum for the next player. The last player with a life wins.
+- **Teams** splits the roster between Gold and Crimson. On the Forever table, each portrait has a team-colored background and a thin matching border. The current roller gets a green ring. Left-click a portrait before starting to switch that player's team. **Shuffle order** changes who rolls first and keeps those assignments. The teams alternate, each cycling through its remaining players. A 1 knocks the roller out and resets the maximum. When one side runs out of players, everyone on the other team wins.
+
+**Play again** restores the full roster in the same order and mode, with all lives and team members back in play.
 
 The roster locks during play. **Cancel Round** or `/dr cancel` ends a stuck round; **Restart Round** reuses the previous roster/order/maximum. Cancel before changing participants. **Roll Your Turn** rolls only for the host when eligible; everyone can use ordinary `/roll`. **Announce** sends the current turn/result for Say and retries other channels if chat was blocked. Slash shortcuts: `/dr group roll`, `/dr group announce`, `/dr group cancel`, `/dr group restart`.
 
-Payouts are manual; settle them before starting new trade-tracked 1v1 games. Group results stay separate from 1v1 statistics, and the last 20 log entries remain for this session only. Earlier unpaid 1v1 games with group participants require `/dr edit` payment assignment to prevent a group payout from overwriting them. Reloading or disabling the addon ends the local round. All new flows have automated coverage; live group testing on the intended server is still required.
+Payouts are manual. Settle them before starting new trade-tracked 1v1 games. Group results stay separate from 1v1 statistics. Earlier unpaid 1v1 games with group participants require `/dr edit` payment assignment. Reloading ends a local-only round. A Forever dev host can resume an explicitly shared round after a brief reload, including the last 20 log entries.
 
 ## Version 2.3.13: game recovery and safer editing
 
@@ -81,7 +97,7 @@ Challenge and data confirmations use addon-owned dialogs to avoid the Forever co
 - **Resizable & moveable window** with persistent positioning
 - **Tabbed interface** - DeathRoll, Statistics, History, and Settings tabs
 - **Smart challenge detection** - Automatically detects opponent rolls and shows "PlayerName rolled 56 from 1000 - Accept challenge!"
-- **Real-time game progress** with colored player names and win probability
+- **Live roll history** with colored player names and the next player's chance to roll a 1
 
 ### **Advanced Statistics & Tracking**
 - **Comprehensive player history** - Win/loss records per opponent

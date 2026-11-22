@@ -16,6 +16,11 @@ local function IsLossResult(result)
     return result == "Lost" or result == "LOSS"
 end
 
+function DRE:NormalizeGameResult(result)
+    if IsWinResult(result) then return "Won" end
+    if IsLossResult(result) then return "Lost" end
+end
+
 local function ParseDateTimeToEpoch(dateText)
     if not dateText or type(dateText) ~= "string" then
         return 0
@@ -105,6 +110,33 @@ function DRE:AllocateGameIdentity(game)
     game.id = "dre:" .. game.sequence
 end
 
+local function NeedsGameIdentity(game, seen)
+    return not game.id or not game.sequence or (seen[game.id] and not SameGameRecord(seen[game.id], game))
+end
+
+local function RepairGameIdentities(self, history)
+    local rows = {}
+    for player, data in pairs(history) do
+        for index, game in ipairs(data.recentGames or {}) do
+            rows[#rows + 1] = { player = player, index = index, game = game }
+        end
+    end
+    table.sort(rows, function(a, b)
+        local aTime, bTime = GetGameTimestamp(a.game), GetGameTimestamp(b.game)
+        if aTime ~= bTime then return aTime < bTime end
+        if a.player ~= b.player then return a.player < b.player end
+        return a.index > b.index -- legacy per-player arrays are newest first
+    end)
+    local seen = {}
+    for _, row in ipairs(rows) do
+        local game = row.game
+        if NeedsGameIdentity(game, seen) then
+            self:AllocateGameIdentity(game)
+        end
+        seen[game.id] = game
+    end
+end
+
 -- Capture missing historical detail before any operation can change the rows.
 -- Old releases pruned rows while keeping lifetime totals. Never erase that data.
 function DRE:EnsureHistorySchema()
@@ -113,16 +145,24 @@ function DRE:EnsureHistorySchema()
     if self.historySchemaProfile == profile then return end
     profile.history = profile.history or {}
     profile.pendingTradeWagers = profile.pendingTradeWagers or {}
-    local counter, rows, incomplete = tonumber(profile.nextGameSequence) or 0, {}, false
-    for playerName, player in pairs(profile.history) do
+    local counter = tonumber(profile.nextGameSequence) or 0
+    local seen, repairIDs, incomplete = {}, false, false
+    local totalWon, totalLost = 0, 0
+    for _, player in pairs(profile.history) do
         local totals = { wins = 0, losses = 0, goldWon = 0, goldLost = 0 }
-        for index, game in ipairs(player.recentGames or {}) do
+        for _, game in ipairs(player.recentGames or {}) do
             local amount = tonumber(game.goldAmount) or 0
             if IsWinResult(game.result) then totals.wins = totals.wins + 1; totals.goldWon = totals.goldWon + amount end
             if IsLossResult(game.result) then totals.losses = totals.losses + 1; totals.goldLost = totals.goldLost + amount end
             counter = math.max(counter, tonumber(game.sequence) or 0,
                 type(game.id) == "string" and tonumber(game.id:match("^dre:(%d+)$")) or 0)
-            rows[#rows + 1] = { player = playerName, index = index, game = game }
+            if not repairIDs then
+                if NeedsGameIdentity(game, seen) then
+                    repairIDs = true
+                else
+                    seen[game.id] = game
+                end
+            end
         end
         if not player.legacyTotals then
             player.legacyTotals = {}
@@ -134,24 +174,19 @@ function DRE:EnsureHistorySchema()
             end
         end
         for _, value in pairs(player.legacyTotals) do if value > 0 then incomplete = true end end
+        -- Older profiles can be missing balances even when the paid rows survive.
+        player.goldWon = math.max(tonumber(player.goldWon) or 0, (player.legacyTotals.goldWon or 0) + totals.goldWon)
+        player.goldLost = math.max(tonumber(player.goldLost) or 0, (player.legacyTotals.goldLost or 0) + totals.goldLost)
+        totalWon = totalWon + player.goldWon
+        totalLost = totalLost + player.goldLost
     end
+    profile.goldTracking = profile.goldTracking or {currentStreak = 0, bestWinStreak = 0, worstLossStreak = 0}
+    local tracking = profile.goldTracking
+    tracking.totalWon = math.max(tonumber(tracking.totalWon) or 0, totalWon)
+    tracking.totalLost = math.max(tonumber(tracking.totalLost) or 0, totalLost)
     profile.nextGameSequence = counter
-    table.sort(rows, function(a, b)
-        local aTime, bTime = GetGameTimestamp(a.game), GetGameTimestamp(b.game)
-        if aTime ~= bTime then return aTime < bTime end
-        if a.player ~= b.player then return a.player < b.player end
-        return a.index > b.index -- legacy per-player arrays are newest first
-    end)
-    local seen = {}
-    for _, row in ipairs(rows) do
-        local game = row.game
-        if not game.id or not game.sequence or (seen[game.id] and not SameGameRecord(seen[game.id], game)) then
-            self:AllocateGameIdentity(game)
-        end
-        seen[game.id] = game
-    end
+    if repairIDs then RepairGameIdentities(self, profile.history) end
     if incomplete and not profile.legacyStreaks then
-        local tracking = profile.goldTracking or {}
         profile.legacyStreaks = {
             checkpointSequence = profile.nextGameSequence,
             currentStreak = tracking.currentStreak or 0,
@@ -282,6 +317,7 @@ function DRE:MergePlayerHistory(sourceName, targetName)
     end
 
     local _, recalcMessage = self:RecalculateGoldTracking()
+    if self.RefreshDuelResultFromHistory then self:RefreshDuelResultFromHistory() end
 
     if self.UpdateStatsDisplay then
         self:UpdateStatsDisplay()
@@ -378,6 +414,17 @@ function DRE:AddGameToHistory(playerName, result, goldAmount, initialRoll, metad
     }
 
     local suspiciousRollCount = metadata and tonumber(metadata.suspiciousRollCount) or 0
+    if metadata then
+        gameRecord.mode, gameRecord.matchId, gameRecord.lastFace = metadata.mode, metadata.matchId, metadata.lastFace
+        gameRecord.firstLifeLost, gameRecord.offeredDouble = metadata.firstLifeLost, metadata.offeredDouble
+        gameRecord.tiebreaks, gameRecord.tiebreakWins = metadata.tiebreaks, metadata.tiebreakWins
+        if metadata.duelRolls then
+            gameRecord.playerFace, gameRecord.opponentFace = metadata.duelRolls.player, metadata.duelRolls.opponent
+        end
+        if metadata.score then
+            gameRecord.playerScore, gameRecord.opponentScore = metadata.score.player, metadata.score.opponent
+        end
+    end
     if suspiciousRollCount > 0 then
         gameRecord.suspiciousRollCount = suspiciousRollCount
         if metadata.suspiciousRollDetails and metadata.suspiciousRollDetails ~= "" then
@@ -478,6 +525,60 @@ function DRE:GetOverallStats()
     return stats
 end
 
+-- Filter only records with a known mode; untagged records remain in All modes.
+function DRE:GetDuelModeStats(mode)
+    local all = mode == "all"
+    local stats = all and self:GetOverallStats() or {
+        totalGames = 0, totalWins = 0, totalLosses = 0, totalGoldWon = 0, totalGoldLost = 0,
+        currentStreak = 0, bestWinStreak = 0, worstLossStreak = 0,
+    }
+    stats.offers, stats.breakEvens = 0, 0
+    stats.points, stats.tiebreaks, stats.tiebreakWins = 0, 0, 0
+    stats.flawless, stats.comebacks, stats.ones, stats.sevens = 0, 0, 0, 0
+    local games = {}
+    for _, player in pairs(self.db.profile.history or {}) do
+        for _, game in ipairs(player.recentGames or {}) do
+            if all or game.mode == mode then
+                if game.offeredDouble then
+                    stats.offers = stats.offers + 1
+                    if IsWinResult(game.result) then stats.breakEvens = stats.breakEvens + 1 end
+                end
+                if not all then games[#games + 1] = game end
+            end
+        end
+    end
+    -- All modes already includes the legacy totals and streak checkpoint.
+    if all then return stats end
+    table.sort(games, GameComesBefore)
+    for _, game in ipairs(games) do
+        local won = IsWinResult(game.result)
+        if won then
+            stats.totalWins = stats.totalWins + 1
+            stats.totalGoldWon = stats.totalGoldWon + (game.goldAmount or 0)
+            stats.currentStreak = math.max(0, stats.currentStreak) + 1
+            stats.bestWinStreak = math.max(stats.bestWinStreak, stats.currentStreak)
+        elseif IsLossResult(game.result) then
+            stats.totalLosses = stats.totalLosses + 1
+            stats.totalGoldLost = stats.totalGoldLost + (game.goldAmount or 0)
+            stats.currentStreak = math.min(0, stats.currentStreak) - 1
+            stats.worstLossStreak = math.min(stats.worstLossStreak, stats.currentStreak)
+        end
+        if mode == "highRoller" then
+            stats.points = stats.points + (game.playerScore or 0)
+            stats.tiebreaks = stats.tiebreaks + (game.tiebreaks or 0)
+            stats.tiebreakWins = stats.tiebreakWins + (game.tiebreakWins or 0)
+        elseif mode == "twoLives" and won then
+            if game.playerScore == 2 then stats.flawless = stats.flawless + 1 end
+            if game.firstLifeLost == "player" then stats.comebacks = stats.comebacks + 1 end
+        elseif mode == "cursed7" and IsLossResult(game.result) then
+            if game.lastFace == 1 then stats.ones = stats.ones + 1 end
+            if game.lastFace == 7 then stats.sevens = stats.sevens + 1 end
+        end
+    end
+    stats.totalGames = stats.totalWins + stats.totalLosses
+    return stats
+end
+
 -- Get top players (by games played)
 function DRE:GetTopPlayers(limit)
     if not self.db or not self.db.profile.history then
@@ -571,7 +672,9 @@ function DRE:ResetAllData()
     
     -- Reset history
     self.db.profile.history = {}
+    self.db.profile.hostedGroupStats = nil
     self.db.profile.pendingTradeWagers = {}
+    self.tradeTracking = nil
     self.db.profile.legacyStreaks = nil
     -- Keep nextGameSequence: a stale dialog must not resolve to a new game.
 
@@ -590,6 +693,7 @@ function DRE:ResetAllData()
     self:Print("All DeathRoll data has been reset")
     
     -- Update UI if it's open
+    if self.RefreshDuelResultFromHistory then self:RefreshDuelResultFromHistory() end
     if DRE.UpdateStatsDisplay then
         DRE:UpdateStatsDisplay()
     end
@@ -605,6 +709,7 @@ function DRE:ExportData()
         version = self.version,
         exportDate = date("%Y-%m-%d %H:%M:%S"),
         history = self.db.profile.history,
+        hostedGroupStats = self.db.profile.hostedGroupStats,
         suspiciousRolls = self.db.profile.suspiciousRolls,
         goldTracking = self.db.profile.goldTracking,
         historySchemaVersion = self.db.profile.historySchemaVersion,
@@ -612,6 +717,7 @@ function DRE:ExportData()
         pendingTradeWagers = self.db.profile.pendingTradeWagers,
         legacyStreaks = self.db.profile.legacyStreaks,
         settings = {
+            funStats = self.db.profile.funStats,
             gameplay = self.db.profile.gameplay,
             ui = self.db.profile.ui,
             minimap = self.db.profile.minimap
@@ -718,6 +824,27 @@ function DRE:GetRecentGamesForEditing(limit)
     return result
 end
 
+-- Changing money on an existing outcome never contributes another win or loss.
+function DRE:ApplyRecordedWager(player, game, wager)
+    local result = self:NormalizeGameResult(game.result)
+    if not result then return false, "Unknown recorded game result" end
+    wager = tonumber(wager)
+    if not self:IsBoundedInteger(wager, 0, self.MAX_WAGER) then return false, "Invalid wager" end
+    local delta = wager - (tonumber(game.goldAmount) or 0)
+    if delta ~= 0 then game.offeredDouble = nil end
+    local tracking = self.db.profile.goldTracking
+    if result == "Won" then
+        player.goldWon = player.goldWon + delta
+        tracking.totalWon = tracking.totalWon + delta
+    else
+        player.goldLost = player.goldLost + delta
+        tracking.totalLost = tracking.totalLost + delta
+    end
+    game.goldAmount = wager
+    if self.UpdateStatsDisplay then self:UpdateStatsDisplay() end
+    return true, "Game record updated successfully"
+end
+
 -- Edit a specific game record by player and game index
 function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, newInitialRoll)
     self:EnsureHistorySchema()
@@ -736,11 +863,8 @@ function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, new
 
     local oldGame = playerData.recentGames[gameIndex]
 
-    if IsWinResult(newResult) then
-        newResult = "Won"
-    elseif IsLossResult(newResult) then
-        newResult = "Lost"
-    else
+    newResult = self:NormalizeGameResult(newResult)
+    if not newResult then
         return false, "Invalid result value. Use Won or Lost."
     end
 
@@ -748,10 +872,18 @@ function DRE:EditGameRecord(playerName, gameIndex, newResult, newGoldAmount, new
         or (newInitialRoll ~= nil and not self:IsBoundedInteger(tonumber(newInitialRoll), 0, self.MAX_ROLL)) then
         return false, "Invalid wager or starting roll"
     end
+    if self:NormalizeGameResult(oldGame.result) == newResult then
+        oldGame.result = newResult
+        if newInitialRoll ~= nil then oldGame.initialRoll = tonumber(newInitialRoll) end
+        return self:ApplyRecordedWager(playerData, oldGame, newGoldAmount)
+    end
     if IsWinResult(oldGame.result) ~= IsWinResult(newResult) then
         InvalidateLegacyStreakCheckpoint(self.db.profile, oldGame)
     end
     -- Update the game record
+    oldGame.offeredDouble, oldGame.firstLifeLost, oldGame.lastFace = nil, nil, nil
+    oldGame.playerFace, oldGame.opponentFace, oldGame.outcomeEdited = nil, nil, true
+    oldGame.playerScore, oldGame.opponentScore, oldGame.tiebreaks, oldGame.tiebreakWins = nil, nil, nil, nil
     oldGame.result = newResult
     oldGame.goldAmount = math.max(0, tonumber(newGoldAmount) or 0)
     if newInitialRoll ~= nil then
@@ -837,38 +969,106 @@ function DRE:FindGameRecordIndexByTimestamp(playerName, recordedAt)
 end
 
 function DRE:UpdateGameWagerByTimestamp(playerName, recordedAt, newGoldAmount)
+    self:EnsureHistorySchema()
     local gameIndex, game = self:FindGameRecordIndexByTimestamp(playerName, recordedAt)
     if not gameIndex or not game then
         return false, "Unable to find the recorded game"
     end
 
-    return self:EditGameRecord(playerName, gameIndex, game.result, newGoldAmount or 0, game.initialRoll)
+    return self:ApplyRecordedWager(self.db.profile.history[playerName], game, newGoldAmount or 0)
+end
+
+local function FindRequestedGames(history, wanted)
+    local found = {}
+    if not next(wanted) then return found end
+    for playerName, player in pairs(history) do
+        for index, game in ipairs(player.recentGames or {}) do
+            if wanted[game.id] then
+                if found[game.id] == nil then
+                    found[game.id] = {playerName = playerName, index = index, game = game}
+                else
+                    found[game.id] = false -- even a third copy must remain ambiguous
+                end
+            end
+        end
+    end
+    return found
 end
 
 function DRE:FindGameRecordById(gameId)
     if type(gameId) ~= "string" or not self.db then return nil end
     self:EnsureHistorySchema()
-    local foundPlayer, foundIndex, foundGame
-    for playerName, player in pairs(self.db.profile.history) do
-        for index, game in ipairs(player.recentGames or {}) do
-            if game.id == gameId then
-                if foundGame then return nil end -- ambiguous/corrupt identity: refuse mutation
-                foundPlayer, foundIndex, foundGame = playerName, index, game
-            end
-        end
-    end
-    return foundPlayer, foundIndex, foundGame
+    local record = FindRequestedGames(self.db.profile.history, {[gameId] = true})[gameId]
+    if record then return record.playerName, record.index, record.game end
 end
 
-function DRE:EditGameRecordById(gameId, result, wager, initialRoll)
-    local player, index = self:FindGameRecordById(gameId)
-    if not player then return false, "The selected game no longer exists or is ambiguous. Reopen the editor." end
-    local success, message = self:EditGameRecord(player, index, result, wager, initialRoll)
-    if success then
-        local pending = self.db.profile.pendingTradeWagers or {}
-        for i = #pending, 1, -1 do
-            if pending[i].gameId == gameId then table.remove(pending, i) end
+-- Resolve outstanding IDs together. These references live only for the current operation.
+function DRE:PrunePendingTradeWagers()
+    if not self.db then return end
+    self:EnsureHistorySchema()
+    local profile = self.db.profile
+    local pending = profile.pendingTradeWagers
+    local cutoff = time() - self.TRADE_WAGER_TIMEOUT
+    local wanted = {}
+    for _, entry in ipairs(pending) do
+        if (entry.recordedAt or 0) >= cutoff and type(entry.gameId) == "string" then
+            wanted[entry.gameId] = true
         end
+    end
+    local records = FindRequestedGames(profile.history, wanted)
+    local kept = 0
+    for _, entry in ipairs(pending) do
+        local record = records[entry.gameId]
+        local outcome = self:NormalizeGameResult(entry.result)
+        if (entry.recordedAt or 0) >= cutoff and record and self:IsSamePlayer(entry.playerName, record.playerName)
+            and outcome and outcome == self:NormalizeGameResult(record.game.result) then
+            entry.result = outcome
+            kept = kept + 1
+            pending[kept] = entry
+        end
+    end
+    for i = #pending, kept + 1, -1 do pending[i] = nil end
+    return records
+end
+
+-- Return the live value for an untouched field, or nil for conflicting changes.
+local function mergeEdit(original, proposed, current)
+    if proposed == original then return current end
+    if current == original or current == proposed then return proposed end
+end
+
+function DRE:EditGameRecordById(gameId, result, wager, initialRoll, original)
+    local player, index, game = self:FindGameRecordById(gameId)
+    if not player then return false, "The selected game no longer exists or is ambiguous. Reopen the editor." end
+    local currentResult = self:NormalizeGameResult(game.result)
+    local currentWager = tonumber(game.goldAmount) or 0
+    result = self:NormalizeGameResult(result)
+    if original then
+        result = mergeEdit(original.result, result, currentResult)
+        wager = mergeEdit(original.wager, wager, currentWager)
+        initialRoll = mergeEdit(original.roll, initialRoll, tonumber(game.initialRoll) or 0)
+        if result == nil or wager == nil or initialRoll == nil then
+            return false, "This game changed while you were editing. Reopen it to review the latest values."
+        end
+    end
+    local editWager = wager ~= currentWager
+    local editRange = initialRoll ~= nil and tonumber(initialRoll) ~= tonumber(game.initialRoll)
+    local success, message = self:EditGameRecord(player, index, result, wager, initialRoll)
+    if success and (editWager or editRange or currentResult ~= result) then
+        if editRange or currentResult ~= result then game.rematchInvalid = true end
+        local pending = self.db.profile.pendingTradeWagers or {}
+        local stillPending = false
+        for i = #pending, 1, -1 do
+            if pending[i].gameId == gameId then
+                if editWager then
+                    table.remove(pending, i)
+                else
+                    pending[i].result = result
+                    stillPending = true
+                end
+            end
+        end
+        if self.UpdateEditedDuel then self:UpdateEditedDuel(gameId, result, wager, stillPending, game, editWager or currentResult ~= result) end
     end
     return success, message
 end
@@ -876,13 +1076,15 @@ end
 function DRE:DeleteGameRecordById(gameId)
     local player, index = self:FindGameRecordById(gameId)
     if not player then return false, "The selected game no longer exists or is ambiguous. Reopen the editor." end
-    return self:DeleteGameRecord(player, index)
+    local success, message = self:DeleteGameRecord(player, index)
+    if success and self.UpdateEditedDuel then self:UpdateEditedDuel(gameId) end
+    return success, message
 end
 
 function DRE:UpdateGameWagerById(gameId, wager)
-    local player, index, game = self:FindGameRecordById(gameId)
+    local player, _, game = self:FindGameRecordById(gameId)
     if not player then return false, "Unable to find the recorded game" end
-    return self:EditGameRecord(player, index, game.result, wager, game.initialRoll)
+    return self:ApplyRecordedWager(self.db.profile.history[player], game, wager)
 end
 
 -- Recalculate and fix global gold tracking totals from individual player data

@@ -4,16 +4,16 @@ import unittest
 from lupa.lua51 import LuaRuntime
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULES = ['Core.lua', 'Database.lua', 'UI.lua', 'Dialogs.lua', 'Events.lua', 'Group.lua']
+MODULES = ['Core.lua', 'Database.lua', 'UI.lua', 'TableUI.lua', 'DuelUI.lua', 'Dialogs.lua', 'Events.lua', 'Group.lua', 'GroupSync.lua']
 
 
 def runtime(prelude=None):
     lua = LuaRuntime(unpack_returned_tuples=True)
-    lua.execute((ROOT / 'tests/wow_mock.lua').read_text())
+    lua.execute((ROOT / 'tests/wow_mock.lua').read_text(encoding='utf-8'))
     if prelude:
         lua.execute(prelude)
     for name in MODULES:
-        lua.execute((ROOT / name).read_text())
+        lua.execute((ROOT / name).read_text(encoding='utf-8'))
     lua.execute('''
         DRE.db={profile={history={},goldTracking={totalWon=0,totalLost=0,currentStreak=0,bestWinStreak=0,worstLossStreak=0},
           gameplay={},challengeSystem={enabled=true,minRollThreshold=100},ui={scale=1,frameStatus={}},funStats={},minimap={}}}
@@ -32,6 +32,137 @@ class AddonRegressionTests(unittest.TestCase):
             with self.subTest(file=str(path.relative_to(ROOT))):
                 lua.execute('assert(loadstring(...))', path.read_text(encoding='utf-8-sig'))
 
+    def test_roll_preferences_in_both_settings_pages(self):
+        lua = runtime("""
+            local stub = LibStub
+            LibStub = function(name, ...)
+                if name == 'AceConfig-3.0' then
+                    return {RegisterOptionsTable=function(_, _, options) settings = options.args end}
+                end
+                return stub(name, ...)
+            end
+        """)
+        lua.execute("""
+            DRE:SetupOptions()
+            local threshold = settings.challenges.args.minRollThreshold
+            local default = settings.gameplay.args.defaultStartingRoll
+            assert(default.get() == '100')
+            assert(threshold.validate(nil, '999,999') == true)
+            threshold.set(nil, '999,999')
+            for _, invalid in ipairs({'1', '1000000', '2.5', '5,00', ''}) do
+                assert(type(threshold.validate(nil, invalid)) == 'string')
+                threshold.set(nil, invalid)
+            end
+            assert(threshold.get() == '999999')
+            DRE:HandleChallengeWhisper('DEATHROLL_CHALLENGE:999998:0:2.3.9', 'Alice')
+            assert(not DRE.pendingChallenge)
+            DRE:HandleChallengeWhisper('DEATHROLL_CHALLENGE:999999:0:2.3.9', 'Alice')
+            assert(DRE.pendingChallenge.roll == 999999)
+
+            local fields, create = {}, AceGUI.Create
+            function AceGUI:Create(kind)
+                local widget = create(self, kind)
+                if kind == 'EditBox' or kind == 'CheckBox' then
+                    widget.SetLabel = function(w, label) fields[label] = w end
+                end
+                return widget
+            end
+            DRE:CreateSettingsSection(AceGUI:Create('SimpleGroup'))
+            local popup = fields[threshold.name]
+            assert(popup:GetText() == '999999')
+            popup:Fire('OnEnterPressed', '1')
+            assert(popup:GetText() == '999999')
+            popup:Fire('OnEnterPressed', '50,000')
+            assert(threshold.get() == '50000')
+            fields[default.name]:Fire('OnEnterPressed', '12,345')
+            assert(default.get() == '12345')
+            function DRE:SetMinimapLocked(value) self.db.profile.minimap.lock = value end
+            fields['Lock Minimap Icon']:Fire('OnValueChanged', true)
+            assert(settings.interface.args.lock.get())
+        """)
+
+    def test_ui_scale_stays_still_until_slider_release(self):
+        self.check("""
+            local slider, held, resizes = nil, true, 0
+            local create = AceGUI.Create
+            function AceGUI:Create(kind)
+                local widget = create(self, kind)
+                if kind == 'Slider' then slider = widget end
+                return widget
+            end
+            IsMouseButtonDown = function(button) assert(button == 'LeftButton'); return held end
+            DRE.UI.mainWindow = {frame = {SetScale = function(_, scale)
+                assert(scale == DRE.db.profile.ui.scale)
+                resizes = resizes + 1
+            end}}
+            DRE.QueueLayoutRefresh = function() end
+            DRE:CreateSettingsSection(AceGUI:Create('SimpleGroup'))
+            local function change(value)
+                slider:SetValue(value)
+                slider:Fire('OnValueChanged', value)
+            end
+            change(1.2); change(1.3); change(1.5)
+            assert(resizes == 0 and DRE.db.profile.ui.scale == 1)
+            held = false
+            slider:Fire('OnMouseUp', 1.5)
+            assert(resizes == 1 and DRE.db.profile.ui.scale == 1.4)
+            change(1.6) -- One wheel step, with no release
+            assert(resizes == 2 and DRE.db.profile.ui.scale == 1.5)
+            change(2.2)
+            slider:Fire('OnMouseUp', 99) -- Enter reports the raw number after clamping
+            assert(resizes == 3 and DRE.db.profile.ui.scale == 2.1)
+        """)
+
+    def test_starting_roll_drafts_overrides_and_restart(self):
+        self.check("""
+            DRE:ShowMainWindow('deathroll')
+            assert(DRE.UI.rollEdit:GetText() == '100')
+            local draft = DRE:GetGroupDraft()
+            DRE:SetDefaultStartingRoll(90000)
+            assert(DRE.UI.rollEdit:GetText() == '90000' and draft.initialRoll == '90000')
+            DRE.UI.rollEdit:SetText('456')
+            draft.initialRoll = '789'
+            DRE:SetDefaultStartingRoll(12345)
+            assert(DRE.UI.rollEdit:GetText() == '456' and draft.initialRoll == '789')
+            DRE:StartDeathRoll('Alice', 456, 0)
+            DRE:SetDefaultStartingRoll(1000)
+            assert(DRE.gameState.currentRoll == 456)
+            DRE:HandleGameRoll('Me', 1, 456)
+            assert(DRE.UI.rollEdit:GetText() == '1000')
+            assert(DRE:StartGroupRound('Me\\nAlice', 789, 'SAY'))
+            assert(DRE:GetGroupDraft().initialRoll == '1000')
+            assert(DRE:CancelGroupRound(true))
+            assert(DRE:RestartGroupRound() and DRE.groupRound.currentRoll == 789)
+        """)
+
+    def test_turn_sound_follows_valid_handoffs_and_preference(self):
+        self.check("""
+            local sounds = 0
+            PlaySound = function(id) assert(id == 3081); sounds = sounds + 1 end
+            DRE.db.profile.gameplay.soundEnabled = true
+            DRE:StartDeathRoll('Alice', 100, 0)
+            DRE:HandleGameRoll('Me', 50, 100)
+            DRE:HandleGameRoll('Alice', 20, 99)
+            assert(sounds == 0)
+            DRE:HandleGameRoll('Alice', 20, 50)
+            DRE:RestoreGameControls()
+            assert(sounds == 1)
+            DRE:HandleGameRoll('Me', 10, 20)
+            DRE:HandleGameRoll('Alice', 1, 10)
+            assert(sounds == 1)
+            C_Sound = {PlaySound = PlaySound}
+            PlaySound = nil
+            assert(DRE:StartGroupRound('Me\\nAlice', 100, 'SAY'))
+            DRE:HandleGroupRoll('Me', 80, 100)
+            assert(sounds == 2)
+            DRE:HandleGroupRoll('Alice', 70, 80)
+            assert(sounds == 3)
+            DRE.db.profile.gameplay.soundEnabled = false
+            DRE:HandleGroupRoll('Me', 60, 70)
+            DRE:HandleGroupRoll('Alice', 50, 60)
+            assert(sounds == 3)
+        """)
+
     def test_emotes_cannot_forge_results(self):
         self.check('''
             DRE:StartActualGame('Alice',100,0)
@@ -40,6 +171,32 @@ class AddonRegressionTests(unittest.TestCase):
             assert(DRE.gameState.isActive and not next(DRE.db.profile.history))
             DRE:CHAT_MSG_SYSTEM('CHAT_MSG_SYSTEM','Me rolls 1 (1-100)')
             assert(not DRE.gameState and DRE.db.profile.history.Alice.losses==1)
+        ''')
+
+    def test_korean_roll_particle_in_system_message(self):
+        self.check("""
+            RANDOM_ROLL_RESULT = '%s님이 주사위를 굴려 %d|1이;가; 나왔습니다. (%d-%d)'
+            for _, particle in ipairs({'이', '가', '|1이;가;'}) do
+                local message = '테스터님이 주사위를 굴려 10' .. particle .. ' 나왔습니다. (1-100)'
+                local roll = assert(DRE:ParseRollMessage(message))
+                assert(roll.playerName == '테스터' and roll.roll == 10 and roll.maxRoll == 100)
+                assert(not DRE:ParseRollMessage(message .. 'x'))
+            end
+        """)
+
+    def test_roll_history_shows_next_rollers_risk(self):
+        self.check('''
+            local function check(who, roll, selfTurn, expected)
+                DRE:AddRollToHistory(who, roll, 999999, selfTurn ~= nil, selfTurn)
+                local log = DRE.UI.rollHistory
+                assert(log[#log]:sub(-#expected) == expected, log[#log])
+            end
+            check('Me', 20, nil, 'Opponent has a 5% chance to roll 1 next')
+            check('Alice', 2, nil, 'You have a 50% chance to roll 1 next')
+            check('Me', 999999, 1, 'Opponent has a 0.0001% chance to roll 1 next')
+            check('Me', 10, 2, 'You have a 10% chance to roll 1 next')
+            check('Me', 1, nil, 'you lost')
+            check('Alice', 1, nil, 'you win')
         ''')
 
     def test_turn_and_range_enforcement(self):
@@ -257,15 +414,54 @@ class AddonRegressionTests(unittest.TestCase):
     def test_trade_persistence_and_full_identity(self):
         self.check('''
             local _,id=DRE:AddGameToHistory('Alice-RealmA','Won',0,100)
-            DRE.db.profile.pendingTradeWagers={{gameId=id,playerName='Alice-RealmA',recordedAt=now,result='Won'}}
+            DRE.db.profile.pendingTradeWagers={{ownerGUID=playerGUID,gameId=id,playerName='Alice-RealmA',recordedAt=now,result='Won'}}
             DRE.historySchemaProfile=nil;DRE:EnsureHistorySchema();DRE:PrunePendingTradeWagers()
-            DRE.tradeTracking={partner='Alice-RealmB',theirGold=500,myGold=0}
+            DRE.tradeTracking={ownerGUID=playerGUID,partner='Alice-RealmB',theirGold=500,myGold=0}
             DRE:HandleTrackedTradeCompletion()
             assert(DRE.db.profile.history['Alice-RealmA'].recentGames[1].goldAmount==0)
-            DRE.tradeTracking={partner='Alice-RealmA',theirGold=500,myGold=0}
+            DRE.tradeTracking={ownerGUID=playerGUID,partner='Alice-RealmA',theirGold=500,myGold=0}
             DRE:HandleTrackedTradeCompletion()
             assert(DRE.db.profile.history['Alice-RealmA'].recentGames[1].goldAmount==500)
             assert(#DRE.db.profile.pendingTradeWagers==0)
+        ''')
+
+    def test_wager_delta_preserves_legacy_record_and_streak_checkpoint(self):
+        self.check('''
+            local profile = DRE.db.profile
+            local game = {id='dre:9',sequence=9,timestamp=now,result='WIN',goldAmount='500',initialRoll='1000000'}
+            profile.history.Alice = {recentGames={game},wins=6,losses=0,gamesPlayed=6,
+                legacyTotals={wins=5,losses=0,goldWon=1000,goldLost=0}}
+            local tracking = profile.goldTracking
+            tracking.currentStreak, tracking.bestWinStreak, tracking.worstLossStreak = 6, 8, -3
+            table.sort = function() error('sorted history with intact IDs') end
+            DRE:EnsureHistorySchema()
+            assert(profile.nextGameSequence == 9 and tracking.totalWon == 1500)
+            local checkpoint = profile.legacyStreaks
+            assert(not DRE:UpdateGameWagerById(game.id,-1))
+            assert(not DRE:UpdateGameWagerById('dre:missing',100))
+            assert(game.goldAmount == '500' and profile.history.Alice.goldWon == 1500)
+            assert(DRE:UpdateGameWagerById(game.id,300))
+            assert(DRE:UpdateGameWagerByTimestamp('Alice',now,300))
+            assert(profile.history.Alice.goldWon == 1300 and tracking.totalWon == 1300)
+            assert(game.result == 'WIN' and game.initialRoll == '1000000' and game.sequence == 9)
+            assert(checkpoint.checkpointSequence == 9 and checkpoint.currentStreak == 6)
+            assert(tracking.currentStreak == 6 and tracking.bestWinStreak == 8 and tracking.worstLossStreak == -3)
+        ''')
+
+    def test_partial_identity_migration_repairs_collisions_in_chronological_order(self):
+        self.check('''
+            local profile = DRE.db.profile
+            profile.historySchemaVersion = 1
+            local first = {id='dre:8',sequence=8,result='WIN',timestamp=now}
+            local second = {result='Lost',timestamp=now}
+            local third = {id='dre:8',sequence=8,result='Won',timestamp=now+1}
+            profile.history.Alice = {recentGames={third,second,first}}
+            DRE:EnsureHistorySchema()
+            assert(first.id == 'dre:8' and second.id == 'dre:9' and third.id == 'dre:10')
+            DRE.historySchemaProfile = nil
+            table.sort = function() error('sorted history again after repair') end
+            DRE:EnsureHistorySchema()
+            assert(profile.nextGameSequence == 10)
         ''')
 
     def test_manual_trade_assignment_resolves_ambiguity(self):
@@ -273,16 +469,16 @@ class AddonRegressionTests(unittest.TestCase):
             local _,a=DRE:AddGameToHistory('Alice','Won',0,100)
             local _,b=DRE:AddGameToHistory('Alice','Won',0,100)
             DRE.db.profile.pendingTradeWagers={
-              {gameId=a,playerName='Alice',recordedAt=now,result='Won'},
-              {gameId=b,playerName='Alice',recordedAt=now,result='Won'}}
-            DRE.tradeTracking={partner='Alice',theirGold=500,myGold=0}
+              {ownerGUID=playerGUID,gameId=a,playerName='Alice',recordedAt=now,result='Won'},
+              {ownerGUID=playerGUID,gameId=b,playerName='Alice',recordedAt=now,result='Won'}}
+            DRE.tradeTracking={ownerGUID=playerGUID,partner='Alice',theirGold=500,myGold=0}
             DRE:HandleTrackedTradeCompletion()
             assert(#DRE.db.profile.pendingTradeWagers==2)
             assert(DRE:EditGameRecordById(a,'Won',500,100))
             assert(#DRE.db.profile.pendingTradeWagers==1)
             DRE:HandleTrackedTradeCompletion()
             assert(#DRE.db.profile.pendingTradeWagers==1) -- cannot reuse the ambiguous payment
-            DRE.tradeTracking={partner='Alice',theirGold=600,myGold=0}
+            DRE.tradeTracking={ownerGUID=playerGUID,partner='Alice',theirGold=600,myGold=0}
             DRE:HandleTrackedTradeCompletion()
             assert(#DRE.db.profile.pendingTradeWagers==0)
         ''')
@@ -486,6 +682,26 @@ class AddonRegressionTests(unittest.TestCase):
             for _,timer in ipairs(timers) do timer.callback() end
             assert(not DRE.activeDialog and not DRE.dialogWindow:IsShown())
         ''')
+
+    def test_release_only_reports_a_reply_once_for_the_current_invitation(self):
+        self.check("""
+            DRE.db.profile.challengeSystem.sendWhisper = true
+            DRE:StartDeathRoll('Alice', 100, 0, false)
+            local count = 0
+            DRE.Print = function() count = count + 1 end
+            local function reply(name) DRE:CHAT_MSG_WHISPER('CHAT_MSG_WHISPER', 'DEATHROLL_ACCEPT', name) end
+            reply('Alice')
+            assert(count == 0)
+            assert(DRE:SendChallengeWhisper('Alice', 100, 0))
+            reply('Bob')
+            reply('Alice')
+            reply('Alice')
+            assert(count == 1)
+            assert(DRE:SendChallengeWhisper('Alice', 100, 0))
+            clock = clock + 30
+            reply('Alice')
+            assert(count == 1)
+        """)
 
     def test_chat_lockdown_prevents_send_and_reports_challenge_failure(self):
         self.check('''

@@ -48,19 +48,21 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
-          version = Path('VERSION').read_text().strip()
-          changes = Path('CHANGELOG.md').read_text()
+          version = Path('VERSION').read_text(encoding='utf-8').strip()
+          changes = Path('CHANGELOG.md').read_text(encoding='utf-8')
           heading = f'## {version} '
           if not changes.startswith(heading):
               raise SystemExit('Changelog must start with this release version')
           notes = re.split(r'\n(?:## |# DeathRoll Enhancer - Changelog)', changes, maxsplit=1)[0]
-          Path('dist/release-notes.md').write_text(notes)
+          Path('dist/release-notes.md').write_text(notes, encoding='utf-8')
           PY
       - name: Publish version tag and installable ZIP
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(cat VERSION)
-          gh release create "v$version" "dist/DeathRollEnhancer-$version.zip" \
+          flags=()
+          if [[ "$version" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "v$version" "dist/DeathRollEnhancer-$version.zip" "${flags[@]}" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "DeathRoll Enhancer $version - 2SChoppy Edition" --notes-file dist/release-notes.md

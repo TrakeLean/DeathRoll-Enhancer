@@ -174,9 +174,24 @@ function DRE:ParseRollMessage(message)
     if self.rollFormat ~= formatText then
         self.rollFormat = formatText
         self.rollPattern, self.rollArguments = CompileRollFormat(formatText)
+        self.rollParticles = nil
+        -- Korean GlobalStrings can contain a particle selector that the client
+        -- resolves when it displays a system message.
+        if self.rollPattern and formatText:find("|1이;가;", 1, true) then
+            self.rollParticles = {
+                (self.rollPattern:gsub("|1이;가;", "이")),
+                (self.rollPattern:gsub("|1이;가;", "가")),
+            }
+        end
     end
     if not self.rollPattern then return nil end
     local captures = { message:match(self.rollPattern) }
+    if #captures == 0 and self.rollParticles then
+        for _, pattern in ipairs(self.rollParticles) do
+            captures = {message:match(pattern)}
+            if #captures == 4 then break end
+        end
+    end
     if #captures ~= 4 then return nil end
     local values = {}
     for index, value in ipairs(captures) do values[self.rollArguments[index]] = value end

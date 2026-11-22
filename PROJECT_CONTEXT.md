@@ -143,7 +143,7 @@ Roll history behavior:
 - keeps the full roll log instead of truncating
 - uses mouse-wheel scrolling with no visible scrollbar
 - appends new entries at the bottom and auto-scrolls down
-- phrases roll odds from the player's perspective, showing your chance of winning after your roll and your chance of losing after the opponent's roll
+- shows the next player's chance to roll a 1, using the latest roll as the new maximum
 - is explicitly hidden on tab switches to prevent leaking into other tabs
 
 The action button is driven by a state machine:

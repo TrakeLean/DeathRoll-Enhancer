@@ -12,6 +12,12 @@ local LSM = LibStub("LibSharedMedia-3.0", true)
 DRE.UI = {}
 local UI = DRE.UI
 
+local tableWidgets = {Frame = "DRETableWindow", Button = "DRETableButton", EditBox = "DRETableInput",
+    InlineGroup = "DRETableSection", CheckBox = "DRETableSwitch", Dropdown = "DRETableDropdown"}
+function DRE:CreateWindowWidget(kind)
+    return AceGUI:Create(self.devDuel and tableWidgets[kind] or kind)
+end
+
 -- UI state
 UI.mainWindow = nil
 UI.isGameActive = false
@@ -147,6 +153,10 @@ function DRE:RefreshVisibleUILayout()
     if UI.tabGroup and UI.tabGroup.DoLayout then
         UI.tabGroup:DoLayout()
     end
+    if UI.groupWidgets and UI.groupWidgets.circle then
+        -- A height-only resize can leave the scroll child's width unchanged.
+        UI.groupWidgets.pane:DoLayout()
+    end
 
     if UI.settingsContent and UI.settingsContent.DoLayout then
         UI.settingsContent:DoLayout()
@@ -185,16 +195,33 @@ end
 
 
 -- Create main DeathRoll window using AceGUI
-function DRE:ShowMainWindow()
+function DRE:SelectMainSection(section)
+    if not UI.tabGroup then return self:ShowMainWindow(section) end
+    if self.devDuel then
+        UI.tabGroup:SetGroup(section)
+    else
+        UI.tabGroup:SelectTab(section)
+    end
+end
+
+function DRE:ShowMainWindow(section)
     if not AceGUI then
         self:Print("AceGUI-3.0 not available. Please install Ace3.")
         return
     end
     
+    if UI.mainWindow and not UI.tabGroup then
+        UI.mainWindow:Hide()
+        UI.mainWindow, UI.tableHero, UI.tableFooter = nil, nil, nil
+    end
     if UI.mainWindow then
         UI.mainWindow:Show()
+        section = section or (self.devDuel and "deathroll")
+        if section and UI.currentTab ~= section then self:SelectMainSection(section) end
         if UI.currentTab == "group" then self:RefreshGroupUI() end
-        if UI.currentTab == "deathroll" and self.gameState and self.gameState.isActive then
+        if self.RefreshDuel then
+            self:RefreshDuel()
+        elseif UI.currentTab == "deathroll" and self.gameState and self.gameState.isActive then
             self:RestoreGameControls()
         end
         self:QueueLayoutRefresh()
@@ -206,8 +233,8 @@ function DRE:ShowMainWindow()
     end
     
     -- Create main window frame (initially hidden to prevent flash)
-    local frame = AceGUI:Create("Frame")
-    frame:SetTitle("DeathRoll Enhancer")
+    local frame = self:CreateWindowWidget("Frame")
+    frame:SetTitle(self.displayName)
     frame:SetStatusText("v" .. self.version .. " - 2SChoppy Edition")
     frame:SetCallback("OnClose", function(widget)
         self:HideRollHistoryPanel()
@@ -217,67 +244,50 @@ function DRE:ShowMainWindow()
     -- Hide frame initially to prevent flash during setup
     frame.frame:Hide()
     
-    -- Set default dimensions first
-    frame:SetWidth(400)
-    frame:SetHeight(311)
     frame:SetLayout("Fill")
-    
-    -- Set up AceGUI status table (this will override defaults if saved values exist)
-    if not self.db.profile.ui.frameStatus then
-        self.db.profile.ui.frameStatus = {}
-    end
-    
-    frame:SetStatusTable(self.db.profile.ui.frameStatus)
+    local settings = self.db.profile.ui
+    settings.frameStatus = settings.frameStatus or {}
+    local status = settings.frameStatus
+    frame:SetStatusTable(status)
     frame:EnableResize(true)
-    
-    -- For first-time users, ensure correct dimensions immediately (no timer)
-    if not self.db.profile.ui.frameStatus.width and not self.db.profile.ui.frameStatus.height then
-        -- This is likely first time opening - ensure proper sizing immediately
+    if self.devDuel then
+        -- Small dimensions from the former 400-by-311 shell use the new default once.
+        local oldSize = (status.width or 0) < self.tableMinWidth or (status.height or 0) < self.tableMinHeight
+        frame:SetWidth(oldSize and self.tableWidth or status.width)
+        frame:SetHeight(oldSize and self.tableHeight or status.height)
+    elseif not status.width and not status.height then
         frame:SetWidth(400)
         frame:SetHeight(311)
-        self:DebugPrint("Applied first-time window dimensions")
     end
-
-    -- Apply scaling AFTER dimensions are set but BEFORE AceGUI restoration
-    local scaleValue = (self.db and self.db.profile.ui.scale) or 0.9
-    frame.frame:SetScale(scaleValue)
-    self:DebugPrint("Applied initial scale: " .. scaleValue)
-
-    -- Hook ApplyStatus to maintain scale after position/size restoration
-    local originalApplyStatus = frame.ApplyStatus
-    frame.ApplyStatus = function(self_frame)
-        -- Temporarily store current scale
-        local currentScale = self_frame.frame:GetScale()
-
-        -- Apply position/size restoration
-        originalApplyStatus(self_frame)
-
-        -- Reapply scale to prevent double-scaling
-        local savedScale = (DRE.db and DRE.db.profile.ui.scale) or 0.9
-        if math.abs(currentScale - savedScale) > 0.01 then  -- Only reapply if different
-            self_frame.frame:SetScale(savedScale)
-            DRE:DebugPrint("Frame status applied - scale corrected to: " .. savedScale)
+    frame.frame:SetScale(settings.scale or 0.9)
+    if not self.devDuel then
+        local applyStatus = frame.ApplyStatus
+        frame.ApplyStatus = function(window)
+            applyStatus(window)
+            window.frame:SetScale(settings.scale or 0.9)
+            DRE:QueueLayoutRefresh()
         end
-
-        DRE:QueueLayoutRefresh()
     end
-    
-    -- Position/size restoration is now handled by AceGUI status table
-    
-    UI.mainWindow = frame
-    
+
     -- Create TabGroup
-    local tabGroup = AceGUI:Create("TabGroup")
+    local tabGroup = AceGUI:Create(self.devDuel and "SimpleGroup" or "TabGroup")
     tabGroup:SetLayout("Fill")
     tabGroup:SetFullWidth(true)
     tabGroup:SetFullHeight(true)
-    tabGroup:SetTabs({
+    local sections = {
         {text="DeathRoll", value="deathroll"},
         {text="Group", value="group"},
         {text="Statistics", value="statistics"}, 
         {text="History", value="history"},
         {text="Settings", value="settings"}
-    })
+    }
+    local header, footer
+    if self.devDuel then
+        tabGroup:SetAutoAdjustHeight(false)
+        header, footer = self:PrepareTableWindow(frame, tabGroup, sections)
+    else
+        tabGroup:SetTabs(sections)
+    end
     tabGroup:SetCallback("OnGroupSelected", function(container, event, group)
         if not (self.gameState and self.gameState.isActive) then
             if UI.rollEdit then UI.inputRoll = tonumber(UI.rollEdit:GetText()) end
@@ -285,6 +295,7 @@ function DRE:ShowMainWindow()
         end
         UI.tabGeneration = (UI.tabGeneration or 0) + 1
         self:ReleaseEmbeddedRollHistory()
+        UI.duelPane, UI.duelWidgets = nil, nil
         UI.groupWidgets = nil
         container:ReleaseChildren()
         -- Clear UI references when switching tabs to prevent cross-contamination
@@ -330,7 +341,11 @@ function DRE:ShowMainWindow()
         UI.currentTab = group
         
         if group == "deathroll" then
-            self:CreateGameSection(container)
+            if self.devDuel then
+                self:CreateDuelSection(container)
+            else
+                self:CreateGameSection(container)
+            end
             -- Check for recent rolls when switching to deathroll tab
             self:CheckRecentRollsForChallenge()
         elseif group == "group" then
@@ -345,10 +360,10 @@ function DRE:ShowMainWindow()
 
         self:UpdateRollHistoryPanelVisibility()
     end)
-    tabGroup:SelectTab("deathroll") -- Default to DeathRoll tab
-    
     frame:AddChild(tabGroup)
-    UI.tabGroup = tabGroup
+    -- A failed shell setup must leave the next open free to build a fresh window.
+    UI.mainWindow, UI.tabGroup, UI.tableHero, UI.tableFooter = frame, tabGroup, header, footer
+    self:SelectMainSection(section or "deathroll")
     
     -- Show the frame AFTER all setup is complete to prevent flash
     frame:Show()
@@ -405,11 +420,11 @@ function DRE:CreateGameSection(container)
     rollLabel:SetWidth(34)
     rollGroup:AddChild(rollLabel)
 
-    local rollEdit = AceGUI:Create("EditBox")
+    local rollEdit = DRE:CreateWindowWidget("EditBox")
     rollEdit:SetLabel("")
     rollEdit:SetWidth(90)
     
-    rollEdit:SetText("100")
+    rollEdit:SetText(tostring(UI.inputRoll or self:GetDefaultStartingRoll()))
     
     rollEdit:SetMaxLetters(6) -- Limit to 6 digits
     rollEdit:SetCallback("OnTextChanged", function(widget, event, text)
@@ -425,7 +440,7 @@ function DRE:CreateGameSection(container)
     end)
     rollGroup:AddChild(rollEdit)
 
-    local autoRollButton = AceGUI:Create("Button")
+    local autoRollButton = DRE:CreateWindowWidget("Button")
     autoRollButton:SetText("Use My Gold")
     autoRollButton:SetAutoWidth(true)
     autoRollButton:SetCallback("OnClick", function()
@@ -469,7 +484,7 @@ function DRE:CreateGameSection(container)
         wagerHeader:SetColor(0.85, 0.85, 0.85)
         wagerGroup:AddChild(wagerHeader)
         
-        goldEdit = AceGUI:Create("EditBox")
+        goldEdit = DRE:CreateWindowWidget("EditBox")
         goldEdit:SetLabel("")
         goldEdit:SetWidth(54)
         goldEdit:SetText("")
@@ -494,7 +509,7 @@ function DRE:CreateGameSection(container)
         goldUnitLabel:SetWidth(30)
         goldPairGroup:AddChild(goldUnitLabel)
         
-        silverEdit = AceGUI:Create("EditBox")
+        silverEdit = DRE:CreateWindowWidget("EditBox")
         silverEdit:SetLabel("")
         silverEdit:SetWidth(40)
         silverEdit:SetText("")
@@ -523,7 +538,7 @@ function DRE:CreateGameSection(container)
         silverUnitLabel:SetWidth(36)
         silverPairGroup:AddChild(silverUnitLabel)
         
-        copperEdit = AceGUI:Create("EditBox")
+        copperEdit = DRE:CreateWindowWidget("EditBox")
         copperEdit:SetLabel("")
         copperEdit:SetWidth(40)
         copperEdit:SetText("")
@@ -558,20 +573,20 @@ function DRE:CreateGameSection(container)
     actionGroup:SetFullWidth(true)
     actionGroup:SetLayout("Flow")
     controlsGroup:AddChild(actionGroup)
-    local gameButton = AceGUI:Create("Button")
+    local gameButton = DRE:CreateWindowWidget("Button")
     gameButton:SetText("Challenge Player to DeathRoll!")
     gameButton:SetRelativeWidth(0.76)
     gameButton:SetCallback("OnClick", function()
         self:HandleGameButtonClick()
     end)
     actionGroup:AddChild(gameButton)
-    local cancelGameButton = AceGUI:Create("Button")
+    local cancelGameButton = DRE:CreateWindowWidget("Button")
     cancelGameButton:SetText("Cancel")
     cancelGameButton:SetRelativeWidth(0.24)
     cancelGameButton:SetCallback("OnClick", function() self:CancelCurrentGame() end)
     actionGroup:AddChild(cancelGameButton)
 
-    local rollHistoryGroup = AceGUI:Create("InlineGroup")
+    local rollHistoryGroup = DRE:CreateWindowWidget("InlineGroup")
     rollHistoryGroup:SetTitle("Roll History")
     rollHistoryGroup:SetFullWidth(true)
     rollHistoryGroup:SetHeight(130)
@@ -801,6 +816,7 @@ function DRE:UpdateGameControlsLayout(controlsWidth, isStacked)
 end
 
 function DRE:RefreshRollHistoryDisplay()
+    if self.RefreshDuel then self:RefreshDuel(); return end
     if not UI.rollHistory then
         return
     end
@@ -825,8 +841,12 @@ function DRE:RefreshRollHistoryDisplay()
     end
 end
 
+function DRE:FormatRollOneChance(maximum)
+    return string.format("%.3g%%", 100 / maximum)
+end
+
 -- Add a roll entry to the history display
-function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
+function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount, modeDetail)
     -- Validate UI components exist
     if not self.UI then
         return
@@ -843,8 +863,8 @@ function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
         return
     end
 
-    if maxRoll <= 0 then
-        self:DebugPrint("AddRollToHistory: Invalid maxRoll value")
+    if roll < 1 or roll > maxRoll then
+        self:DebugPrint("AddRollToHistory: Roll outside the given range")
         return
     end
 
@@ -867,17 +887,28 @@ function DRE:AddRollToHistory(playerName, roll, maxRoll, isSelfDuel, rollCount)
         end
     end
 
+    if self.devDuel and self.gameState then
+        local game = self.gameState
+        if game.emoteRound and not game.emoteRound.opener then
+            self:ObserveEmoteOpener(game.emoteRound, isMe, roll)
+        end
+        game.duelRolls = game.duelRolls or {}
+        game.duelRolls[isMe and "player" or "opponent"] = roll
+        if UI.tableHero then UI.tableHero:PlayThrow(isMe, game.target, roll) end
+    end
+
     -- Create colored entry
     local colorCode = isMe and "|cff00ff00" or "|cffff6666" -- Green for player, red for opponent
     local resetColor = "|r"
     local outcomeText = ""
 
-    if roll == 1 then
+    if modeDetail then
+        outcomeText = modeDetail
+    elseif roll == 1 then
         outcomeText = isMe and "you lost" or "you win"
     else
-        local outcomeChance = (1 / math.max(1, roll)) * 100
-        local perspective = isMe and "winning" or "losing"
-        outcomeText = string.format("your chance of %s: %.2f%%", perspective, outcomeChance)
+        local nextRoller = isMe and "Opponent has" or "You have"
+        outcomeText = string.format("%s a %s chance to roll 1 next", nextRoller, self:FormatRollOneChance(roll))
     end
 
     local entry = string.format("%s%s%s rolled %d (1-%d) - %s",
@@ -942,6 +973,272 @@ function DRE:AddGameResultToHistory(result, opponent, wager)
     self:RefreshRollHistoryDisplay()
 end
 
+local function statsLabel(parent, text, width, font)
+    local label = AceGUI:Create("Label")
+    if width then label:SetRelativeWidth(width) else label:SetFullWidth(true) end
+    label:SetFontObject(font or GameFontHighlight)
+    label:SetText(text)
+    parent:AddChild(label)
+    return label
+end
+
+local function counted(value, singular, plural)
+    return value .. " " .. (value == 1 and singular or plural)
+end
+
+local function statsSection(parent, title)
+    local group = DRE:CreateWindowWidget("InlineGroup")
+    group:SetFullWidth(true)
+    group:SetTitle(title)
+    group:SetLayout("Flow")
+    parent:AddChild(group)
+    return group
+end
+
+local function statsPanel()
+    local frame = CreateFrame("Frame", nil, UIParent)
+    local surface = frame:CreateTexture(nil, "BACKGROUND")
+    surface:SetColorTexture(0.14, 0.115, 0.15, 1)
+    surface:SetPoint("TOPLEFT")
+    surface:SetPoint("BOTTOMRIGHT", 0, 10)
+    local function lettering(font, size, align, r, g, b)
+        local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        if font then text:SetFont(font, size, "") end
+        text:SetTextColor(r, g, b)
+        text:SetJustifyH(align)
+        text:SetJustifyV("TOP")
+        text:SetNonSpaceWrap(true)
+        return text
+    end
+    local bodyFont = UNIT_NAME_FONT or STANDARD_TEXT_FONT
+    local title = lettering(bodyFont, 15, "LEFT", 0.94, 0.77, 0.55)
+    local total = lettering(STANDARD_TEXT_FONT, 25, "LEFT", 1, 0.97, 0.90)
+    title:SetPoint("TOPLEFT", 12, -12)
+    total:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+    local labels, values = {}, {}
+    for index = 1, 2 do
+        labels[index] = lettering(bodyFont, 15, "LEFT", 0.80, 0.76, 0.79)
+        values[index] = lettering(bodyFont, 16, "RIGHT", 1, 0.97, 0.90)
+    end
+    local panel = {type = "DREStatsPanel", frame = frame, title = title, total = total, labels = labels, values = values}
+    function panel:OnWidthSet(width)
+        -- AceGUI also calls this when the table equalizes panel heights.
+        if self.measuredWidth == width then return end
+        self.measuredWidth = width
+        local inner = math.max(1, width - 24)
+        title:SetWidth(inner)
+        total:SetWidth(inner)
+        local labelWidth = math.floor(inner * 0.34)
+        local top = 12 + title:GetStringHeight() + 4 + total:GetStringHeight() + 10
+        for index = 1, 2 do
+            local label, value = labels[index], values[index]
+            label:SetWidth(math.max(1, labelWidth))
+            value:SetWidth(math.max(1, inner - labelWidth - 4))
+            label:SetPoint("TOPLEFT", 12, -top)
+            value:SetPoint("TOPRIGHT", -12, -top)
+            top = top + math.max(label:GetStringHeight(), value:GetStringHeight()) + 4
+        end
+        self:SetHeight(top + 18)
+    end
+    function panel:SetFigures(caption, headline, firstLabel, firstValue, secondLabel, secondValue)
+        title:SetText(caption)
+        total:SetText(headline)
+        labels[1]:SetText(firstLabel)
+        values[1]:SetText(firstValue)
+        labels[2]:SetText(secondLabel)
+        values[2]:SetText(secondValue)
+        self.measuredWidth = nil
+        self:OnWidthSet(frame:GetWidth())
+    end
+    function panel:OnAcquire()
+        self:SetWidth(210)
+    end
+    return AceGUI:RegisterAsWidget(panel)
+end
+if DRE.devDuel then AceGUI:RegisterWidgetType("DREStatsPanel", statsPanel, 1) end
+
+local function summaryPanel(parent, title, total, firstLabel, firstValue, secondLabel, secondValue)
+    local panel = AceGUI:Create("DREStatsPanel")
+    panel:SetFullWidth(true)
+    panel:SetFigures(title, total, firstLabel, firstValue, secondLabel, secondValue)
+    parent:AddChild(panel)
+end
+
+local function percentage(won, played)
+    return played > 0 and string.format("%.1f%%", 100 * won / played) or "—"
+end
+
+local function showModeFigures(scroll, mode, stats)
+    if mode == "highRoller" then
+        local won, contested = stats.tiebreakWins or 0, stats.tiebreaks or 0
+        summaryPanel(scroll, "Points won", stats.points or 0, "Tiebreak points won / contested",
+            won .. " / " .. contested, "Tiebreak win rate", percentage(won, contested))
+    elseif mode == "twoLives" then
+        summaryPanel(scroll, "Two Lives victories", counted(stats.totalWins or ((stats.played or 0) - (stats.losses or 0)), "win", "wins"),
+            "Flawless wins", stats.flawless or 0, "Comeback wins", stats.comebacks or 0)
+        statsLabel(scroll, "Flawless means both lives remained. A comeback starts with you losing the first life at the table.")
+    elseif mode == "cursed7" then
+        summaryPanel(scroll, "Cursed 7 losses by final roll", counted(stats.ones + stats.sevens, "recorded loss", "recorded losses"),
+            "Rolled a 1", stats.ones, "Rolled a 7", stats.sevens)
+    end
+end
+
+local function fillDuelStats(scroll, mode)
+    if DRE.db and DRE.db.profile.goldTracking then
+        local stats = DRE:GetDuelModeStats(mode)
+        local games = stats.totalGames
+        local won, lost = stats.totalGoldWon, stats.totalGoldLost
+        local overview = AceGUI:Create("SimpleGroup")
+        overview:SetFullWidth(true)
+        overview:SetUserData("table", {columns = {1, 1, 1}, spaceH = 8, alignH = "fill", alignV = "fill"})
+        overview:SetLayout("Table")
+        scroll:AddChild(overview)
+        local record = games == 0 and "No games recorded" or counted(games, "game", "games")
+        local rate = percentage(stats.totalWins, games)
+        summaryPanel(overview, "Win rate · " .. record, rate, "Wins", stats.totalWins, "Losses", stats.totalLosses)
+        summaryPanel(overview, "Net gold", DRE:FormatGold(won - lost), "Won", DRE:FormatGold(won), "Lost", DRE:FormatGold(lost))
+        local current = stats.currentStreak
+        local run = "None"
+        if current > 0 then run = counted(current, "win", "wins")
+        elseif current < 0 then run = counted(-current, "loss", "losses") end
+        summaryPanel(overview, "Current streak", run, "Best", counted(stats.bestWinStreak, "win", "wins"),
+            "Worst", counted(math.abs(stats.worstLossStreak), "loss", "losses"))
+        showModeFigures(scroll, mode, stats)
+        local offers = stats.offers
+        summaryPanel(scroll, "Double or Nothing · break-even rate", percentage(stats.breakEvens, offers),
+            "Broke even", stats.breakEvens, "Your completed offers", offers)
+    else
+        statsLabel(scroll, "Overall statistics are unavailable.")
+    end
+    if mode == "all" then
+        DRE:CreateFunStatsSection(scroll)
+    else
+        statsLabel(scroll, "Includes duels recorded with this mode. Comeback, tiebreak and rematch counts use games played since those stats were added.")
+    end
+end
+
+local function statsButton(parent, text, callback)
+    local button = DRE:CreateWindowWidget("Button")
+    button:SetText(text)
+    button:SetRelativeWidth(0.5)
+    button:SetCallback("OnClick", callback)
+    parent:AddChild(button)
+    return button
+end
+
+local function fillGroupStats(scroll, mode)
+    local settings = DRE.db.profile.funStats
+    local stats = DRE:GetHostedGroupStats() or {}
+    if mode ~= "all" then stats = (stats.byMode or {})[mode] or {} end
+    if settings.showGroupRecord ~= false or settings.showGroupLongest ~= false then
+        local overview = AceGUI:Create("SimpleGroup")
+        overview:SetFullWidth(true)
+        local both = settings.showGroupRecord ~= false and settings.showGroupLongest ~= false
+        overview:SetUserData("table", {columns = both and {1, 1} or {1}, spaceH = 8, alignH = "fill", alignV = "fill"})
+        overview:SetLayout("Table")
+        scroll:AddChild(overview)
+        if settings.showGroupRecord ~= false then
+            local played, losses = stats.played or 0, stats.losses or 0
+            if mode == "classic" or mode == "hotPotato" then
+                summaryPanel(overview, "Survival rate · " .. counted(played, "game", "games"), percentage(played - losses, played),
+                    "Survived", played - losses, "Lost", losses)
+            elseif mode ~= "all" then
+                summaryPanel(overview, "Win rate · " .. counted(played, "game", "games"), percentage(played - losses, played),
+                    "Wins", played - losses, "Losses", losses)
+            else
+                summaryPanel(overview, "My group record", counted(played, "round", "rounds"),
+                    "Won or survived", played - losses, "Lost", losses)
+            end
+        end
+        if settings.showGroupLongest ~= false then
+            local longest = stats.longest
+            summaryPanel(overview, "Longest round", longest and counted(longest.rolls, "roll", "rolls") or "—",
+                "Players", longest and longest.seats or "—", "Opening", longest and longest.opening or "—")
+        end
+    end
+    if settings.showGroupRecord ~= false then showModeFigures(scroll, mode, stats) end
+    if mode ~= "highRoller" and settings.showGroupEscapes ~= false then
+        statsLabel(statsSection(scroll, "Closest calls"), "You survived /roll 2 " .. counted(stats.escapes or 0, "time", "times") .. ".")
+    end
+    if settings.showGroupRegulars ~= false then
+        local group = statsSection(scroll, "Table regulars")
+        local rows = {}
+        for _, entry in pairs(stats.regulars or {}) do rows[#rows + 1] = entry end
+        table.sort(rows, function(a, b)
+            if a.played ~= b.played then return a.played > b.played end
+            return a.name < b.name
+        end)
+        local pageSize = 8
+        local pages = math.max(1, math.ceil(#rows / pageSize))
+        local page = math.min(UI.statsRegularsPage or 1, pages)
+        UI.statsRegularsPage = page
+        for index = (page - 1) * pageSize + 1, math.min(page * pageSize, #rows) do
+            local entry = rows[index]
+            local row = AceGUI:Create("DREFunStatRow")
+            row:SetFullWidth(true)
+            row:SetResult("#" .. index, entry.name, counted(entry.played, "round", "rounds") .. " · " ..
+                counted(entry.losses, "loss", "losses"), index % 2 == 1)
+            group:AddChild(row)
+        end
+        if #rows == 0 then statsLabel(group, "Finish a hosted round to see who played.") end
+        if pages > 1 then
+            local function changePage(delta)
+                UI.statsRegularsPage = page + delta
+                DRE:UpdateStatsDisplay()
+            end
+            statsButton(group, "Previous", function() changePage(-1) end):SetDisabled(page == 1)
+            statsButton(group, "Next", function() changePage(1) end):SetDisabled(page == pages)
+        end
+    end
+    local anyShown = false
+    for _, option in ipairs(DRE.groupStatOptions) do
+        if settings[option.key] ~= false then anyShown = true end
+    end
+    local scope = mode == "all" and "Completed rounds hosted by this character." or "Hosted games since mode tracking began. Personal figures count games you played in."
+    statsLabel(scroll, anyShown and scope or "Enable Group statistics in Settings.")
+end
+
+local function fillTableStats(scroll)
+    scroll:PauseLayout()
+    scroll:ReleaseChildren()
+    local modes = AceGUI:Create("SimpleGroup")
+    modes:SetFullWidth(true)
+    modes:SetLayout("Flow")
+    scroll:AddChild(modes)
+    local view = UI.statsView or "duel"
+    for _, mode in ipairs({"duel", "group"}) do
+        local button = statsButton(modes, mode == "duel" and "1v1" or "Group", function()
+            if UI.statsView == mode then return end
+            UI.statsView = mode
+            scroll:SetScroll(0)
+            DRE:UpdateStatsDisplay()
+        end)
+        button:SetPrimary(mode == view)
+    end
+    local names = view == "group" and DRE.groupModes or DRE.duelModes
+    local order = view == "group" and DRE.groupModeOrder or DRE.duelModeOrder
+    local choices, keys = {all = "All modes"}, {"all"}
+    for _, key in ipairs(order) do
+        keys[#keys + 1] = key
+        choices[key] = names[key]
+    end
+    UI.statsModes = UI.statsModes or {}
+    local selected = UI.statsModes[view] or "all"
+    local picker = DRE:CreateTableDropdownField(scroll, "Mode", 1)
+    picker:SetList(choices, keys)
+    picker:SetValue(selected)
+    picker:SetCallback("OnValueChanged", function(_, _, key)
+        if not choices[key] or key == selected then return end
+        UI.statsModes[view] = key
+        if view == "group" then UI.statsRegularsPage = 1 end
+        scroll:SetScroll(0)
+        DRE:UpdateStatsDisplay()
+    end)
+    if view == "group" then fillGroupStats(scroll, selected) else fillDuelStats(scroll, selected) end
+    scroll:ResumeLayout()
+    scroll:DoLayout()
+end
+
 -- Create stats section
 function DRE:CreateStatsSection(container)
     local statsGroup = AceGUI:Create("ScrollFrame")
@@ -949,12 +1246,19 @@ function DRE:CreateStatsSection(container)
     statsGroup:SetFullHeight(true)
     statsGroup:SetLayout("Flow")
     container:AddChild(statsGroup)
+    if self.devDuel then
+        statsGroup:SetCallback("OnStatsRefresh", fillTableStats)
+        fillTableStats(statsGroup)
+        return
+    end
     
     -- Header
-    local header = AceGUI:Create("Heading")
-    header:SetText("DeathRoll Statistics")
-    header:SetFullWidth(true)
-    statsGroup:AddChild(header)
+    if not self.devDuel then
+        local header = AceGUI:Create("Heading")
+        header:SetText("DeathRoll Statistics")
+        header:SetFullWidth(true)
+        statsGroup:AddChild(header)
+    end
     
     if not self.db or not self.db.profile.goldTracking then
         local noDataLabel = AceGUI:Create("Label")
@@ -967,7 +1271,7 @@ function DRE:CreateStatsSection(container)
     local stats = self.db.profile.goldTracking
     
     -- Overall statistics
-    local overallGroup = AceGUI:Create("InlineGroup")
+    local overallGroup = DRE:CreateWindowWidget("InlineGroup")
     overallGroup:SetTitle("Overall Performance")
     overallGroup:SetFullWidth(true)
     overallGroup:SetLayout("Flow")
@@ -1004,7 +1308,7 @@ function DRE:CreateStatsSection(container)
     overallGroup:AddChild(statsLabel)
     
     -- Streak information
-    local streakGroup = AceGUI:Create("InlineGroup")
+    local streakGroup = DRE:CreateWindowWidget("InlineGroup")
     streakGroup:SetTitle("Streaks")
     streakGroup:SetFullWidth(true)
     streakGroup:SetLayout("Flow")
@@ -1038,68 +1342,172 @@ function DRE:CreateStatsSection(container)
 end
 
 -- Create fun statistics section
-function DRE:CreateFunStatsSection(container)
-    if not self.db or not self.db.profile.funStats then
-        return
+local function funStatRow()
+    local frame = CreateFrame("Frame", nil, UIParent)
+    local shade = frame:CreateTexture(nil, "BACKGROUND")
+    shade:SetAllPoints()
+    local function lettering(size, r, g, b)
+        local label = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        if STANDARD_TEXT_FONT then label:SetFont(STANDARD_TEXT_FONT, size, "") end
+        label:SetTextColor(r, g, b)
+        label:SetJustifyH("LEFT")
+        label:SetJustifyV("TOP")
+        label:SetNonSpaceWrap(true)
+        return label
     end
+    local caption = lettering(15, 0.96, 0.82, 0.61)
+    local player = lettering(17, 1, 0.97, 0.90)
+    local detail = lettering(14, 0.88, 0.86, 0.88)
+    caption:SetPoint("TOPLEFT", 10, -8)
+    local row = {type = "DREFunStatRow", frame = frame, caption = caption, player = player, detail = detail}
+    function row:OnWidthSet(width)
+        local split = math.floor(width * 0.35)
+        caption:SetWidth(math.max(1, split - 18))
+        local right = math.max(1, width - split - 10)
+        player:SetWidth(right)
+        detail:SetWidth(right)
+        player:ClearAllPoints()
+        player:SetPoint("TOPLEFT", split, -7)
+        local nameHeight = player:GetText() ~= "" and player:GetStringHeight() or 0
+        local detailTop = nameHeight > 0 and nameHeight + 3 or 0
+        detail:ClearAllPoints()
+        detail:SetPoint("TOPLEFT", split, -7 - detailTop)
+        self:SetHeight(15 + math.max(caption:GetStringHeight(), detailTop + detail:GetStringHeight()))
+    end
+    function row:SetResult(title, name, value, alternate)
+        caption:SetText(title)
+        player:SetText(name or "")
+        detail:SetText(value)
+        shade:SetColorTexture(1, 0.92, 0.80, alternate and 0.065 or 0.018)
+        self:OnWidthSet(self.frame:GetWidth())
+    end
+    function row:OnAcquire()
+        self:SetWidth(400)
+    end
+    return AceGUI:RegisterAsWidget(row)
+end
+if DRE.devDuel then AceGUI:RegisterWidgetType("DREFunStatRow", funStatRow, 1) end
 
-    -- Calculate fun stats
-    local funStats = self:CalculateFunStats()
-    local settings = self.db.profile.funStats
-
-    -- Define stats in order matching settings tab structure
+local function getFunStatSections(dev)
     local statSections = {
         {
             title = "Player Relationships",
             stats = {
-                {setting = "showMostPlayedWith", stat = "mostPlayedWith"},
-                {setting = "showMostWinsAgainst", stat = "mostWinsAgainst"},
-                {setting = "showMostLossesAgainst", stat = "mostLossesAgainst"},
-                {setting = "showNemesis", stat = "nemesis"},
-                {setting = "showVictim", stat = "victim"},
-                {setting = "showFrenemy", stat = "frenemy"},
-                {setting = "showLikelyCheater", stat = "likelyCheater"},
+                {setting = "showMostPlayedWith", stat = "mostPlayedWith", label = "Most Played With"},
+                {setting = "showMostWinsAgainst", stat = "mostWinsAgainst", label = "Most Wins Against"},
+                {setting = "showMostLossesAgainst", stat = "mostLossesAgainst", label = "Most Losses Against"},
+                {setting = "showNemesis", stat = "nemesis", label = "Your Nemesis"},
+                {setting = "showVictim", stat = "victim", label = "Your Victim"},
+                {setting = "showFrenemy", stat = "frenemy", label = dev and "Closest Rival" or "Frenemy"},
+                {setting = "showLikelyCheater", stat = "likelyCheater", label = "Most Likely to Cheat", legacy = true},
             }
         },
         {
             title = "Gold & Money",
             stats = {
-                {setting = "showMostMoneyWonFrom", stat = "mostMoneyWonFrom"},
-                {setting = "showMostMoneyLostTo", stat = "mostMoneyLostTo"},
-                {setting = "showBestMatchup", stat = "bestMatchup"},
-                {setting = "showWorstMatchup", stat = "worstMatchup"},
-                {setting = "showBiggestWin", stat = "biggestWin"},
-                {setting = "showBiggestLoss", stat = "biggestLoss"},
-                {setting = "showHighRoller", stat = "highRoller"},
-                {setting = "showCheapskate", stat = "cheapskate"},
+                {setting = "showMostMoneyWonFrom", stat = "mostMoneyWonFrom", label = "Biggest Gold Mine"},
+                {setting = "showMostMoneyLostTo", stat = "mostMoneyLostTo", label = "Biggest Money Sink"},
+                {setting = "showBestMatchup", stat = "bestMatchup", label = "Best Matchup"},
+                {setting = "showWorstMatchup", stat = "worstMatchup", label = "Worst Matchup"},
+                {setting = "showBiggestWin", stat = "biggestWin", label = "Biggest Single Win"},
+                {setting = "showBiggestLoss", stat = "biggestLoss", label = "Biggest Single Loss"},
+                {setting = "showHighRoller", stat = "highRoller", label = "High Roller"},
+                {setting = "showCheapskate", stat = "cheapskate", label = "Cheapskate"},
             }
         },
         {
-            title = "Luck & Streaks",
+            title = dev and "Opening Rolls" or "Luck & Streaks",
             stats = {
-                {setting = "showLuckyPlayer", stat = "luckyPlayer"},
-                {setting = "showUnluckyPlayer", stat = "unluckyPlayer"},
-                {setting = "showDaredevil", stat = "daredevil"},
-                {setting = "showConservative", stat = "conservative"},
+                {setting = "showLuckyPlayer", stat = "luckyPlayer", label = "Lucky Player", legacy = true},
+                {setting = "showUnluckyPlayer", stat = "unluckyPlayer", label = "Unlucky Player", legacy = true},
+                {setting = "showDaredevil", stat = "daredevil", label = "Daredevil Opponent"},
+                {setting = "showConservative", stat = "conservative", label = "Conservative Opponent"},
             }
         },
     }
 
+    if dev then
+        for _, section in ipairs(statSections) do
+            for index = #section.stats, 1, -1 do
+                if section.stats[index].legacy then table.remove(section.stats, index) end
+            end
+        end
+    end
+    return statSections
+end
+
+function DRE:CreateFunStatsSection(container)
+    if not self.db or not self.db.profile.funStats then return end
+    local settings = self.db.profile.funStats
+    local statSections = getFunStatSections(self.devDuel)
     -- Check only known/displayable fun-stat toggles.
-    local hasEnabledStats = false
-    for _, section in ipairs(statSections) do
+    local categories, order = {}, {}
+    for index, section in ipairs(statSections) do
         for _, statInfo in ipairs(section.stats) do
             if settings[statInfo.setting] then
-                hasEnabledStats = true
+                categories[index] = section.title
+                order[#order + 1] = index
                 break
             end
         end
-        if hasEnabledStats then
-            break
-        end
     end
 
-    if not hasEnabledStats then
+    if #order == 0 then
+        if self.devDuel then
+            statsLabel(statsSection(container, "Fun Statistics"), "Enable Fun Statistics in Settings to see them here.")
+        end
+        return
+    end
+
+    local funStats = self:CalculateFunStats()
+    if self.devDuel then
+        local group = statsSection(container, "Fun Statistics")
+        local selected = categories[UI.statsCategory] and UI.statsCategory or order[1]
+        local picker
+        if #order > 1 then
+            picker = self:CreateWindowWidget("Dropdown")
+            picker:SetWidth(235)
+            picker:SetList(categories, order)
+            picker:SetValue(selected)
+            group:AddChild(picker)
+        else
+            statsLabel(group, categories[selected], nil, GameFontNormal)
+        end
+        local results = AceGUI:Create("SimpleGroup")
+        results:SetLayout("List")
+        results:SetFullWidth(true)
+        group:AddChild(results)
+        local function addResult(title, player, detail)
+            local row = AceGUI:Create("DREFunStatRow")
+            row:SetFullWidth(true)
+            row:SetResult(title, player, detail, #results.children % 2 == 0)
+            results:AddChild(row)
+        end
+        local function showCategory(index)
+            UI.statsCategory = index
+            results:PauseLayout()
+            results:ReleaseChildren()
+            local pending = {}
+            for _, item in ipairs(statSections[index].stats) do
+                if settings[item.setting] then
+                    local title, player, detail = self:GetFunStatFields(item.stat, funStats[item.stat])
+                    if title then
+                        addResult(title, player, detail)
+                    else
+                        pending[#pending + 1] = item.label
+                    end
+                end
+            end
+            if #pending > 0 then
+                addResult("Awaiting qualifying data", nil, table.concat(pending, ", "))
+            end
+            results:ResumeLayout()
+            results:DoLayout()
+            group:DoLayout()
+            container:DoLayout()
+        end
+        if picker then picker:SetCallback("OnValueChanged", function(_, _, index) showCategory(index) end) end
+        showCategory(selected)
         return
     end
 
@@ -1119,7 +1527,7 @@ function DRE:CreateFunStatsSection(container)
 
         -- Only create section if it has stats to show
         if #sectionStats > 0 then
-            local sectionGroup = AceGUI:Create("InlineGroup")
+            local sectionGroup = DRE:CreateWindowWidget("InlineGroup")
             sectionGroup:SetTitle(section.title)
             sectionGroup:SetFullWidth(true)
             sectionGroup:SetLayout("Flow")
@@ -1135,7 +1543,7 @@ function DRE:CreateFunStatsSection(container)
     end
 
     -- Add settings hint at the bottom
-    local hintGroup = AceGUI:Create("InlineGroup")
+    local hintGroup = DRE:CreateWindowWidget("InlineGroup")
     hintGroup:SetFullWidth(true)
     hintGroup:SetLayout("Flow")
     container:AddChild(hintGroup)
@@ -1147,63 +1555,304 @@ function DRE:CreateFunStatsSection(container)
     hintGroup:AddChild(settingsHint)
 end
 
--- Create history section
-function DRE:CreateHistorySection(container)
-    local historyGroup = AceGUI:Create("SimpleGroup")
-    historyGroup:SetFullWidth(true)
-    historyGroup:SetFullHeight(true)
-    historyGroup:SetLayout("List")
-    container:AddChild(historyGroup)
-    
-    local historyControlsGroup = AceGUI:Create("SimpleGroup")
-    historyControlsGroup:SetFullWidth(true)
-    historyControlsGroup:SetLayout("Flow")
-    historyGroup:AddChild(historyControlsGroup)
-    
-    -- Header
-    local header = AceGUI:Create("Heading")
-    header:SetText("Game History")
-    header:SetFullWidth(true)
-    historyControlsGroup:AddChild(header)
-    
-    if not self.db or not self.db.profile.history then
-        local noDataLabel = AceGUI:Create("Label")
-        noDataLabel:SetText("No game history yet. Start playing DeathRoll games to see your history here!")
-        noDataLabel:SetFullWidth(true)
-        historyControlsGroup:AddChild(noDataLabel)
-        return
-    end
-    
-    -- Create dropdown with all players
-    local playerNames = {}
-    local playerDropdown = {}
-    for playerName, _ in pairs(self.db.profile.history) do
-        table.insert(playerNames, playerName)
-        playerDropdown[playerName] = playerName
-    end
-    table.sort(playerNames)
-    
-    -- Player selector section
-    local playerSelectorGroup = AceGUI:Create("SimpleGroup")
-    playerSelectorGroup:SetFullWidth(true)
-    playerSelectorGroup:SetLayout("Flow")
-    historyControlsGroup:AddChild(playerSelectorGroup)
-    
-    local playerLabel = AceGUI:Create("Label")
-    playerLabel:SetText("View history with:")
-    playerLabel:SetWidth(120)
-    playerSelectorGroup:AddChild(playerLabel)
-    
-    local dropdown = AceGUI:Create("Dropdown")
-    dropdown:SetList(playerDropdown)
-    dropdown:SetValue(playerNames[1])
-    dropdown:SetWidth(180)
-    dropdown:SetCallback("OnValueChanged", function(widget, event, key)
-        UI.selectedHistoryPlayer = key
-        self:UpdateHistoryDisplay(key)
-    end)
-    playerSelectorGroup:AddChild(dropdown)
+-- The Forever ledger keeps a reusable row per visible slot, independent of archive size.
+local function hasLedgerHistory(player)
+    return player and ((tonumber(player.gamesPlayed) or 0) > 0 or (tonumber(player.wins) or 0) > 0
+        or (tonumber(player.losses) or 0) > 0 or (tonumber(player.goldWon) or 0) > 0
+        or (tonumber(player.goldLost) or 0) > 0 or #(player.recentGames or {}) > 0)
+end
 
+local function historyText(parent, font)
+    local text = parent:CreateFontString(nil, "OVERLAY", font)
+    text:SetJustifyH("LEFT")
+    text:SetWordWrap(false)
+    return text
+end
+
+local function historyTooltip(row)
+    if not row.tip or not GameTooltip then return end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    GameTooltip:SetText(row.tip)
+    if row.gameId then GameTooltip:AddLine("Click to edit this duel", 0.94, 0.73, 0.45) end
+    GameTooltip:Show()
+end
+
+local function ledgerRow(list, index)
+    local row = CreateFrame("Button", nil, list.frame)
+    row:SetPoint("TOPLEFT", 0, -list.inset - (index - 1) * list.rowHeight)
+    row:SetPoint("TOPRIGHT", 0, -list.inset - (index - 1) * list.rowHeight)
+    row:SetHeight(list.rowHeight)
+    row.tint = row:CreateTexture(nil, "BACKGROUND")
+    row.tint:SetAllPoints()
+    row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    row:SetScript("OnEnter", historyTooltip)
+    row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    row.label = historyText(row, "GameFontHighlightSmall")
+    row.label:SetPoint("LEFT", 6, 0)
+    if list.isRoster then
+        row.label:SetPoint("RIGHT", -4, 0)
+        row:SetScript("OnClick", function() DRE:UpdateHistoryDisplay(row.name) end)
+    else
+        row.label:SetWidth(40)
+        row.when = historyText(row, "GameFontHighlightSmall")
+        row.when:SetPoint("LEFT", 50, 0)
+        row.when:SetPoint("RIGHT", -107, 0)
+        row.amount = historyText(row, "GameFontHighlightSmall")
+        row.amount:SetPoint("RIGHT", -6, 0)
+        row:SetScript("OnClick", function() if row.gameId then DRE:ShowEditGameDialog(row.gameId) end end)
+    end
+    list.rows[index] = row
+    return row
+end
+
+local function historyPageSize(list)
+    return math.max(1, math.floor((list.frame:GetHeight() - list.inset - 30 - (list.footerExtra or 0)) / list.rowHeight))
+end
+
+local function drawHistoryList(list, entries, selected)
+    local count = #entries
+    local capacity = historyPageSize(list)
+    local lastPage = math.max(1, math.ceil(count / capacity))
+    list.page = math.max(1, math.min(list.page, lastPage))
+    local start = (list.page - 1) * capacity + 1
+    local visible = math.min(capacity, count - start + 1)
+    for i = 1, visible do
+        local row = list.rows[i] or ledgerRow(list, i)
+        local entry = entries[start + i - 1]
+        local active = list.isRoster and entry == selected
+        row.tint:SetColorTexture(0.66, 0.49, 0.28, active and 0.31 or (i % 2 == 1 and 0.09 or 0.025))
+        if list.isRoster then
+            row.name, row.tip = entry, entry
+            row.label:SetText(entry)
+        else
+            local result = entry.result
+            local won = result == "Won" or result == "WIN"
+            local lost = result == "Lost" or result == "LOSS"
+            local outcome = won and "Won" or lost and "Lost" or "Unknown"
+            local when = entry.date or "Unknown date"
+            local amount = DRE:FormatGold(tonumber(entry.goldAmount) or 0)
+            row.gameId = entry.id
+            row.label:SetText((won and "|cff9bce9c" or lost and "|cffe49a92" or "|cffb8b0b8") .. outcome .. "|r")
+            row.when:SetText(when)
+            row.amount:SetText(amount)
+            row.tip = selected .. "\n" .. when .. "   " .. outcome .. "\nRecorded wager: " .. amount
+            if DRE.db.profile.funStats.showLikelyCheater and (tonumber(entry.suspiciousRollCount) or 0) > 0 then
+                row.tip = row.tip .. "\nWrong-range rolls: " .. entry.suspiciousRollCount
+            end
+        end
+        row:Show()
+        if GameTooltip and GameTooltip:IsOwned(row) then historyTooltip(row) end
+    end
+    for i = visible + 1, #list.rows do list.rows[i]:Hide() end
+    list.range:SetText(count > 0 and string.format("%d–%d / %d", start, start + visible - 1, count) or "")
+    list.prev:SetEnabled(list.page > 1)
+    list.next:SetEnabled(list.page < lastPage)
+end
+
+local function ledgerList(parent, isRoster, redraw)
+    local frame = CreateFrame("Frame", nil, parent)
+    local list = {frame = frame, rows = {}, page = 1, isRoster = isRoster,
+        inset = isRoster and 52 or 84, rowHeight = isRoster and 25 or 24}
+    list.range = historyText(frame, "GameFontDisableSmall")
+    list.range:SetPoint("BOTTOM", 0, 9)
+    for _, direction in ipairs({-1, 1}) do
+        local side = direction == -1 and "LEFT" or "RIGHT"
+        local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        btn:SetSize(23, 21)
+        btn:SetPoint("BOTTOM" .. side, 0, 3)
+        btn:SetText(direction == -1 and "<" or ">")
+        btn:SetScript("OnClick", function() list.page = list.page + direction; redraw() end)
+        list[direction == -1 and "prev" or "next"] = btn
+    end
+    frame:EnableMouseWheel(true)
+    frame:SetScript("OnMouseWheel", function(_, delta)
+        list.page = list.page + (delta > 0 and -1 or 1)
+        redraw()
+    end)
+    return list
+end
+
+local function historyLedger()
+    local frame = CreateFrame("Frame", nil, UIParent)
+    -- AceGUI manages the broadcast controls in the footer. The two lists have independent pages.
+    local footer = CreateFrame("Frame", nil, frame)
+    footer:SetPoint("BOTTOMLEFT", 0, 0)
+    footer:SetPoint("BOTTOMRIGHT", 0, 0)
+    footer:SetHeight(35)
+    local pane = {type = "DREHistoryLedger", frame = frame, content = footer}
+    local function redraw() if pane.names then pane:Draw() end end
+    local roster = ledgerList(frame, true, redraw)
+    local duels = ledgerList(frame, false, redraw)
+    pane.roster, pane.duels = roster, duels
+    roster.frame:SetPoint("TOPLEFT")
+    roster.frame:SetPoint("BOTTOMLEFT", 0, 41)
+    duels.frame:SetPoint("TOPLEFT", roster.frame, "TOPRIGHT", 14, 0)
+    duels.frame:SetPoint("BOTTOMRIGHT", 0, 41)
+    local rule = frame:CreateTexture(nil, "ARTWORK")
+    rule:SetPoint("TOPLEFT", roster.frame, "TOPRIGHT", 6, 0)
+    rule:SetPoint("BOTTOMLEFT", roster.frame, "BOTTOMRIGHT", 6, 0)
+    rule:SetWidth(1)
+    rule:SetColorTexture(0.48, 0.36, 0.27, 0.7)
+    local searchLabel = historyText(roster.frame, "GameFontNormalSmall")
+    searchLabel:SetPoint("TOPLEFT", 4, -3)
+    searchLabel:SetText("Find opponent")
+    local search = CreateFrame("EditBox", nil, roster.frame, "InputBoxTemplate")
+    search:SetAutoFocus(false)
+    search:SetHeight(26)
+    search:SetPoint("TOPLEFT", 8, -20)
+    search:SetPoint("TOPRIGHT", -4, -20)
+    search:SetScript("OnEscapePressed", function()
+        search:SetText("")
+        roster.page = 1
+        pane:Filter(pane.selected, true)
+        search:ClearFocus()
+    end)
+    search:SetScript("OnEnterPressed", function() search:ClearFocus() end)
+    search:SetScript("OnTextChanged", function(_, userInput)
+        if userInput then roster.page = 1; pane:Filter(pane.selected) end
+    end)
+    pane.search = search
+    local badge = CreateFrame("Frame", nil, duels.frame)
+    badge:SetSize(34, 34)
+    badge:SetPoint("TOPLEFT", 3, -3)
+    local portrait = badge:CreateTexture(nil, "ARTWORK")
+    portrait:SetAllPoints()
+    local function updatePortrait()
+        portrait:SetTexture("Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo")
+        if not pane.selected or not SetPortraitTexture then return end
+        for _, unit in ipairs({"player", "target"}) do
+            local isPlayer = UnitIsPlayer(unit)
+            if DRE:IsAccessibleValue(isPlayer) and isPlayer and DRE:IsSamePlayer(DRE:GetUnitPlayerName(unit), pane.selected) then
+                pcall(SetPortraitTexture, portrait, unit)
+                return
+            end
+        end
+    end
+    badge:SetScript("OnShow", function()
+        badge:RegisterEvent("PLAYER_TARGET_CHANGED")
+        badge:RegisterUnitEvent("UNIT_PORTRAIT_UPDATE", "target", "player")
+        updatePortrait()
+    end)
+    badge:SetScript("OnHide", function() badge:UnregisterAllEvents() end)
+    badge:SetScript("OnEvent", updatePortrait)
+    badge:Hide()
+    local name = historyText(duels.frame, "GameFontNormalLarge")
+    name:SetPoint("TOPLEFT", 44, -2)
+    name:SetPoint("TOPRIGHT", -3, -2)
+    local totals = historyText(duels.frame, "GameFontHighlightSmall")
+    totals:SetPoint("TOPLEFT", 45, -24)
+    local gold = historyText(duels.frame, "GameFontHighlightSmall")
+    gold:SetPoint("TOPLEFT", 4, -43)
+    gold:SetPoint("TOPRIGHT", -2, -43)
+    local headers = {}
+    for _, column in ipairs({{"Result", 6}, {"Date", 50}, {"Recorded wager", -6}}) do
+        local header = historyText(duels.frame, "GameFontNormalSmall")
+        header:SetPoint(column[2] < 0 and "TOPRIGHT" or "TOPLEFT", column[2], -67)
+        header:SetText(column[1])
+        table.insert(headers, header)
+    end
+    local empty = historyText(duels.frame, "GameFontHighlight")
+    empty:SetPoint("TOPLEFT", 4, -89)
+    empty:SetPoint("TOPRIGHT", -4, -89)
+    empty:SetWordWrap(true)
+    pane.title, pane.totals, pane.gold, pane.empty = name, totals, gold, empty
+    pane.wrongRanges = historyText(duels.frame, "GameFontHighlightSmall")
+    pane.wrongRanges:SetPoint("BOTTOMLEFT", 4, 29)
+    function pane:GetValue() return self.selected end
+    function pane:Draw()
+        local player = self.selected and DRE.db.profile.history[self.selected]
+        local games = player and player.recentGames or {}
+        local counts = DRE.db.profile.suspiciousRolls
+        local entry = counts and counts[self.selected]
+        local wrong = DRE.db.profile.funStats.showLikelyCheater and tonumber(entry and entry.count) or 0
+        pane.wrongRanges:SetText(wrong > 0 and ("Wrong-range rolls: " .. wrong) or "")
+        duels.footerExtra = wrong > 0 and 18 or 0
+        name:SetText(self.selected or "Duel history")
+        for _, header in ipairs(headers) do header:SetShown(#games > 0) end
+        local message
+        if hasLedgerHistory(player) then
+            local wins, losses = tonumber(player.wins) or 0, tonumber(player.losses) or 0
+            local summary = string.format("%d wins   %d losses", wins, losses)
+            if wins + losses > 0 then
+                summary = summary .. string.format("   ·   %.0f%% wins", 100 * wins / (wins + losses))
+            end
+            totals:SetText(summary)
+            gold:SetText("Recorded  ·  Won " .. DRE:FormatGold(tonumber(player.goldWon) or 0)
+                .. "   Lost " .. DRE:FormatGold(tonumber(player.goldLost) or 0))
+            if #games == 0 then message = "Only lifetime totals were saved for this opponent." end
+        else
+            totals:SetText("")
+            gold:SetText("")
+            message = wrong > 0 and "No completed duels with this opponent."
+                or (#self.names == 0 and "Your first recorded duel will appear here." or "No opponents match your search.")
+        end
+        empty:SetText(message or "")
+        drawHistoryList(roster, self.matches, self.selected)
+        drawHistoryList(duels, games, self.selected)
+        if self.send then self.send:SetDisabled(not hasLedgerHistory(player)) end
+    end
+    function pane:Select(playerName)
+        local changed = self.selected ~= playerName
+        if changed then duels.page = 1 end
+        self.selected, UI.selectedHistoryPlayer = playerName, playerName
+        if changed then updatePortrait() end
+        self:Draw()
+    end
+    function pane:Filter(preferred, reveal)
+        local lower = strlower or string.lower
+        local query = lower(DRE:Trim(search:GetText() or ""))
+        local selectedIndex
+        self.matches = {}
+        for _, fullName in ipairs(self.names) do
+            if lower(fullName):find(query, 1, true) then
+                table.insert(self.matches, fullName)
+                if fullName == preferred then selectedIndex = #self.matches end
+            end
+        end
+        if reveal and selectedIndex then roster.page = math.ceil(selectedIndex / historyPageSize(roster)) end
+        self:Select(selectedIndex and preferred or self.matches[1])
+    end
+    function pane:Refresh(preferred)
+        self.names = {}
+        for fullName, player in pairs(DRE.db.profile.history or {}) do
+            if hasLedgerHistory(player) then
+                table.insert(self.names, fullName)
+            end
+        end
+        if DRE.db.profile.funStats.showLikelyCheater then
+            for fullName, entry in pairs(DRE.db.profile.suspiciousRolls or {}) do
+                if (tonumber(entry.count) or 0) > 0 and not hasLedgerHistory(DRE.db.profile.history[fullName]) then
+                    table.insert(self.names, fullName)
+                end
+            end
+        end
+        table.sort(self.names)
+        local reveal = preferred ~= self.selected
+        if reveal then search:SetText("") end
+        self:Filter(preferred, reveal)
+    end
+    function pane:OnWidthSet(width)
+        roster.frame:SetWidth(math.min(235, math.max(135, math.floor(width * 0.30))))
+    end
+    function pane:OnAcquire()
+        self:SetFullWidth(true)
+        self:SetFullHeight(true)
+        roster.page, duels.page = 1, 1
+        search:SetText("")
+        self:OnWidthSet(frame:GetWidth())
+        badge:Show()
+    end
+    function pane:OnRelease()
+        search:ClearFocus()
+        self.names, self.matches, self.selected, self.send = nil, nil, nil, nil
+    end
+    duels.frame:SetScript("OnSizeChanged", redraw)
+    return AceGUI:RegisterAsContainer(pane)
+end
+
+if DRE.devDuel then AceGUI:RegisterWidgetType("DREHistoryLedger", historyLedger, 1) end
+
+local function addHistoryBroadcastControls(self, historyControlsGroup)
     local broadcastControlsGroup = AceGUI:Create("SimpleGroup")
     broadcastControlsGroup:SetFullWidth(true)
     broadcastControlsGroup:SetLayout("Flow")
@@ -1214,7 +1863,7 @@ function DRE:CreateHistorySection(container)
     channelLabel:SetWidth(120)
     broadcastControlsGroup:AddChild(channelLabel)
 
-    local channelDropdown = AceGUI:Create("Dropdown")
+    local channelDropdown = self:CreateWindowWidget("Dropdown")
     channelDropdown:SetList({
         party = "Party",
         raid = "Raid",
@@ -1239,7 +1888,7 @@ function DRE:CreateHistorySection(container)
     channelDropdown:SetValue(defaultChannel)
     broadcastControlsGroup:AddChild(channelDropdown)
 
-    local sendStatsButton = AceGUI:Create("Button")
+    local sendStatsButton = DRE:CreateWindowWidget("Button")
     sendStatsButton:SetText("Send Stats")
     sendStatsButton:SetWidth(120)
     sendStatsButton:SetCallback("OnClick", function()
@@ -1266,9 +1915,82 @@ function DRE:CreateHistorySection(container)
         end
     end)
     broadcastControlsGroup:AddChild(sendStatsButton)
+    UI.statsBroadcastChannelDropdown = channelDropdown
+    return sendStatsButton
+end
+
+-- Create history section
+function DRE:CreateHistorySection(container)
+    if self.devDuel then
+        local pane = AceGUI:Create("DREHistoryLedger")
+        pane:SetLayout("Fill")
+        container:AddChild(pane)
+        UI.historyDropdown = pane
+        pane.send = addHistoryBroadcastControls(self, pane)
+        pane:Refresh(UI.selectedHistoryPlayer)
+        return
+    end
+    local historyGroup = AceGUI:Create("SimpleGroup")
+    historyGroup:SetFullWidth(true)
+    historyGroup:SetFullHeight(true)
+    historyGroup:SetLayout("List")
+    container:AddChild(historyGroup)
+
+    local historyControlsGroup = AceGUI:Create("SimpleGroup")
+    historyControlsGroup:SetFullWidth(true)
+    historyControlsGroup:SetLayout("Flow")
+    historyGroup:AddChild(historyControlsGroup)
+
+    -- Header
+    if not self.devDuel then
+        local header = AceGUI:Create("Heading")
+        header:SetText("Game History")
+        header:SetFullWidth(true)
+        historyControlsGroup:AddChild(header)
+    end
+
+    if not self.db or not self.db.profile.history then
+        local noDataLabel = AceGUI:Create("Label")
+        noDataLabel:SetText("No game history yet. Start playing DeathRoll games to see your history here!")
+        noDataLabel:SetFullWidth(true)
+        historyControlsGroup:AddChild(noDataLabel)
+        return
+    end
+
+    -- Create dropdown with all players
+    local playerNames = {}
+    local playerDropdown = {}
+    for playerName, _ in pairs(self.db.profile.history) do
+        table.insert(playerNames, playerName)
+        playerDropdown[playerName] = playerName
+    end
+    table.sort(playerNames)
+
+    -- Player selector section
+    local playerSelectorGroup = AceGUI:Create("SimpleGroup")
+    playerSelectorGroup:SetFullWidth(true)
+    playerSelectorGroup:SetLayout("Flow")
+    historyControlsGroup:AddChild(playerSelectorGroup)
+
+    local playerLabel = AceGUI:Create("Label")
+    playerLabel:SetText("View history with:")
+    playerLabel:SetWidth(120)
+    playerSelectorGroup:AddChild(playerLabel)
+
+    local dropdown = self:CreateWindowWidget("Dropdown")
+    dropdown:SetList(playerDropdown)
+    dropdown:SetValue(playerNames[1])
+    dropdown:SetWidth(180)
+    dropdown:SetCallback("OnValueChanged", function(widget, event, key)
+        UI.selectedHistoryPlayer = key
+        self:UpdateHistoryDisplay(key)
+    end)
+    playerSelectorGroup:AddChild(dropdown)
+
+    addHistoryBroadcastControls(self, historyControlsGroup)
     
     -- History display area - with explicit height for proper scrolling
-    local historyDisplayGroup = AceGUI:Create("InlineGroup")
+    local historyDisplayGroup = DRE:CreateWindowWidget("InlineGroup")
     historyDisplayGroup:SetTitle("Statistics & Recent Games")
     historyDisplayGroup:SetFullWidth(true)
     historyDisplayGroup:SetHeight(200)
@@ -1305,7 +2027,6 @@ function DRE:CreateHistorySection(container)
     UI.historyBox = historyLabel
     UI.historyScroll = historyScroll
     UI.historyDropdown = dropdown
-    UI.statsBroadcastChannelDropdown = channelDropdown
     UI.selectedHistoryPlayer = playerNames[1]
     
     -- Show first player's history by default
@@ -1387,19 +2108,21 @@ function DRE:CreateSettingsSection(container)
     settingsGroup:SetLayout("Flow")
     settingsScroll:AddChild(settingsGroup)
 
-    local header = AceGUI:Create("Heading")
-    header:SetText("Settings")
-    header:SetFullWidth(true)
-    settingsGroup:AddChild(header)
+    if not self.devDuel then
+        local header = AceGUI:Create("Heading")
+        header:SetText("Settings")
+        header:SetFullWidth(true)
+        settingsGroup:AddChild(header)
 
-    local description = AceGUI:Create("Label")
-    description:SetText("These settings mirror the main addon configuration and apply immediately.")
-    description:SetFullWidth(true)
-    description:SetColor(0.8, 0.8, 0.8)
-    settingsGroup:AddChild(description)
+        local description = AceGUI:Create("Label")
+        description:SetText("These settings mirror the main addon configuration and apply immediately.")
+        description:SetFullWidth(true)
+        description:SetColor(0.8, 0.8, 0.8)
+        settingsGroup:AddChild(description)
+    end
 
     local function addSection(title)
-        local group = AceGUI:Create("InlineGroup")
+        local group = DRE:CreateWindowWidget("InlineGroup")
         group:SetTitle(title)
         group:SetFullWidth(true)
         group:SetLayout("Flow")
@@ -1408,7 +2131,7 @@ function DRE:CreateSettingsSection(container)
     end
 
     local function addToggle(parent, label, value, onChange)
-        local checkbox = AceGUI:Create("CheckBox")
+        local checkbox = DRE:CreateWindowWidget("CheckBox")
         checkbox:SetLabel(label)
         checkbox:SetFullWidth(true)
         checkbox:SetValue(value)
@@ -1419,21 +2142,8 @@ function DRE:CreateSettingsSection(container)
         return checkbox
     end
 
-    local function addSlider(parent, label, minValue, maxValue, step, value, onChange)
-        local slider = AceGUI:Create("Slider")
-        slider:SetLabel(label)
-        slider:SetFullWidth(true)
-        slider:SetSliderValues(minValue, maxValue, step)
-        slider:SetValue(value)
-        slider:SetCallback("OnValueChanged", function(_, _, newValue)
-            onChange(newValue)
-        end)
-        parent:AddChild(slider)
-        return slider
-    end
-
     local function addButton(parent, text, onClick)
-        local button = AceGUI:Create("Button")
+        local button = DRE:CreateWindowWidget("Button")
         button:SetText(text)
         button:SetFullWidth(true)
         button:SetCallback("OnClick", function()
@@ -1443,11 +2153,24 @@ function DRE:CreateSettingsSection(container)
         return button
     end
 
+    local function addRollField(parent, label, get, set)
+        local field = AceGUI:Create("EditBox")
+        field:SetLabel(label .. " (2–999,999)")
+        field:SetFullWidth(true)
+        field:SetText(tostring(get()))
+        field:SetCallback("OnEnterPressed", function(widget, _, text)
+            local value, reason = self:ParseRollSetting(text)
+            if value then set(value) else self:Print(reason) end
+            widget:SetText(tostring(get()))
+        end)
+        parent:AddChild(field)
+    end
+
     local gameplayGroup = addSection("Gameplay")
     addToggle(gameplayGroup, "Auto Emote", self.db.profile.gameplay.autoEmote, function(value)
         self.db.profile.gameplay.autoEmote = value
     end)
-    addToggle(gameplayGroup, "Sound Effects", self.db.profile.gameplay.soundEnabled, function(value)
+    addToggle(gameplayGroup, "Play Sound on Your Turn", self.db.profile.gameplay.soundEnabled, function(value)
         self.db.profile.gameplay.soundEnabled = value
     end)
     addToggle(gameplayGroup, "Chat Messages", self.db.profile.gameplay.chatMessages, function(value)
@@ -1457,28 +2180,63 @@ function DRE:CreateSettingsSection(container)
         self.db.profile.gameplay.debugMessages = value
     end)
 
+    addRollField(gameplayGroup, "Default Starting Roll", function() return self:GetDefaultStartingRoll() end,
+        function(value) self:SetDefaultStartingRoll(value) end)
+
     local challengeGroup = addSection("Challenge System")
     addToggle(challengeGroup, "Enable Challenge Popups", self.db.profile.challengeSystem.enabled, function(value)
         self.db.profile.challengeSystem.enabled = value
     end)
-    addToggle(challengeGroup, "Send Challenge Whispers", self.db.profile.challengeSystem.sendWhisper, function(value)
+    addToggle(challengeGroup, self.devDuel and "Send Challenge Invites" or "Send Challenge Whispers", self.db.profile.challengeSystem.sendWhisper, function(value)
         self.db.profile.challengeSystem.sendWhisper = value
     end)
     addToggle(challengeGroup, "Track Wager From Completed Trade", self.db.profile.challengeSystem.trackWagerByTrade, function(value)
-        self.db.profile.challengeSystem.trackWagerByTrade = value
+        self:SetTradeWagerModeEnabled(value)
     end)
-    addSlider(challengeGroup, "Minimum Roll for Popups", 2, 10000, 1, self.db.profile.challengeSystem.minRollThreshold, function(value)
-        self.db.profile.challengeSystem.minRollThreshold = math.floor(value)
-    end)
+    addRollField(challengeGroup, "Minimum Roll for Popups",
+        function() return self.db.profile.challengeSystem.minRollThreshold end,
+        function(value) self.db.profile.challengeSystem.minRollThreshold = value end)
+    if self.devDuel then
+        addButton(challengeGroup, "Test Challenge Popup", function() self:PreviewChallengePopup() end)
+    end
 
     local interfaceGroup = addSection("Interface")
-    addSlider(interfaceGroup, "UI Scale", 0.6, 2.2, 0.1, (self.db.profile.ui.scale or 0.9) + 0.1, function(value)
-        self.db.profile.ui.scale = value - 0.1
+    if self.devDuel then
+        local appearance = self:CreateWindowWidget("Dropdown")
+        appearance:SetLabel("Group appearance")
+        appearance:SetFullWidth(true)
+        appearance:SetList(self.groupAppearances, self.groupAppearanceOrder)
+        appearance:SetValue(self:GetGroupAppearance())
+        appearance:SetCallback("OnValueChanged", function(_, _, value) self:SetGroupAppearance(value) end)
+        interfaceGroup:AddChild(appearance)
+    end
+    local scaleSlider = AceGUI:Create("Slider")
+    scaleSlider:SetLabel("UI Scale")
+    scaleSlider:SetFullWidth(true)
+    scaleSlider:SetSliderValues(0.6, 2.2, 0.1)
+    scaleSlider:SetValue((self.db.profile.ui.scale or 0.9) + 0.1)
+    local function applyScale(widget)
+        local scale = self:CusRound(widget:GetValue() - 0.1, 1)
+        if math.abs(scale - (self.db.profile.ui.scale or 0.9)) < 0.00001 then return end
+        self.db.profile.ui.scale = scale
         self:UpdateUIScale()
+    end
+    scaleSlider:SetCallback("OnValueChanged", function(widget)
+        -- A wheel step has no mouse-up event. Let the thumb move freely during a drag.
+        if IsMouseButtonDown and not IsMouseButtonDown("LeftButton") then applyScale(widget) end
     end)
+    scaleSlider:SetCallback("OnMouseUp", function(widget)
+        -- Enter also fires this callback, with raw text as a number. Use the snapped value.
+        widget:SetValue(widget:GetValue())
+        applyScale(widget)
+    end)
+    interfaceGroup:AddChild(scaleSlider)
     addToggle(interfaceGroup, "Hide Minimap Icon", self.db.profile.minimap.hide, function(value)
         self.db.profile.minimap.hide = value
         self:ToggleMinimapIcon()
+    end)
+    addToggle(interfaceGroup, "Lock Minimap Icon", self.db.profile.minimap.lock, function(value)
+        self:SetMinimapLocked(value)
     end)
     addButton(interfaceGroup, "Reset Window Position", function()
         self:ResetWindowPosition()
@@ -1488,10 +2246,6 @@ function DRE:CreateSettingsSection(container)
         self:ResetWindowSize()
         self:UpdateMainTabLayout()
     end)
-    addButton(interfaceGroup, "Open Blizzard Config", function()
-        self:OpenOptions()
-    end)
-
     local dataGroup = addSection("Data Management")
     addButton(dataGroup, "Show Statistics In Chat", function()
         local stats = self:GetOverallStats()
@@ -1516,7 +2270,7 @@ function DRE:CreateSettingsSection(container)
     end)
     addButton(dataGroup, "Export Data", function()
         local exportString = self:ExportData()
-        local frame = AceGUI:Create("Frame")
+        local frame = DRE:CreateWindowWidget("Frame")
         self:ReleaseWindowOnClose(frame)
         frame:SetTitle("Export Data")
         frame:SetLayout("Fill")
@@ -1539,48 +2293,23 @@ function DRE:CreateSettingsSection(container)
         DRE:ShowDialog("DEATHROLL_RESET_CONFIRM")
     end)
 
-    local funStatSections = {
-        {
-            title = "Fun Statistics: Player Relationships",
-            items = {
-                {key = "showMostPlayedWith", label = "Most Played With"},
-                {key = "showMostWinsAgainst", label = "Most Wins Against"},
-                {key = "showMostLossesAgainst", label = "Most Losses Against"},
-                {key = "showNemesis", label = "Your Nemesis"},
-                {key = "showVictim", label = "Your Victim"},
-                {key = "showFrenemy", label = "Frenemy"},
-                {key = "showLikelyCheater", label = "Most Likely to Cheat"},
-            },
-        },
-        {
-            title = "Fun Statistics: Gold and Money",
-            items = {
-                {key = "showMostMoneyWonFrom", label = "Biggest Gold Mine"},
-                {key = "showMostMoneyLostTo", label = "Biggest Money Sink"},
-                {key = "showBestMatchup", label = "Best Matchup"},
-                {key = "showWorstMatchup", label = "Worst Matchup"},
-                {key = "showBiggestWin", label = "Biggest Single Win"},
-                {key = "showBiggestLoss", label = "Biggest Single Loss"},
-                {key = "showHighRoller", label = "High Roller"},
-                {key = "showCheapskate", label = "Cheapskate"},
-            },
-        },
-        {
-            title = "Fun Statistics: Luck and Streaks",
-            items = {
-                {key = "showLuckyPlayer", label = "Lucky Player"},
-                {key = "showUnluckyPlayer", label = "Unlucky Player"},
-                {key = "showDaredevil", label = "Daredevil Opponent"},
-                {key = "showConservative", label = "Conservative Opponent"},
-            },
-        },
-    }
-
-    for _, section in ipairs(funStatSections) do
-        local group = addSection(section.title)
-        for _, item in ipairs(section.items) do
-            addToggle(group, item.label, self.db.profile.funStats[item.key], function(value)
-                self.db.profile.funStats[item.key] = value
+    for _, section in ipairs(getFunStatSections(self.devDuel)) do
+        local group = addSection((self.devDuel and "1v1 · " or "Fun Statistics: ") .. section.title)
+        for _, item in ipairs(section.stats) do
+            addToggle(group, item.label, self.db.profile.funStats[item.setting], function(value)
+                self:SetStatPreference(item.setting, value)
+            end)
+        end
+    end
+    if self.devDuel then
+        local history = addSection("Opponent History")
+        addToggle(history, "Wrong-range Rolls", self.db.profile.funStats.showLikelyCheater, function(value)
+            self:SetStatPreference("showLikelyCheater", value)
+        end)
+        local group = addSection("Group Statistics")
+        for _, option in ipairs(self.groupStatOptions) do
+            addToggle(group, option.label, self.db.profile.funStats[option.key] ~= false, function(value)
+                self:SetStatPreference(option.key, value)
             end)
         end
     end
@@ -1655,13 +2384,22 @@ function DRE:ShowHistory(playerName)
     end
     
     local playerData = self.db.profile.history[playerName]
-    if not playerData then
+    if not playerData or (self.devDuel and not hasLedgerHistory(playerData)) then
         self:Print("No history found for " .. playerName)
+        return
+    end
+    if self.devDuel then
+        self:ShowMainWindow("history")
+        local pane = UI.historyDropdown
+        if pane then
+            pane.search:SetText("")
+            pane:Filter(playerName, true)
+        end
         return
     end
     
     -- Create history window
-    local histFrame = AceGUI:Create("Frame")
+    local histFrame = DRE:CreateWindowWidget("Frame")
     self:ReleaseWindowOnClose(histFrame)
     histFrame:SetTitle("History with " .. playerName)
     histFrame:SetLayout("Fill")
@@ -1716,7 +2454,13 @@ function DRE:UpdateStatsDisplay()
         return
     end
 
-    if not self.db or not self.db.profile.goldTracking or not UI.tabGroup then
+    if not UI.tabGroup then return end
+    if self.devDuel then
+        local scroll = UI.tabGroup.children[1]
+        if scroll then scroll:Fire("OnStatsRefresh") end
+        return
+    end
+    if not self.db or not self.db.profile.goldTracking then
         return
     end
 
@@ -1732,6 +2476,10 @@ end
 
 -- Update history display for selected player
 function DRE:UpdateHistoryDisplay(playerName)
+    if self.devDuel then
+        if UI.historyDropdown then UI.historyDropdown:Select(playerName) end
+        return
+    end
     if not UI.historyBox or not self.db or not self.db.profile.history then
         return
     end
@@ -1790,6 +2538,10 @@ function DRE:UpdateHistoryDisplay(playerName)
 end
 
 function DRE:RefreshHistoryDropdown(preferredPlayer)
+    if self.devDuel then
+        if UI.historyDropdown then UI.historyDropdown:Refresh(preferredPlayer) end
+        return
+    end
     if not UI.historyDropdown or not self.db or not self.db.profile or not self.db.profile.history then
         return
     end
@@ -1852,7 +2604,7 @@ function DRE:CreateSpicyDuelSection(container)
     spicyGroup:AddChild(descLabel)
     
     -- Game state display
-    local gameStateGroup = AceGUI:Create("InlineGroup")
+    local gameStateGroup = DRE:CreateWindowWidget("InlineGroup")
     gameStateGroup:SetTitle("Game Status")
     gameStateGroup:SetFullWidth(true)
     gameStateGroup:SetLayout("Flow")
@@ -1864,13 +2616,13 @@ function DRE:CreateSpicyDuelSection(container)
     gameStateGroup:AddChild(gameStateLabel)
     
     -- Stance selection
-    local stanceGroup = AceGUI:Create("InlineGroup")
+    local stanceGroup = DRE:CreateWindowWidget("InlineGroup")
     stanceGroup:SetTitle("Choose Your Stance")
     stanceGroup:SetFullWidth(true)
     stanceGroup:SetLayout("Flow")
     spicyGroup:AddChild(stanceGroup)
     
-    local stanceDropdown = AceGUI:Create("Dropdown")
+    local stanceDropdown = self:CreateWindowWidget("Dropdown")
     stanceDropdown:SetList({
         ["attack"] = "Attack (Straightforward strike)",
         ["defend"] = "Defend (Shield and parry)",
@@ -1880,7 +2632,7 @@ function DRE:CreateSpicyDuelSection(container)
     stanceDropdown:SetWidth(200)
     stanceGroup:AddChild(stanceDropdown)
     
-    local rollButton = AceGUI:Create("Button")
+    local rollButton = DRE:CreateWindowWidget("Button")
     rollButton:SetText("Roll & Reveal!")
     rollButton:SetWidth(120)
     rollButton:SetCallback("OnClick", function()
@@ -1889,13 +2641,13 @@ function DRE:CreateSpicyDuelSection(container)
     stanceGroup:AddChild(rollButton)
     
     -- Challenge section
-    local challengeGroup = AceGUI:Create("InlineGroup")
+    local challengeGroup = DRE:CreateWindowWidget("InlineGroup")
     challengeGroup:SetTitle("Challenge Someone")
     challengeGroup:SetFullWidth(true)
     challengeGroup:SetLayout("Flow")
     spicyGroup:AddChild(challengeGroup)
     
-    local challengeButton = AceGUI:Create("Button")
+    local challengeButton = DRE:CreateWindowWidget("Button")
     challengeButton:SetText("Challenge Target to Spicy Duel")
     challengeButton:SetFullWidth(true)
     challengeButton:SetCallback("OnClick", function()
@@ -1909,7 +2661,7 @@ function DRE:CreateSpicyDuelSection(container)
     challengeGroup:AddChild(challengeButton)
     
     -- Rules section
-    local rulesGroup = AceGUI:Create("InlineGroup")
+    local rulesGroup = DRE:CreateWindowWidget("InlineGroup")
     rulesGroup:SetTitle("Quick Rules")
     rulesGroup:SetFullWidth(true)
     rulesGroup:SetLayout("Fill")
@@ -1937,6 +2689,22 @@ Attack = consistent pressure | Defend = blocks & counters | Gamble = swingy chao
 end
 
 -- Calculate wager from UI input fields
+function DRE:SetTradeWagerModeEnabled(enabled)
+    enabled = enabled == true
+    if self:IsTradeWagerModeEnabled() == enabled then return end
+    local setup = UI.currentTab == "deathroll" and UI.rollEdit and not self:HasActiveGame() and not self.acceptedChallenge
+    local draft = setup and UI.goldEdit and self:CalculateWagerFromUI()
+    if setup then UI.inputRoll = tonumber(UI.rollEdit:GetText()) end
+    if draft then UI.inputWager = draft end
+    self.db.profile.challengeSystem.trackWagerByTrade = enabled
+    if self.devDuel then
+        self:RefreshDuel()
+    elseif setup and UI.tabGroup then
+        self:SelectMainSection("deathroll")
+        if draft then self:SetWagerInputs(draft) end
+    end
+end
+
 function DRE:UpdateWagerInputMode()
     local isTradeMode = self:IsTradeWagerModeEnabled()
 
@@ -1984,21 +2752,39 @@ function DRE:HandleGameButtonClick()
 end
 
 function DRE:AcceptObservedChallenge(observed)
-    if self:HasActiveGame() then return false end
-    local target = self:GetUnitPlayerName("target")
+    if self:HasActiveGame() or (self.devDuel and self.pendingChallenge) then return false end
+    local accepted = self.devDuel and self.acceptedChallenge
+    local target = accepted and accepted.sender or self:GetUnitPlayerName("target")
     if not observed or not self:IsSamePlayer(observed.playerName, target)
+        or (accepted and observed ~= accepted.opener)
         or not observed.timestamp or GetTime() - observed.timestamp > (self.recentRollTimeWindow or 60) then
         UI.recentTargetRoll, UI.incomingChallenge = nil, nil
         self:UpdateChallengeButtonText()
         self:Print("That roll is no longer a current challenge. Ask your target to roll again.")
         return false
     end
+    local trackTrade = self:IsTradeWagerModeEnabled()
     local wager = self:CalculateWagerFromUI()
+    if accepted then
+        trackTrade = accepted.trackTrade
+        wager = trackTrade and 0 or accepted.wager
+    end
     local valid, reason = self:ValidateGameInputs(target, observed.maxRoll, wager)
     if not valid then self:Print(reason); return false end
     if not self:IsBoundedInteger(observed.roll, 1, observed.maxRoll) then return false end
-    local trackTrade = self:IsTradeWagerModeEnabled()
-    if not self:StartActualGame(target, observed.maxRoll, wager, observed.roll, trackTrade) then return false end
+    if accepted and accepted.double and not self:MatchesDoubleOffer(accepted, target, "Won") then
+        self.acceptedChallenge = nil
+        self:ClearRecentRollsForPlayer(target)
+        self:RefreshDuel()
+        return false
+    end
+    if accepted and accepted.mode and accepted.mode ~= "classic" then
+        if not self:StartActualGame(target, observed.maxRoll, wager, nil, trackTrade, accepted) then return false end
+        self:HandleGameRoll(target, observed.roll, observed.maxRoll)
+        if self.gameState and self.gameState.playerTurn then self:PerformRoll() end
+        return true
+    end
+    if not self:StartActualGame(target, observed.maxRoll, wager, observed.roll, trackTrade, accepted or nil) then return false end
     self:AddRollToHistory(target, observed.roll, observed.maxRoll, false, nil)
     if observed.roll == 1 then
         self:HandleGameEnd(target, "WIN", wager, observed.maxRoll)
@@ -2009,6 +2795,7 @@ function DRE:AcceptObservedChallenge(observed)
 end
 
 function DRE:AcceptIncomingChallenge()
+    if self.devDuel and self.acceptedChallenge then return self:AcceptObservedChallenge(self.acceptedChallenge.opener) end
     local challenge = UI.incomingChallenge
     if not challenge then return false end
     return self:AcceptObservedChallenge({ playerName = challenge.player, roll = challenge.roll,
@@ -2027,7 +2814,7 @@ end
 
 -- Start the challenge flow
 function DRE:StartChallengeFlow()
-    if self:HasActiveGame() or self.disabled then return false end
+    if self:HasActiveGame() or self.disabled or (self.devDuel and self.pendingChallenge) then return false end
     local target = DRE:GetUnitPlayerName("target")
     if not target then
         self:Print("Please target a player whose name is available to the addon.")
@@ -2084,7 +2871,12 @@ function DRE:StartChallengeFlow()
         valid, reason = self:ValidateWager(gold, silver, copper)
         if not valid then self:Print(reason); return end
     end
-    if self:StartDeathRoll(target, roll, totalWager, usingTradeWager)
+    local terms = self.devDuel and {mode = UI.duelMode or "classic"} or nil
+    if self.devDuel and (self.db.profile.challengeSystem.sendWhisper or terms.mode ~= "classic")
+        and not self:IsSamePlayer(target, self:GetUnitPlayerName("player")) then
+        return self:InviteToDuel(target, roll, totalWager, usingTradeWager, terms)
+    end
+    if self:StartDeathRoll(target, roll, totalWager, usingTradeWager, terms)
         and not self:IsSamePlayer(target, self:GetUnitPlayerName("player")) then
         self:SendChallengeWhisper(target, roll, totalWager)
     end

@@ -5,6 +5,18 @@ manual-changelog:
 license-output: LICENSE.txt
 
 ignore:
+  - Media/DuelHeart.tga
+  - Media/DuelTable.tga
+  - Media/GoldTable.tga
+  - Media/GoldTableGlints.tga
+  - Media/GroupFeltTable.tga
+  - Media/GroupSeatRim.tga
+  - Media/GroupPortraitCorners.tga
+  - Media/GroupTurnGlow.tga
+  - Media/GroupBrassHand.tga
+  - Media/GroupGoblinArm.tga
+  - Media/GroupGoldCoin.tga
+  - artwork
   - .claude
   - .vscode
   - versions

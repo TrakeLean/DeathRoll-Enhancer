@@ -70,7 +70,16 @@ Legacy rows without reliable chronology are preserved. Their relative cross-play
 3. Switch tabs and close/reopen the window mid-round. Verify the correct turn/range and disabled roster controls. Test host roll failure/timeout, then cancel and restart. Restart must display and use the original roster/order/range even after editing the next-round draft.
 4. With Say selected, each accepted roll must update the local turn/result without sending chat automatically. Click Announce (or `/dr group announce`) to send that latest state. Repeat with Party/Raid/Instance and verify automatic announcements. Leave chat range/group or trigger chat restrictions. The local round must remain usable with a visible announcement error where the client reports one; retry with Announce. Say delivery and actual roll visibility still depend on range. Party selection must not silently send to Raid/Instance. Cancel if a participant disconnects or leaves; do not skip them or declare a result automatically.
 5. Start with an earlier unpaid 1v1 game involving a participant. Finish the group round and trade its payout: the old record must remain unchanged, with instructions to assign any earlier payment through `/dr edit`. Check this again after reload. Trades for unrelated pending opponents should still settle normally. Settle group payouts before starting new trade-tracked 1v1 games: the trade API cannot distinguish a delayed group payout from a new 1v1 payment.
-6. Verify at narrow/normal window sizes and with the controller. Disable/reload during a round: no result is recorded, and the host must start a fresh round. The group log is deliberately session-only.
+6. Verify at narrow/normal window sizes and with the controller. Disable or reload during a local-only round. No result should be recorded and the host must start a fresh round.
+7. On Forever dev, open **Stats → Group**. Survive a roll from 1 to 2, then cancel. Check that every figure stays the same. Replay and finish the round. Verify the host’s record, the roster including unrolled seats, the longest round, and the host’s close calls after a reload. Toggle each figure in Settings and confirm the 1v1 overview still shows only duels.
+
+### Shared table on two Forever dev clients
+
+1. Stand together with the updated addon on both characters. Click **Host table** on one, add the other character by their full name, then target the host and click **Join target** on the second. Leave **Announce to** at **None**.
+2. Before starting, change the opening roll, add a third seat, choose Teams, switch a portrait's team, and shuffle. Compare both tables, including who rolls first. Only the host should have edit controls.
+3. Start High Roller. Use the guest's roll button on their turn and ordinary rolls on the others. Confirm both tables show the same roll, points, tiebreak players, and winner. Check that only the host records the hosted result and neither character announces it to public chat.
+4. During a second round, reload the guest. Compare the restored turn, lives or points, and latest roll. Reload the host while everyone pauses. Resume with the next player's roll. Have a party member join mid-round and compare their view too.
+5. In setup, remove a guest who is outside the party from the roster. Their view should close. A party member can remain as a spectator after removal. Leaving the table or closing it on the host should return guests to their own Group setup.
 
 ## Forever research sources
 

@@ -34,6 +34,79 @@ class GroupTests(unittest.TestCase):
             assert(#sent==7 and sent[7][1]:find('Bob rolled 1',1,true))
         ''')
 
+    def test_none_is_local_and_picked_channel_survives_a_new_draft(self):
+        self.check(r'''
+            DRE:SlashCommand('group')
+            local w = DRE.UI.groupWidgets
+            assert(w.channel:GetValue() == 'NONE')
+            for _, channel in ipairs({'PARTY', 'NONE'}) do
+                w.channel:Fire('OnValueChanged', channel)
+                assert(DRE.db.profile.ui.groupAnnounceChannel == channel)
+                DRE.groupDraft = nil
+                assert(DRE:GetGroupDraft().channel == channel)
+            end
+            local resolve = DRE.ResolveStatsBroadcastChannel
+            DRE.ResolveStatsBroadcastChannel = function() error('None must bypass chat resolution') end
+            assert(DRE:StartGroupRound('Me\nAlice',100))
+            groupRoll('Me',50,100)
+            DRE:SlashCommand('group announce')
+            groupRoll('Alice',1,50)
+            assert(w.announce.disabled and DRE.groupRound.loser == 'Alice' and not DRE.groupRound.chatError)
+            assert(DRE:RestartGroupRound() and DRE:CancelGroupRound())
+            assert(#sent == 0)
+            DRE.ResolveStatsBroadcastChannel = resolve
+            w.channel:Fire('OnValueChanged','PARTY')
+            assert(not DRE:RestartGroupRound())
+            assert(DRE:GetGroupDraft().channel == 'PARTY' and #sent == 0)
+            IsInGroup = function() return true end
+            assert(DRE:RestartGroupRound() and sent[1][2] == 'PARTY')
+            w.channel:Fire('OnValueChanged','NONE')
+            assert(DRE:GetGroupDraft().channel == 'PARTY')
+            groupRoll('Me',1,100)
+            w.channel:Fire('OnValueChanged','NONE')
+            DRE:SlashCommand('group announce')
+            assert(DRE:RestartGroupRound() and DRE.groupRound.channel == 'NONE' and #sent == 2)
+        ''')
+
+    def test_elimination_announcements_fit_with_long_names(self):
+        self.check(r'''
+            IsInGroup = function() return true end
+            local first, second = string.rep('A', 128), string.rep('B', 128)
+            assert(DRE:StartGroupRound(first..'\n'..second..'\nMe', 100, 'PARTY', 'elimination'))
+            groupRoll(first, 1, 100)
+            assert(sent[2][1]:find(second, 1, true) and sent[2][1]:find('/roll 100', 1, true))
+            groupRoll(second, 1, 100)
+            assert(sent[3][1]:find('Me is the last player standing', 1, true))
+            for _, message in ipairs(sent) do assert(#message[1] <= 255) end
+        ''')
+
+    def test_two_seat_modes_through_host_controls_and_party_chat(self):
+        self.check(r'''
+            IsInGroup = function() return true end
+            DRE:ShowMainWindow('group')
+            local w = DRE.UI.groupWidgets
+            local a, b = string.rep('A', 145), string.rep('B', 145)
+            DRE:GetGroupDraft().roster = a..'\n'..b
+            DRE:GetGroupDraft().channel = 'PARTY'
+            for _, mode in ipairs({'hotPotato', 'twoLives', 'teams'}) do
+                w.mode:Fire('OnValueChanged', mode)
+                w.start:Fire('OnClick')
+                local r = DRE.groupRound
+                assert(r.mode == mode and r.status == 'active')
+                groupRoll(a, 7, 100)
+                assert(r.turn == 2 and sent[#sent][1]:find(b, 1, true))
+                groupRoll(b, 1, 7)
+                if mode == 'twoLives' then
+                    assert(r.turn == 1 and r.lives[2] == 1)
+                    groupRoll(a, 5, 100)
+                    groupRoll(b, 1, 5)
+                end
+                assert(r.status == 'finished' and not r.chatError)
+                assert(w.status:GetText() == sent[#sent][1])
+            end
+            for _, msg in ipairs(sent) do assert(#msg[1] <= 255 and msg[2] == 'PARTY') end
+        ''')
+
     def test_untrusted_wrong_turn_and_invalid_ranges_cannot_advance(self):
         self.check('''
             local round=startGroup()
@@ -255,9 +328,9 @@ class GroupTests(unittest.TestCase):
     def test_group_payout_cannot_settle_earlier_1v1_debt_after_finish_or_reload(self):
         self.check('''
             local _,id=DRE:AddGameToHistory('Alice','Won',0,100)
-            local debt={gameId=id,playerName='Alice',recordedAt=now,result='Won'}
+            local debt={ownerGUID=playerGUID,gameId=id,playerName='Alice',recordedAt=now,result='Won'}
             DRE.db.profile.pendingTradeWagers={debt}
-            local round=startGroup('Alice\\nMe')
+            local round=startGroup('alice\\nMe')
             groupRoll('Alice',1,100)
             assert(round.status=='finished' and debt.manualAssignmentRequired)
             -- Only persistent profile data remains after reload.
@@ -278,14 +351,14 @@ class GroupTests(unittest.TestCase):
             local _,alice=DRE:AddGameToHistory('Alice','Lost',0,100)
             local _,carol=DRE:AddGameToHistory('Carol','Won',0,100)
             DRE.db.profile.pendingTradeWagers={
-                {gameId=alice,playerName='Alice',recordedAt=now,result='Lost'},
-                {gameId=carol,playerName='Carol',recordedAt=now,result='Won'}}
+                {ownerGUID=playerGUID,gameId=alice,playerName='Alice',recordedAt=now,result='Lost'},
+                {ownerGUID=playerGUID,gameId=carol,playerName='Carol',recordedAt=now,result='Won'}}
             startGroup('Me\\nAlice');DRE:CancelGroupRound()
-            DRE.tradeTracking={partner='Alice',myGold=9000,theirGold=0}
+            DRE.tradeTracking={ownerGUID=playerGUID,partner='Alice',myGold=9000,theirGold=0}
             DRE:HandleTrackedTradeCompletion()
             assert((select(3,DRE:FindGameRecordById(alice))).goldAmount==0)
             assert(#DRE.db.profile.pendingTradeWagers==2)
-            DRE.tradeTracking={partner='Carol',myGold=0,theirGold=5000}
+            DRE.tradeTracking={ownerGUID=playerGUID,partner='Carol',myGold=0,theirGold=5000}
             DRE:HandleTrackedTradeCompletion()
             assert((select(3,DRE:FindGameRecordById(carol))).goldAmount==5000)
             assert(#DRE.db.profile.pendingTradeWagers==1)

@@ -8,6 +8,8 @@ time = function(value) if value then return os.time(value) end return now end
 date = function(format) return os.date(format, now) end
 UnitName = function(unit) if units[unit] then return unpack(units[unit]) end end
 UnitNameUnmodified = UnitName
+playerGUID = 'Player-1-00000001'
+UnitGUID = function(unit) if unit == 'player' then return playerGUID end end
 UnitFullName = UnitName
 UnitExists = function(unit) return units[unit] ~= nil end
 UnitIsPlayer = UnitExists
@@ -23,6 +25,7 @@ GetPlayerTradeMoney = function() return 0 end
 GetTargetTradeMoney = function() return 0 end
 RANDOM_ROLL_RESULT = '%s rolls %d (%d-%d)'
 NORMAL_FONT_COLOR = {r=1,g=1,b=1}
+CreateColor = function(r,g,b,a) return {r=r,g=g,b=b,a=a} end
 GameFontNormalSmall = {}
 GameFontHighlightSmall = {}
 UIParent = { GetWidth = function() return 1920 end, GetHeight = function() return 1080 end }
@@ -48,24 +51,37 @@ StaticPopup_Hide = function() end
 
 local methods = {}
 function methods:SetCallback(name,callback) self.callbacks[name] = callback end
+function methods:Fire(name,...)
+    if self.callbacks[name] then return self.callbacks[name](self,name,...) end
+end
 function methods:SetText(text) self.text = text end
 function methods:GetText() return self.text or '' end
 function methods:SetValue(value) self.value = value end
 function methods:GetValue() return self.value end
 function methods:SetDisabled(value) self.disabled = value end
-function methods:SetWidth(value) self.width = value end
+function methods:SetWidth(value) self.width = value; if self.frame then self.frame.width=value end end
 function methods:GetWidth() return self.width or 400 end
-function methods:SetHeight(value) self.height = value end
+function methods:SetHeight(value) self.height = value; if self.frame then self.frame.height=value end end
 function methods:GetHeight() return self.height or 200 end
 function methods:GetScale() return self.scale or 1 end
 function methods:SetScale(value) self.scale = value end
 function methods:GetEffectiveScale() return 1 end
+function methods:GetFrameLevel() return self.level or 100 end
+function methods:SetFrameLevel(level) self.level=level end
 function methods:IsVisible() return self.visible ~= false end
 function methods:IsShown() return self:IsVisible() end
-function methods:Show() self.visible=true end
+function methods:SetShown(shown)
+    if shown then self:Show() else self:Hide() end
+end
+function methods:Show()
+    local wasVisible = self.visible
+    self.visible = true
+    if not wasVisible and self.callbacks.OnShow then self.callbacks.OnShow(self) end
+end
 function methods:Hide()
     local wasVisible=self.visible
     self.visible=false
+    if wasVisible and self.callbacks.OnHide then self.callbacks.OnHide(self) end
     if wasVisible and self.callbacks.OnClose then self.callbacks.OnClose(self) end
 end
 function methods:AddChild(child) self.children[#self.children+1]=child end
@@ -78,6 +94,7 @@ function methods:SelectTab(group)
     self.value=group
     if self.callbacks.OnGroupSelected then self.callbacks.OnGroupSelected(self,'OnGroupSelected',group) end
 end
+methods.SetGroup = methods.SelectTab
 function methods:GetStringHeight() return 20 end
 function methods:GetStringWidth() return 100 end
 function methods:GetVerticalScroll() return self.scroll or 0 end
@@ -87,7 +104,18 @@ function methods:GetPoint() return 'CENTER',nil,'CENTER',0,0 end
 function methods:GetNumPoints() return 1 end
 function methods:GetFont() return 'font',12,'' end
 function methods:SetScript(name,callback) self.callbacks[name]=callback end
-function methods:HookScript(name,callback) self.callbacks[name]=callback end
+function methods:GetScript(name) return self.callbacks[name] end
+function methods:HookScript(name, callback)
+    local previous = self.callbacks[name]
+    if previous then
+        self.callbacks[name] = function(...)
+            previous(...)
+            callback(...)
+        end
+    else
+        self.callbacks[name] = callback
+    end
+end
 local function noop() end
 local mt={__index=function(_,key)
     if methods[key] then return methods[key] end
@@ -97,12 +125,52 @@ local function rawFrame()
     return setmetatable({callbacks={},children={},visible=true}, mt)
 end
 function methods:CreateFontString() return rawFrame() end
+function methods:CreateTexture() return rawFrame() end
+function methods:CreateMaskTexture() return rawFrame() end
+function methods:AddMaskTexture(mask) self.mask = mask end
+function methods:CreateLine() return rawFrame() end
+animationGroups = {}
+function methods:CreateAnimationGroup()
+    local group = rawFrame()
+    group.region, group.animations = self, {}
+    animationGroups[#animationGroups+1] = group
+    return group
+end
+function methods:CreateAnimation(kind)
+    local animation = rawFrame()
+    animation.kind = kind
+    self.animations[#self.animations+1] = animation
+    return animation
+end
+function methods:SetDuration(seconds) self.duration = seconds end
+function methods:SetStartDelay(seconds) self.startDelay = seconds end
+function methods:SetFromAlpha(alpha) self.fromAlpha = alpha end
+function methods:SetToAlpha(alpha) self.toAlpha = alpha end
+function methods:Play() self.playing = true end
+function methods:Stop() self.playing = false end
+function methods:IsPlaying() return self.playing == true end
 CreateFrame = function() return rawFrame() end
-AceGUI = { created=0, released=0, pool={} }
+AceGUI = { created=0, released=0, pool={}, constructors={} }
+function AceGUI:ClearFocus() if self.focus then self.focus:ClearFocus(); self.focus=nil end end
+function AceGUI:SetFocus(widget) self:ClearFocus(); self.focus=widget end
+function AceGUI:RegisterWidgetType(kind, constructor) self.constructors[kind]=constructor end
+function AceGUI:RegisterAsWidget(widget)
+    widget.callbacks,widget.children={},{}
+    widget.kind=widget.type
+    widget.frame.obj=widget
+    return setmetatable(widget,mt)
+end
+AceGUI.RegisterAsContainer = AceGUI.RegisterAsWidget
 function AceGUI:Create(kind)
     local pool = self.pool[kind] or {}
     self.pool[kind]=pool
     local widget=table.remove(pool)
+    if self.constructors[kind] then
+        widget=widget or self.constructors[kind]()
+        widget.released=nil
+        widget:OnAcquire()
+        return widget
+    end
     if not widget then self.created=self.created+1; widget={} end
     for key in pairs(widget) do widget[key]=nil end
     widget.kind=kind; widget.callbacks={};widget.children={};widget.visible=true

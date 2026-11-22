@@ -66,6 +66,22 @@ class MinimapAndLayoutTests(unittest.TestCase):
             assert(icons:GetMinimapButton('DeathRollEnhancer')==button)
         ''')
 
+    def test_native_compartment_opens_even_with_minimap_icon_hidden(self):
+        lua = self.minimap_runtime()
+        lua.execute("DRE:InitializeMinimap(); DRE:SlashCommand('minimap hide')")
+        for toc in ROOT.glob('DeathRollEnhancer*.toc'):
+            with self.subTest(manifest=toc.name):
+                handlers = [line.split(':', 1)[1].strip() for line in toc.read_text().splitlines()
+                            if line.startswith('## AddonCompartmentFunc:')]
+                self.assertEqual(len(handlers), 1)
+                click = lua.globals()[handlers[0]]
+                lua.execute('openedWindow=nil; openedOptions=nil')
+                click('DeathRollEnhancer', 'LeftButton')
+                self.assertTrue(lua.globals().openedWindow)
+                click('DeathRollEnhancer', 'RightButton')
+                self.assertTrue(lua.globals().openedOptions)
+                self.assertFalse(lua.eval("LibStub('LibDBIcon-1.0'):GetMinimapButton('DeathRollEnhancer'):IsShown()"))
+
     def test_saved_hidden_locked_icon_survives_login_and_reinitialization(self):
         self.minimap_runtime().execute('''
             DRE.db.profile.minimap={hide=true,lock=true,minimapPos=180}

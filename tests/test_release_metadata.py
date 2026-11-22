@@ -24,22 +24,24 @@ class ReleaseMetadataTests(unittest.TestCase):
             shutil.copyfile(ROOT / name, destination)
 
     def prepare(self, version):
-        return subprocess.run(['bash', str(self.root / 'update-version.sh'), version],
+        command = ([sys.executable, str(self.root / 'scripts/prepare_version.py')] if os.name == 'nt'
+                   else ['bash', str(self.root / 'update-version.sh')])
+        return subprocess.run([*command, version],
                               cwd=self.temp.name, capture_output=True, text=True)
 
     def test_preparation_keeps_versions_consistent_and_history_intact(self):
-        old_changes = (self.root / 'CHANGELOG.md').read_text()
-        historical_readme = (self.root / 'README.md').read_text().splitlines()[5:]
+        old_changes = (self.root / 'CHANGELOG.md').read_text(encoding='utf-8')
+        historical_readme = (self.root / 'README.md').read_text(encoding='utf-8').splitlines()[5:]
         result = self.prepare('9.8.7-beta.1')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.root / 'VERSION').read_text(), '9.8.7-beta.1\n')
-        self.assertIn('local localFallbackVersion = "9.8.7-beta.1"', (self.root / 'Core.lua').read_text())
-        self.assertIn('@project-version@', (self.root / 'Core.lua').read_text())
-        readme = (self.root / 'README.md').read_text()
+        self.assertEqual((self.root / 'VERSION').read_text(encoding='utf-8'), '9.8.7-beta.1\n')
+        self.assertIn('local localFallbackVersion = "9.8.7-beta.1"', (self.root / 'Core.lua').read_text(encoding='utf-8'))
+        self.assertIn('@project-version@', (self.root / 'Core.lua').read_text(encoding='utf-8'))
+        readme = (self.root / 'README.md').read_text(encoding='utf-8')
         self.assertTrue(readme.startswith('# DeathRoll Enhancer v9.8.7-beta.1 - 2SChoppy Edition'))
         self.assertIn('Version-9.8.7-beta.1-brightgreen', readme)
         self.assertEqual(readme.splitlines()[5:], historical_readme)
-        changes = (self.root / 'CHANGELOG.md').read_text()
+        changes = (self.root / 'CHANGELOG.md').read_text(encoding='utf-8')
         self.assertTrue(changes.startswith('## 9.8.7-beta.1 '))
         self.assertTrue(changes.endswith(old_changes))
         prepared = {name: (self.root / name).read_bytes() for name in FILES}
@@ -68,14 +70,30 @@ class ReleaseMetadataTests(unittest.TestCase):
     def test_workflow_extracts_only_current_release_and_rejects_mismatch(self):
         self.assertEqual(self.prepare('9.8.7').returncode, 0)
         self.assertEqual(self.prepare('9.8.8').returncode, 0)
-        workflow = (ROOT / '.github/workflows/release.yml').read_text()
+        workflow = (ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8')
         script = textwrap.dedent(workflow.split("python3 - <<'PY'\n", 1)[1].split('\n          PY', 1)[0])
         (self.root / 'dist').mkdir()
         result = subprocess.run([sys.executable, '-c', script], cwd=self.root, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        notes = (self.root / 'dist/release-notes.md').read_text()
+        notes = (self.root / 'dist/release-notes.md').read_text(encoding='utf-8')
         self.assertTrue(notes.startswith('## 9.8.8 '))
         self.assertNotIn('9.8.7', notes)
         (self.root / 'VERSION').write_text('9.8.9\n')
         result = subprocess.run([sys.executable, '-c', script], cwd=self.root, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
+
+    @unittest.skipIf(os.name == 'nt', 'GitHub Actions runs the publication step in Linux bash')
+    def test_workflow_marks_only_prerelease_versions(self):
+        workflow = (ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        step = workflow[workflow.rindex('          version=$(cat VERSION)'):]
+        # Capture arguments without authenticating or contacting GitHub.
+        shell = 'set -eu\ngh() { printf "%s\\n" "$@"; }\n' + textwrap.dedent(step)
+        for version in ('2.4.2', '2.4.3-beta.1'):
+            with self.subTest(version=version):
+                (self.root / 'VERSION').write_text(version, encoding='ascii')
+                result = subprocess.run(['bash', '-c', shell], cwd=self.root, check=True,
+                                        capture_output=True, text=True,
+                                        env={**os.environ, 'GITHUB_REPOSITORY': 'local/test', 'GITHUB_SHA': 'test'})
+                args = result.stdout.splitlines()
+                self.assertIn('v' + version, args)
+                self.assertEqual('--prerelease' in args, '-' in version)

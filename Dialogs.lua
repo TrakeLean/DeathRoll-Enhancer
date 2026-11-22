@@ -9,7 +9,10 @@ function DRE:CloseDialog(dialog, accepted, reason)
     if not dialog or self.activeDialog ~= dialog then return end
     self.activeDialog = nil -- retire ownership before hiding or invoking callbacks
     if self.dialogEventFrame then self.dialogEventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED") end
-    if self.dialogWindow then self.dialogWindow:Hide() end
+    if self.dialogWindow then
+        if self.dialogWindow.inviteBanner then self.dialogWindow.inviteBanner:Hide() end
+        self.dialogWindow:Hide()
+    end
     local definition = dialog.definition
     if accepted then
         if definition.OnAccept then definition.OnAccept(dialog, dialog.data) end
@@ -42,9 +45,9 @@ function DRE:RenderDialog(dialog)
     local window = self.dialogWindow
     if not window then
         -- Retain this one small window: its raw input hooks must never enter AceGUI's pool.
-        window = AceGUI:Create("Frame")
+        window = DRE:CreateWindowWidget("Frame")
         self.dialogWindow = window
-        window:SetTitle("DeathRoll Enhancer")
+        window:SetTitle(self.displayName)
         window:SetWidth(460)
         window:SetHeight(330)
         window:EnableResize(false)
@@ -52,13 +55,33 @@ function DRE:RenderDialog(dialog)
         local label = AceGUI:Create("Label")
         label:SetFullWidth(true)
         window:AddChild(label)
-        local accept = AceGUI:Create("Button")
+        local accept = DRE:CreateWindowWidget("Button")
         accept:SetFullWidth(true)
         window:AddChild(accept)
-        local cancel = AceGUI:Create("Button")
+        local cancel = DRE:CreateWindowWidget("Button")
         cancel:SetFullWidth(true)
         window:AddChild(cancel)
         window.message, window.acceptButton, window.cancelButton = label, accept, cancel
+    end
+    if self.devDuel then
+        local invite = dialog.definition == self.Dialogs.DEATHROLL_CHALLENGE_POPUP
+        window.frame:SetFrameLevel(250)
+        window.acceptButton:SetPrimary(true)
+        if invite ~= window.duelInvite then
+            window.duelInvite = invite
+            window:SetWidth(invite and 430 or 460)
+            window.message:SetFontObject(invite and GameFontHighlight or GameFontHighlightSmall)
+            if invite then
+                window.acceptButton:SetRelativeWidth(0.55)
+                window.cancelButton:SetRelativeWidth(0.45)
+            else
+                window:SetHeight(330)
+                window:SetInsets(52, 16)
+                window.acceptButton:SetFullWidth(true)
+                window.cancelButton:SetFullWidth(true)
+            end
+        end
+        window:SetInviteArt(invite and dialog.data)
     end
     window.message:SetText(dialog.textValue)
     window.acceptButton:SetText(dialog.definition.button1)

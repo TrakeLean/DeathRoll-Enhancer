@@ -8,25 +8,29 @@ if not DRE then return end
 local LibDBIcon = LibStub("LibDBIcon-1.0", true)
 local LDB = LibStub("LibDataBroker-1.1", true)
 
+-- The native addon compartment resolves this callback by its global name.
+function DeathRollEnhancer_OnLauncherClick(_, button)
+    if DRE.disabled then return end
+    if button == "LeftButton" then
+        DRE:ShowMainWindow()
+    elseif button == "RightButton" then
+        DRE:OpenOptions()
+    end
+end
+
 -- Create the data object used by the bundled LibDataBroker and LibDBIcon.
 local minimapLDB = {
     type = "data source",
     text = "DeathRoll",
     icon = "Interface\\AddOns\\DeathRollEnhancer\\Media\\Logo.tga",
-    OnClick = function(frame, button)
-        if button == "LeftButton" then
-            DRE:ShowMainWindow()
-        elseif button == "RightButton" then
-            DRE:OpenOptions()
-        end
-    end,
+    OnClick = DeathRollEnhancer_OnLauncherClick,
     OnTooltipShow = function(tooltip)
         if not tooltip or not tooltip.AddLine then return end
         
-        tooltip:AddLine("|cFFFF0000Death|r|cFFFFFFFFRoll|r Enhancer v" .. DRE.version)
+        tooltip:AddLine(DRE.title .. " v" .. DRE.version)
         tooltip:AddLine(" ")
         tooltip:AddLine("|cFFFFFFFFLeft Click:|r Open DeathRoll window")
-        tooltip:AddLine("|cFFFFFFFFRight Click:|r Open options")
+        tooltip:AddLine("|cFFFFFFFFRight Click:|r Open Settings tab")
         
         if DRE.db and DRE.db.profile.goldTracking then
             local stats = DRE.db.profile.goldTracking

@@ -9,7 +9,11 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def runtime_files(root=ROOT):
+DEV_TEXTURES = ('DuelHeart', 'GoldTable', 'GoldTableGlints', 'GroupFeltTable', 'GroupSeatRim',
+                'GroupPortraitCorners', 'GroupTurnGlow', 'GroupGoblinArm')
+
+
+def runtime_files(root=ROOT, dev=False):
     root = root.resolve()
     files = set()
 
@@ -27,13 +31,14 @@ def runtime_files(root=ROOT):
 
     for toc in sorted(root.glob('DeathRollEnhancer*.toc')):
         add(toc)
-        for line in toc.read_text().splitlines():
+        for line in toc.read_text(encoding='utf-8').splitlines():
             line = line.strip()
             if line and not line.startswith('#'):
                 add(root / line.replace('\\', '/'))
-    for path in (root / 'Media').rglob('*'):
-        if path.is_file():
-            add(path)
+    add(root / 'Media/Logo.tga')
+    if dev:
+        for texture in DEV_TEXTURES:
+            add(root / 'Media' / (texture + '.tga'))
     add(root / 'Libs' / 'Ace3-LICENSE.txt')
     add(root / 'Libs' / 'LibDBIcon-LICENSE.txt')
     add(root / 'Libs' / 'SOURCES.txt')
@@ -43,11 +48,11 @@ def runtime_files(root=ROOT):
     return sorted(files)
 
 
-def build(output, version, root=ROOT):
+def build(output, version, root=ROOT, dev=False):
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', version):
         raise ValueError('Version must be numeric major.minor.patch with an optional prerelease suffix')
     root = root.resolve()
-    files = runtime_files(root)
+    files = runtime_files(root, dev)
     output = Path(output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
@@ -56,6 +61,12 @@ def build(output, version, root=ROOT):
             if relative.as_posix() == 'LICENSE':
                 relative = Path('LICENSE.txt')
             contents = path.read_bytes()
+            if path.suffix == '.toc':
+                # Use the release metadata from CurseForge-style checkout/release blocks.
+                contents = re.sub(rb'(?ms)^#@debug@\r?\n(.*?)^#@end-debug@\r?\n',
+                                  lambda block: block[1] if dev else b'', contents)
+                contents = re.sub(rb'(?ms)^#@non-debug@\r?\n(.*?)^#@end-non-debug@\r?\n',
+                                  lambda block: b'' if dev else re.sub(rb'(?m)^# ', b'', block[1]), contents)
             if path.suffix in ('.lua', '.toc'):
                 contents = contents.replace(b'@project-version@', version.encode())
             entry = zipfile.ZipInfo('DeathRollEnhancer/' + relative.as_posix(), (2020, 1, 1, 0, 0, 0))
@@ -68,6 +79,7 @@ def build(output, version, root=ROOT):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version', required=True)
+    parser.add_argument('--dev', action='store_true', help='Enable the Forever/Camelot development UI and include its art')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    print(build(args.output, args.version))
+    print(build(args.output, args.version, dev=args.dev))

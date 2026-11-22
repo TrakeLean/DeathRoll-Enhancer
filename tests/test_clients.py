@@ -75,8 +75,7 @@ class ClientCompatibilityTests(unittest.TestCase):
                       AddToBlizOptions=function()
                         assert(Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory)
                         settingsRegistered=true;return {}
-                      end,
-                      Open=function() optionsOpened=true end}
+                      end}
                     local db={New=function(_,_,defaults) return defaults end}
                     LibStub=function(name,...)
                         if name=='AceConfig-3.0' then return config end
@@ -91,7 +90,14 @@ class ClientCompatibilityTests(unittest.TestCase):
                 lua.execute('''
                     DRE:OnInitialize()
                     assert(optionsRegistered and commands.dr and commands.deathroll)
-                    DRE:OpenOptions();assert(optionsOpened)
+                    DRE:SlashCommand('config')
+                    assert(DRE.UI.currentTab=='settings' and DRE.UI.settingsContent)
+                    local originalWindow=DRE.UI.mainWindow
+                    DRE:ShowMainWindow('history')
+                    originalWindow:Hide()
+                    DRE:SlashCommand('options')
+                    assert(DRE.UI.mainWindow==originalWindow and originalWindow:IsShown())
+                    assert(DRE.UI.currentTab=='settings')
                 ''')
                 self.assertEqual(bool(lua.eval('settingsRegistered')), modern)
 

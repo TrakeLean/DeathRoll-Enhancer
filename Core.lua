@@ -39,18 +39,18 @@ DRE.debugChatBuffer = {}
 DRE.maxDebugMessages = 40
 
 -- Addon information
+local getMetadata = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+DRE.title = (getMetadata and getMetadata(addonName, "Title")) or "DeathRoll Enhancer"
+DRE.displayName = DRE.title:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+DRE.devDuel = getMetadata and getMetadata(addonName, "X-DRE-DuelUI") == "1"
+
 -- Replaced by CurseForge packager on tagged builds.
 local localFallbackVersion = "2.4.2"
 DRE.version = "@project-version@"
-if not DRE.version or DRE.version == "" or DRE.version == "@project-version@" then
-    local metadataVersion = nil
-    if C_AddOns and C_AddOns.GetAddOnMetadata then
-        metadataVersion = C_AddOns.GetAddOnMetadata(addonName, "Version")
-    elseif GetAddOnMetadata then
-        metadataVersion = GetAddOnMetadata(addonName, "Version")
-    end
+if not DRE.version or DRE.version == "" or DRE.version:sub(1, 1) == "@" then
+    local metadataVersion = getMetadata and getMetadata(addonName, "Version")
 
-    if metadataVersion and metadataVersion ~= "" and metadataVersion ~= "@project-version@" then
+    if metadataVersion and metadataVersion ~= "" and metadataVersion:sub(1, 1) ~= "@" then
         DRE.version = metadataVersion
     else
         DRE.version = localFallbackVersion
@@ -96,6 +96,8 @@ local defaults = {
         },
         ui = {
             scale = 0.9,
+            groupAppearance = "portraits",
+            groupAnnounceChannel = "NONE",
             framePos = {
                 point = "CENTER",
                 x = 0,
@@ -107,6 +109,7 @@ local defaults = {
         gameplay = {
             autoEmote = true,
             soundEnabled = true,
+            defaultStartingRoll = 100,
             autoRollFromMoney = false,
             chatMessages = false,
             debugMessages = false,
@@ -150,6 +153,21 @@ local defaults = {
     },
 }
 
+DRE.groupStatOptions = {
+    {key = "showGroupRecord", label = "My group record"},
+    {key = "showGroupRegulars", label = "Table regulars"},
+    {key = "showGroupLongest", label = "Longest round"},
+    {key = "showGroupEscapes", label = "Closest calls"},
+}
+for _, option in ipairs(DRE.groupStatOptions) do defaults.profile.funStats[option.key] = true end
+
+function DRE:SetStatPreference(key, value)
+    self.db.profile.funStats[key] = value
+    if self.devDuel and (self.UI.currentTab == "statistics" or self.UI.currentTab == "history") then
+        self:UpdateStatsDisplay()
+    end
+end
+
 -- Ace3 addon lifecycle methods
 function DRE:OnInitialize()
     -- Initialize database
@@ -176,7 +194,7 @@ function DRE:OnInitialize()
     self:RegisterChatCommand("drh", "HistoryCommand")
     self:RegisterChatCommand("deathrollhistory", "HistoryCommand")
 
-    self:Print("DeathRoll Enhancer v" .. self.version .. " loaded!")
+    self:Print(self.displayName .. " v" .. self.version .. " loaded!")
 
     -- Test debug buffer
     self:AddToDebugBuffer("SYSTEM", "Addon loaded and debug buffer initialized")
@@ -219,6 +237,8 @@ function DRE:OnEnable()
     
     -- Register game-related events (CHAT_MSG_WHISPER for spicy duels)
     self:RegisterEvent("CHAT_MSG_WHISPER")
+    if self.EnableDuelMessages then self:EnableDuelMessages() end
+    if self.groupMessagesEnabled then self:RestoreSharedTable() end
     
     -- Only server system messages are authoritative dice results.
     
@@ -228,6 +248,7 @@ function DRE:OnEnable()
     -- Register trade events for optional wager tracking
     self:RegisterEvent("TRADE_SHOW")
     self:RegisterEvent("TRADE_MONEY_CHANGED")
+    self:RegisterEvent("PLAYER_TRADE_MONEY", "TRADE_MONEY_CHANGED")
     self:RegisterEvent("TRADE_ACCEPT_UPDATE")
     self:RegisterEvent("TRADE_CLOSED")
     self:RegisterEvent("TRADE_REQUEST_CANCEL")
@@ -241,7 +262,9 @@ function DRE:OnEnable()
 end
 
 function DRE:OnDisable()
+    if self.sharedTable then self:LeaveSharedTable() end
     self.disabled = true
+    if self.outgoingChallenge then self:WithdrawDuelInvite() end
     self:CancelGroupRound(true)
     self.tradeTracking = nil
     self.pendingChallenge = nil
@@ -279,13 +302,21 @@ function DRE:CusRound(num, numDecimalPlaces)
     return math.floor(num * mult + 0.5) / mult
 end
 
+local happyEmotes = {"CHEER", "LAUGH", "SALUTE", "DANCE", "VICTORY"}
+local sadEmotes = {"CRY", "SIGH", "SURRENDER", "LAY", "CONGRATULATE"}
+
+function DRE:IsResultEmote(won, token)
+    for _, emote in ipairs(won and happyEmotes or sadEmotes) do
+        if emote == token then return true end
+    end
+    return false
+end
+
 function DRE:GetRandomHappyEmote()
-    local happyEmotes = {"CHEER", "LAUGH", "SALUTE", "DANCE", "VICTORY"}
     return happyEmotes[math.random(1, #happyEmotes)]
 end
 
 function DRE:GetRandomSadEmote()
-    local sadEmotes = {"CRY", "SIGH", "SURRENDER", "LAY", "CONGRATULATE"}
     return sadEmotes[math.random(1, #sadEmotes)]
 end
 
@@ -314,14 +345,19 @@ function DRE:IsTradeWagerModeEnabled()
         and self.db.profile.challengeSystem.trackWagerByTrade == true
 end
 
-function DRE:NormalizeTrackedPlayerName(name)
-    return self:NormalizePlayerName(name)
+local function tradeUnitGUID(unit)
+    local guid = UnitGUID and UnitGUID(unit)
+    if DRE:IsAccessibleValue(guid) and type(guid) == "string" and guid ~= "" then return guid end
+end
+
+function DRE:GetTradeOwnerGUID()
+    return tradeUnitGUID("player")
 end
 
 function DRE:CaptureTradeState(resetState)
     if self.disabled then return end
     if resetState then
-        self.tradeTracking = { myGold = 0, theirGold = 0 }
+        self.tradeTracking = { ownerGUID = self:GetTradeOwnerGUID(), myGold = 0, theirGold = 0 }
     end
     local state = self.tradeTracking
     -- Only TRADE_SHOW creates a transaction. Preserve the last visible offer
@@ -329,11 +365,22 @@ function DRE:CaptureTradeState(resetState)
     if not state or state.closedAt or state.completed then return end
     if not resetState and TradeFrame and TradeFrame.IsShown and not TradeFrame:IsShown() then return end
 
-    local partner = UnitExists and UnitExists("NPC") and self:GetUnitPlayerName("NPC")
-    if not partner and TradeFrameRecipientNameText and TradeFrameRecipientNameText.GetText then
-        partner = self:NormalizePlayerName(TradeFrameRecipientNameText:GetText())
+    -- The recipient label can still belong to the previous trade at TRADE_SHOW.
+    local isPlayer = UnitIsPlayer("NPC")
+    local partner, guid
+    if self:IsAccessibleValue(isPlayer) and isPlayer then
+        partner = self:GetUnitPlayerName("NPC")
+        guid = tradeUnitGUID("NPC")
     end
-    state.partner = self:NormalizeTrackedPlayerName(partner) or state.partner
+    if (partner and state.firstPartner and partner ~= state.firstPartner)
+        or (guid and state.partnerGUID and guid ~= state.partnerGUID) then
+        self.tradeTracking = nil -- Only another TRADE_SHOW can start tracking again.
+        if self.RefreshDuel then self:RefreshDuel() end
+        return
+    end
+    state.firstPartner = state.firstPartner or partner
+    state.partnerGUID = state.partnerGUID or guid
+    state.partner = partner -- Each offer needs an identifiable partner in the same snapshot.
     local myGold = GetPlayerTradeMoney and GetPlayerTradeMoney()
     local theirGold = GetTargetTradeMoney and GetTargetTradeMoney()
     -- Do not convert or format restricted values, or retain an older readable
@@ -341,47 +388,46 @@ function DRE:CaptureTradeState(resetState)
     state.myGold = self:IsBoundedInteger(myGold, 0, self.MAX_WAGER) and myGold or nil
     state.theirGold = self:IsBoundedInteger(theirGold, 0, self.MAX_WAGER) and theirGold or nil
     state.lastUpdated = time()
+    if self.RefreshDuel then self:RefreshDuel() end
 end
 
-function DRE:PrunePendingTradeWagers()
-    self:EnsureHistorySchema()
-    if not self.db then return end
-    local pending = self.db.profile.pendingTradeWagers
-    for index = #pending, 1, -1 do
-        local entry = pending[index]
-        if (time() - (entry.recordedAt or 0)) > 300 or not self:FindGameRecordById(entry.gameId) then
-            table.remove(pending, index)
-        end
-    end
-end
+DRE.TRADE_WAGER_TIMEOUT = 300
 
 function DRE:HandleTrackedTradeCompletion()
-    self:PrunePendingTradeWagers()
     if not self.db then return end
-    local trades = self.db.profile.pendingTradeWagers
     local state = self.tradeTracking
     if not state or state.completed then return end
     state.completed = true -- one payment may be considered only once, including ambiguous payments
+    local ownerGUID = self:GetTradeOwnerGUID()
+    if not state.partner or not ownerGUID or ownerGUID ~= state.ownerGUID then return end
     if not self:IsBoundedInteger(state.myGold, 0, self.MAX_WAGER)
         or not self:IsBoundedInteger(state.theirGold, 0, self.MAX_WAGER) then return end
+    local records = self:PrunePendingTradeWagers()
+    local trades = self.db.profile.pendingTradeWagers
+    local function matchesTrade(pending)
+        return pending.ownerGUID == ownerGUID and self:IsSamePlayer(pending.playerName, state.partner)
+    end
     -- Group payouts make earlier debts to the same participant ambiguous, even after reload.
     for _, pending in ipairs(trades) do
-        if pending.manualAssignmentRequired and self:IsSamePlayer(pending.playerName, state.partner)
+        if pending.manualAssignmentRequired and matchesTrade(pending)
             and (state.myGold > 0 or state.theirGold > 0) then
             self:Print("This player also joined a group round. Use /dr edit to assign any earlier 1v1 payment; no wager was changed.")
+            if self.ReviewDuelTrade then self:ReviewDuelTrade(state.partner) end
             return
         end
     end
     local matchIndex, tradeAmount
     for index, pending in ipairs(trades) do
-        if self:IsSamePlayer(pending.playerName, state.partner) and state.myGold > 0 and state.theirGold > 0 then
-            self:Print("Both players traded gold. Use /dr edit to assign this payment; no wager was changed.")
-            return
-        end
         local amount = pending.result == "Won" and state.theirGold or state.myGold
-        if self:IsSamePlayer(pending.playerName, state.partner) and amount > 0 then
+        if matchesTrade(pending) and amount > 0 then
+            if state.myGold > 0 and state.theirGold > 0 then
+                self:Print("Both players traded gold. Use /dr edit to assign this payment; no wager was changed.")
+                if self.ReviewDuelTrade then self:ReviewDuelTrade(state.partner) end
+                return
+            end
             if matchIndex then
                 self:Print("Multiple unpaid games match this trade. Use /dr edit to assign the payment; no wager was changed.")
+                if self.ReviewDuelTrade then self:ReviewDuelTrade(state.partner) end
                 return
             end
             matchIndex, tradeAmount = index, amount
@@ -389,44 +435,82 @@ function DRE:HandleTrackedTradeCompletion()
     end
     if not matchIndex then return end
     local pending = trades[matchIndex]
-    local success, message = self:UpdateGameWagerById(pending.gameId, tradeAmount)
+    local record = records[pending.gameId]
+    local success, message = self:ApplyRecordedWager(self.db.profile.history[record.playerName], record.game, tradeAmount)
     if not success then
         self:Print("Trade tracked, but the wager could not be updated: " .. (message or "unknown error"))
         return
     end
     table.remove(trades, matchIndex)
     self.tradeTracking = nil -- never reuse the same payment
-    if self.UI and self.UI.currentTab == "history" and self.UI.historyDropdown then
-        self:UpdateHistoryDisplay(self.UI.historyDropdown:GetValue())
-    end
+    if self.ConfirmDuelPayment then self:ConfirmDuelPayment(pending, tradeAmount) end
     self:Print("Tracked trade updated the wager for your game vs " .. pending.playerName .. ".")
 end
 
--- Challenge System: Send whisper challenge to opponent
-function DRE:SendChallengeWhisper(targetName, roll, wager)
+local function sendChallengeMessage(self, message, target, replyTo)
+    if self.devDuel then return self:SendInviteMessage(message, target, replyTo) end
+    return self:SendChatSafely(message, "WHISPER", nil, target)
+end
+
+function DRE:SendChallengeWhisper(targetName, roll, wager, trackTrade, terms)
     if not self.db or not self.db.profile.challengeSystem then
         return
     end
 
-    if not self.db.profile.challengeSystem.sendWhisper then
+    local special = self.devDuel and terms and (terms.double or (terms.mode and terms.mode ~= "classic"))
+    if not self.db.profile.challengeSystem.sendWhisper and not special then
         self:DebugPrint("Challenge whisper disabled in settings")
         return
     end
 
-    -- Format: DEATHROLL_CHALLENGE:roll:wager:version
-    local message = string.format("DEATHROLL_CHALLENGE:%d:%d:%s", roll, wager, self.version)
-    local sent, reason = self:SendChatSafely(message, "WHISPER", nil, targetName)
+    if not self:ValidateGameInputs(targetName, roll, wager) then return false end
+    local message
+    if self.devDuel then
+        if trackTrade == nil then trackTrade = self:IsTradeWagerModeEnabled() end
+        if trackTrade and wager ~= 0 then return false end
+        message = string.format("DEATHROLL_CHALLENGE:%d:%.0f:%s", roll, wager, trackTrade and "trade" or "fixed")
+        if special then
+            if not self.duelModes[terms.mode] then return false end
+            message = message .. ":" .. terms.mode
+            if terms.double then message = message .. ":double:" .. terms.double end
+        end
+    else
+        message = string.format("DEATHROLL_CHALLENGE:%d:%.0f:%s", roll, wager, self.version)
+    end
+    local sent, reason, id = sendChallengeMessage(self, message, targetName)
     if not sent then
-        self:Print("Challenge whisper was not sent: " .. (reason or "chat unavailable"))
+        self:Print("Challenge invitation was not sent: " .. (reason or "chat unavailable"))
         return false
     end
-    self:DebugPrint(string.format("Sent challenge whisper to %s: roll=%d, wager=%d", targetName, roll, wager))
-    return true
+    if not self.devDuel and self.gameState then
+        self.gameState.whisperReplyUntil = GetTime() + self.Dialogs.DEATHROLL_CHALLENGE_POPUP.timeout
+    end
+    self:DebugPrint(string.format("Sent challenge to %s: roll=%d, wager=%.0f", targetName, roll, wager))
+    return true, id
+end
+
+local function duelInviteText(challenge, trackTrade)
+    local terms = trackTrade and "Wager from the final gold trade" or ("Fixed wager " .. DRE:FormatGold(challenge.wager))
+    if challenge.double then terms = DRE:DuelSeriesWagerText(challenge.wager) end
+    local extra = DRE:DuelTermsText(challenge)
+    return string.format("|cffffcf75%s challenges you|r\n\nOpening roll 1–%d\n%s%s", challenge.sender, challenge.roll, terms,
+        extra ~= "" and ("\n" .. extra) or "")
+end
+
+local previewChallenge = {sender = "Practice opponent (preview)", roll = 100, wager = 20000, preview = true}
+function DRE:PreviewChallengePopup()
+    if not self.devDuel then return end
+    if self.activeDialog then
+        self:Print("Close the current popup before opening the challenge preview.")
+        return
+    end
+    self:ShowDialog("DEATHROLL_CHALLENGE_POPUP", duelInviteText(previewChallenge, self:IsTradeWagerModeEnabled()), nil, previewChallenge)
 end
 
 -- Challenge System: Handle incoming challenge whisper
-function DRE:HandleChallengeWhisper(message, sender)
-    if self:HasActiveGame() then return end
+function DRE:HandleChallengeWhisper(message, sender, inviteId)
+    if self:HasActiveGame() or (self.devDuel and (self.pendingChallenge or self.acceptedChallenge)) then return end
+    if self.activeDialog and self.activeDialog.definition ~= self.Dialogs.DEATHROLL_CHALLENGE_POPUP then return end
     if not self:IsAccessibleValue(message) or type(message) ~= "string" then return end
     sender = self:NormalizePlayerName(sender)
     if not sender then return end
@@ -446,7 +530,15 @@ function DRE:HandleChallengeWhisper(message, sender)
     end
 
     -- Parse challenge message: DEATHROLL_CHALLENGE:roll:wager:version
-    local roll, wager, version = message:match(self.CHAT_PATTERNS.DEATHROLL_CHALLENGE_NEW)
+    local roll, wager, mode = message:match(self.CHAT_PATTERNS.DEATHROLL_CHALLENGE_NEW)
+    local duelMode, double = "classic", nil
+    if self.devDuel and mode and mode:find(":", 1, true) then
+        local settlement, variant, source = mode:match("^(%a+):(%w+):double:(%w+)$")
+        if not settlement then settlement, variant = mode:match("^(%a+):(%w+)$") end
+        if not self.duelModes[variant] then return end
+        mode, duelMode, double = settlement, variant, source
+    end
+    if self.devDuel and (not inviteId or (mode ~= "trade" and mode ~= "fixed")) then return end
     if not roll or not wager then
         self:DebugPrint("Failed to parse challenge message: " .. message)
         return
@@ -456,10 +548,12 @@ function DRE:HandleChallengeWhisper(message, sender)
     wager = tonumber(wager)
 
     local valid = self:ValidateGameInputs(sender, roll, wager)
-    if not valid then return end
+    if not valid or (self.devDuel and mode == "trade" and wager ~= 0) then return end
+    if double and (mode ~= "fixed" or not self:MatchesDoubleOffer(
+        {mode = duelMode, double = double, roll = roll, wager = wager}, sender, "Won")) then return end
 
     -- Validate roll against minimum threshold
-    if roll < self.db.profile.challengeSystem.minRollThreshold then
+    if not double and roll < self.db.profile.challengeSystem.minRollThreshold then
         self:DebugPrint(string.format("Challenge roll %d below threshold %d, ignoring",
             roll, self.db.profile.challengeSystem.minRollThreshold))
         return
@@ -468,6 +562,7 @@ function DRE:HandleChallengeWhisper(message, sender)
     -- Store challenge data
     self.pendingChallenge = {
         sender = sender,
+        inviteId = inviteId,
         roll = roll,
         wager = wager,
         timestamp = time()
@@ -475,28 +570,66 @@ function DRE:HandleChallengeWhisper(message, sender)
 
     local text = string.format("%s challenges you to DeathRoll!\n\nRoll: 1-%d\nWager: %s\n\nDo you accept?",
         sender, roll, self:FormatGold(wager))
+    if self.devDuel then
+        self.pendingChallenge.receivedAt = GetTime()
+        self.pendingChallenge.mode, self.pendingChallenge.double = duelMode, double
+        self.pendingChallenge.waitForAccept = true
+        self:ClearRecentRollsForPlayer(sender)
+        self.pendingChallenge.trackTrade = mode == "trade"
+        text = duelInviteText(self.pendingChallenge, self.pendingChallenge.trackTrade)
+    end
     self:ShowDialog("DEATHROLL_CHALLENGE_POPUP", text, nil, self.pendingChallenge)
+    if self.devDuel then self:RefreshDuel() end
 
-    self:DebugPrint(string.format("Received challenge from %s: roll=%d, wager=%d", sender, roll, wager))
+    self:DebugPrint(string.format("Received challenge from %s: roll=%d, wager=%.0f", sender, roll, wager))
+end
+
+-- Keep the first eligible system roll with its invite, even if the general roll cache fills up.
+local function rememberOpeningRoll(challenge, observed)
+    if not challenge.opener and observed.maxRoll == challenge.roll
+        and DRE:IsSamePlayer(observed.playerName, challenge.sender)
+        and observed.timestamp >= challenge.receivedAt - 2 then
+        challenge.opener = observed
+    end
 end
 
 -- Challenge System: Accept incoming challenge
 function DRE:AcceptChallenge(challenge)
     challenge = challenge or self.pendingChallenge
     if not challenge or challenge ~= self.pendingChallenge then return false end
-    if (time() - challenge.timestamp) > 30 or self:HasActiveGame() then
+    if (time() - challenge.timestamp) >= self.Dialogs.DEATHROLL_CHALLENGE_POPUP.timeout or self:HasActiveGame()
+        or (challenge.double and not self:MatchesDoubleOffer(challenge, challenge.sender, "Won")) then
         self.pendingChallenge = nil
+        self:ClearRecentRollsForPlayer(challenge.sender)
+        if self.devDuel then self:RefreshDuel() end
         self:Print("This challenge is no longer available.")
         return false
     end
     self.pendingChallenge = nil
     self.acceptedChallenge = challenge
-    self:SendChatSafely("DEATHROLL_ACCEPT", "WHISPER", nil, challenge.sender)
-    if TargetByName then pcall(TargetByName, challenge.sender, true) end
-    self:ShowMainWindow()
-    if self.UI and self.UI.tabGroup and self.UI.currentTab ~= "deathroll" then
-        self.UI.tabGroup:SelectTab("deathroll")
+    local sent, reason = sendChallengeMessage(self, "DEATHROLL_ACCEPT", challenge.sender, challenge.inviteId)
+    if not sent then
+        self:Print("Could not notify the challenger: " .. (reason or "chat unavailable"))
+        if challenge.inviteId then
+            self.acceptedChallenge = nil
+            self:ClearRecentRollsForPlayer(challenge.sender)
+            self:RefreshDuel()
+            return false
+        end
     end
+    if TargetByName then pcall(TargetByName, challenge.sender, true) end
+    if self.devDuel then
+        self.UI.duelResult = nil
+        self.UI.duelRestored = true
+        C_Timer.After(self.recentRollTimeWindow or 60, function()
+            if self.acceptedChallenge == challenge then
+                self.acceptedChallenge = nil
+                self:ClearRecentRollsForPlayer(challenge.sender)
+                self:RefreshDuel()
+            end
+        end)
+    end
+    self:ShowMainWindow("deathroll")
     if self.UI then
         self.UI.inputRoll = challenge.roll
         if self.UI.rollEdit then self.UI.rollEdit:SetText(tostring(challenge.roll)) end
@@ -504,7 +637,7 @@ function DRE:AcceptChallenge(challenge)
     end
     self:UpdateChallengeButtonText()
     self:Print(string.format("Accepted challenge from %s! Roll: %d, Wager: %s",
-        challenge.sender, challenge.roll, self:FormatGold(challenge.wager)))
+        challenge.sender, challenge.roll, challenge.trackTrade and "from the final gold trade" or self:FormatGold(challenge.wager)))
     return true
 end
 
@@ -512,8 +645,11 @@ function DRE:DeclineChallenge(challenge)
     challenge = challenge or self.pendingChallenge
     if not challenge or challenge ~= self.pendingChallenge then return end
     self.pendingChallenge = nil
-    self:SendChatSafely("DEATHROLL_DECLINE", "WHISPER", nil, challenge.sender)
+    self:ClearRecentRollsForPlayer(challenge.sender)
+    local sent, reason = sendChallengeMessage(self, "DEATHROLL_DECLINE", challenge.sender, challenge.inviteId)
+    if not sent then self:Print("Could not notify the challenger: " .. (reason or "chat unavailable")) end
     self:Print("Declined challenge from " .. challenge.sender)
+    if self.devDuel then self:RefreshDuel() end
 end
 
 function DRE:CalculateFunStats()
@@ -813,31 +949,37 @@ function DRE:CalculateFunStats()
     }
 end
 
--- Format fun statistic for display
-function DRE:FormatFunStat(statType, statData)
+-- Keep the full player identity separate from the statistic and its supporting figures.
+function DRE:GetFunStatFields(statType, statData)
     if not statData or not statData.player then
         return nil
     end
     
-    local player = statData.player
     local formatters = {
         mostPlayedWith = function(data)
-            return string.format("Most Played With: %s (%d games)", player, data.count)
+            return "Most Played With", string.format(data.count == 1 and "%d game" or "%d games", data.count)
         end,
         mostWinsAgainst = function(data)
-            return string.format("Most Wins Against: %s (%d wins)", player, data.count)
+            return "Most Wins Against", string.format(data.count == 1 and "%d win" or "%d wins", data.count)
         end,
         mostLossesAgainst = function(data)
-            return string.format("Most Losses Against: %s (%d losses)", player, data.count)
+            return "Most Losses Against", string.format(data.count == 1 and "%d loss" or "%d losses", data.count)
         end,
         mostMoneyWonFrom = function(data)
-            return string.format("Biggest Gold Mine: %s (%s won)", player, self:FormatGold(data.amount))
+            return "Biggest Gold Mine", string.format("%s won", self:FormatGold(data.amount))
         end,
         mostMoneyLostTo = function(data)
-            return string.format("Biggest Money Sink: %s (%s lost)", player, self:FormatGold(data.amount))
+            return "Biggest Money Sink", string.format("%s lost", self:FormatGold(data.amount))
         end,
         frenemy = function(data)
-            return string.format("Frenemy: %s (%d games, %.1f%% win rate)", player, data.games or 0, (data.winRate or 0) * 100)
+            if self.devDuel then
+                local games = data.games or 0
+                local wins = math.floor((data.winRate or 0) * games + 0.5)
+                local losses = games - wins
+                return "Closest Rival", string.format("%d %s · %d %s", wins, wins == 1 and "win" or "wins",
+                    losses, losses == 1 and "loss" or "losses")
+            end
+            return "Frenemy", string.format("%d games, %.1f%% win rate", data.games or 0, (data.winRate or 0) * 100)
         end,
         bestMatchup = function(data)
             local netPerGame = data.netPerGame or 0
@@ -846,9 +988,8 @@ function DRE:FormatFunStat(statType, statData)
             else
                 netPerGame = math.ceil(netPerGame - 0.5)
             end
-            return string.format(
-                "Best Matchup: %s (%s net, %s per game over %d games)",
-                player,
+            return "Best Matchup", string.format(
+                "%s net, %s per game over %d games",
                 self:FormatGold(data.net or 0),
                 self:FormatGold(netPerGame),
                 data.games or 0
@@ -861,69 +1002,75 @@ function DRE:FormatFunStat(statType, statData)
             else
                 netPerGame = math.ceil(netPerGame - 0.5)
             end
-            return string.format(
-                "Worst Matchup: %s (%s net, %s per game over %d games)",
-                player,
+            return "Worst Matchup", string.format(
+                "%s net, %s per game over %d games",
                 self:FormatGold(data.net or 0),
                 self:FormatGold(netPerGame),
                 data.games or 0
             )
         end,
         nemesis = function(data)
-            return string.format("Your Nemesis: %s (%.1f%% win rate against you)", player, data.winRate * 100)
+            return "Your Nemesis", string.format("%.1f%% win rate against you", data.winRate * 100)
         end,
         victim = function(data)
-            return string.format("Your Victim: %s (%.1f%% win rate against you)", player, data.winRate * 100)
+            return "Your Victim", string.format("%.1f%% win rate against you", data.winRate * 100)
         end,
         likelyCheater = function(data)
             local count = data.count or 0
             local pluralSuffix = count == 1 and "" or "s"
-            return string.format("Most Likely to Cheat: %s (%d suspicious roll%s)", player, count, pluralSuffix)
+            return "Most Likely to Cheat", string.format("%d suspicious roll%s", count, pluralSuffix)
         end,
         highRoller = function(data)
-            return string.format("High Roller: %s (%s avg wager)", player, self:FormatGold(data.avgWager))
+            return "High Roller", string.format("%s avg wager", self:FormatGold(data.avgWager))
         end,
         cheapskate = function(data)
-            return string.format("Cheapskate: %s (%s avg wager)", player, self:FormatGold(data.avgWager))
+            return "Cheapskate", string.format("%s avg wager", self:FormatGold(data.avgWager))
         end,
         luckyPlayer = function(data)
-            return string.format(
-                "Lucky Charm: %s (%+.1f wins vs 50/50 over %d games, %.1f%% win rate)",
-                player,
+            return "Lucky Charm", string.format(
+                "%+.1f wins vs 50/50 over %d games, %.1f%% win rate",
                 data.score or 0,
                 data.games or 0,
                 (data.winRate or 0) * 100
             )
         end,
         unluckyPlayer = function(data)
-            return string.format(
-                "Bad Luck Magnet: %s (%+.1f wins vs 50/50 over %d games, %.1f%% win rate)",
-                player,
+            return "Bad Luck Magnet", string.format(
+                "%+.1f wins vs 50/50 over %d games, %.1f%% win rate",
                 data.score or 0,
                 data.games or 0,
                 (data.winRate or 0) * 100
             )
         end,
         daredevil = function(data)
-            return string.format("Daredevil: %s (avg %.0f starting roll)", player, data.avgRoll)
+            return "Daredevil", string.format("avg %.0f starting roll", data.avgRoll)
         end,
         conservative = function(data)
-            return string.format("Conservative: %s (avg %.0f starting roll)", player, data.avgRoll)
+            return "Conservative", string.format("avg %.0f starting roll", data.avgRoll)
         end,
         biggestWin = function(data)
-            return string.format("Biggest Single Win: %s vs %s", self:FormatGold(data.amount), player)
+            return "Biggest Single Win", self:FormatGold(data.amount)
         end,
         biggestLoss = function(data)
-            return string.format("Biggest Single Loss: %s to %s", self:FormatGold(data.amount), player)
+            return "Biggest Single Loss", self:FormatGold(data.amount)
         end,
     }
     
     local formatter = formatters[statType]
     if formatter then
-        return formatter(statData)
+        local title, detail = formatter(statData)
+        return title, statData.player, detail
     end
     
     return nil
+end
+
+function DRE:FormatFunStat(statType, statData)
+    local title, player, detail = self:GetFunStatFields(statType, statData)
+    if not title then return nil end
+    if statType == "biggestWin" then return title .. ": " .. detail .. " vs " .. player end
+    if statType == "biggestLoss" then return title .. ": " .. detail .. " to " .. player end
+    return title .. ": " .. player .. " (" .. detail .. ")"
 end
 
 -- Slash command handlers
@@ -946,7 +1093,7 @@ function DRE:SlashCommand(input)
     if command == "minimap" then
         self:HandleMinimapSlashCommand(table.concat(args, " ", 2))
     elseif command == "group" then
-        self:GroupCommand(args[2])
+        self:GroupCommand(args[2], table.concat(args, " ", 3))
     elseif mergeSource and mergeTarget then
         -- Recalculation refreshes History, so remember the user's selection first.
         local selectedPlayer = self.UI and self.UI.historyDropdown and self.UI.historyDropdown:GetValue()
@@ -1018,17 +1165,18 @@ function DRE:SlashCommand(input)
     elseif trimmedInput == "debug" then
         self:Print("Debug command triggered - dumping buffer...")
         self:DumpDebugBuffer()
-    elseif trimmedInput == "accept" then
-        if self.pendingChallenge then
-            self:AcceptChallenge()
+    elseif self.devDuel and trimmedInput == "testpopup" then
+        self:PreviewChallengePopup()
+    elseif trimmedInput == "accept" or trimmedInput == "decline" then
+        local accept = trimmedInput == "accept"
+        local dialog = self.activeDialog
+        if dialog and dialog.definition == self.Dialogs.DEATHROLL_CHALLENGE_POPUP
+            and (dialog.data == self.pendingChallenge or dialog.data == previewChallenge) then
+            self:CloseDialog(dialog, accept)
+        elseif self.pendingChallenge then
+            if accept then self:AcceptChallenge() else self:DeclineChallenge() end
         else
-            self:Print("No pending challenge to accept")
-        end
-    elseif trimmedInput == "decline" then
-        if self.pendingChallenge then
-            self:DeclineChallenge()
-        else
-            self:Print("No pending challenge to decline")
+            self:Print("No pending challenge to " .. trimmedInput)
         end
     elseif trimmedInput == "cancel" then
         self:CancelCurrentGame()
@@ -1061,6 +1209,7 @@ function DRE:SlashCommand(input)
         self:Print("       /dr config - Opens configuration")
         self:Print("       /dr minimap [show|hide|lock|unlock] - Manage the minimap icon")
         self:Print("       /dr debug - Show debug chat buffer")
+        if self.devDuel then self:Print("       /dr testpopup - Preview a challenge invitation") end
         self:Print("       /dr accept - Accept pending challenge")
         self:Print("       /dr decline - Decline pending challenge")
         self:Print("       /dr cancel - Cancel the active game without recording a result")
@@ -1187,7 +1336,7 @@ function DRE:BuildPlayerStatsBroadcast(playerName)
     return message
 end
 
-function DRE:ResolveStatsBroadcastChannel(channelHint)
+function DRE:ResolveStatsBroadcastChannel(channelHint, requireWholeGroup)
     local requested = self:NormalizeStatsBroadcastChannelToken(channelHint)
 
     local inRaid = IsInRaid and IsInRaid()
@@ -1212,14 +1361,18 @@ function DRE:ResolveStatsBroadcastChannel(channelHint)
     end
 
     if requested == "PARTY" then
-        if inRaid then
-            return "RAID", "raid"
-        elseif inInstanceGroup then
-            return "INSTANCE_CHAT", "instance"
-        elseif inGroup then
+        if requireWholeGroup and (inRaid or inInstanceGroup) then
+            return nil, nil, "Choose Raid or Instance to announce to the whole group."
+        end
+        -- PARTY uses the home group, including the sender's subgroup in a home raid.
+        local inHomeGroup = (inGroup or inRaid) and not inInstanceGroup
+        if IsInGroup and LE_PARTY_CATEGORY_HOME then
+            inHomeGroup = IsInGroup(LE_PARTY_CATEGORY_HOME)
+        end
+        if inHomeGroup then
             return "PARTY", "party"
         end
-        return nil, nil, "You are not in a party, raid, or instance group."
+        return nil, nil, "Party chat is unavailable for your current group."
     elseif requested == "RAID" then
         if inRaid then
             return "RAID", "raid"
@@ -1270,24 +1423,79 @@ function DRE:SendPlayerStatsBroadcast(playerName, channelHint)
     return true, string.format("Sent stats for %s to %s.", playerName, channelName)
 end
 
+function DRE:GetDefaultStartingRoll()
+    local value = self.db.profile.gameplay.defaultStartingRoll
+    return self:IsBoundedInteger(value, 2, self.MAX_ROLL) and value or 100
+end
+
+function DRE:SetDefaultStartingRoll(value)
+    if not self:IsBoundedInteger(value, 2, self.MAX_ROLL) then return end
+    local previous = self:GetDefaultStartingRoll()
+    self.db.profile.gameplay.defaultStartingRoll = value
+    local ui = self.UI
+    if not (self.gameState and self.gameState.isActive) and not self.acceptedChallenge then
+        local field = ui.rollEdit
+        if field and tonumber(field:GetText()) == previous then
+            field:SetText(tostring(value))
+            ui.inputRoll = value
+        elseif not field and ui.inputRoll == previous then
+            ui.inputRoll = value
+        end
+    end
+    local draft = self.groupDraft
+    if self:IsGroupGuest() then draft = self.sharedTable.localDraft end
+    if draft and tonumber(draft.initialRoll) == previous then
+        draft.initialRoll = tostring(value)
+        local widgets = ui.groupWidgets
+        if not self:IsGroupGuest() then
+            if widgets and widgets.initialRoll then widgets.initialRoll:SetText(tostring(value)) end
+            self:RefreshGroupUI()
+        end
+    end
+end
+
+function DRE:ParseRollSetting(text)
+    -- Accept ordinary digits and the grouped form shown in the field label.
+    if type(text) == "string" and (text:match("^%d+$") or text:match("^%d%d?%d?,%d%d%d$")) then
+        local value = tonumber((text:gsub(",", "")))
+        if self:IsBoundedInteger(value, 2, self.MAX_ROLL) then return value end
+    end
+    return nil, "Enter a whole number from 2 to 999,999."
+end
+
+function DRE:PlayTurnSound()
+    if not self.db.profile.gameplay.soundEnabled then return end
+    local play = C_Sound and C_Sound.PlaySound or PlaySound
+    if play then pcall(play, (SOUNDKIT and SOUNDKIT.TELL_MESSAGE) or 3081) end
+end
+
 -- AceConfig Options Table
 function DRE:SetupOptions()
+    local function rollOption(name, desc, order, get, set)
+        return {
+            name = name .. " (2–999,999)", desc = desc, order = order, type = "input",
+            get = function() return tostring(get()) end,
+            validate = function(_, text)
+                local value, reason = self:ParseRollSetting(text)
+                return value ~= nil or reason
+            end,
+            set = function(_, text)
+                local value = self:ParseRollSetting(text)
+                if value then set(value) end
+            end,
+        }
+    end
     local options = {
-        name = "DeathRoll Enhancer",
+        name = self.displayName,
         type = "group",
         args = {
-            general = {
-                name = "General",
+            gameplay = {
+                name = "Gameplay",
                 type = "group",
                 order = 1,
                 args = {
-                    header = {
-                        name = "DeathRoll Enhancer v" .. self.version,
-                        type = "header",
-                        order = 0,
-                    },
                     gameplayHeader = {
-                        name = "Gameplay Settings",
+                        name = "Gameplay",
                         type = "header",
                         order = 1,
                     },
@@ -1300,8 +1508,8 @@ function DRE:SetupOptions()
                         order = 2,
                     },
                     soundEnabled = {
-                        name = "Sound Effects",
-                        desc = "Enable sound effects",
+                        name = "Play Sound on Your Turn",
+                        desc = "Play a cue when it is your turn to roll in a duel or hosted group round.",
                         type = "toggle",
                         get = function() return self.db.profile.gameplay.soundEnabled end,
                         set = function(_, val) self.db.profile.gameplay.soundEnabled = val end,
@@ -1313,7 +1521,7 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.gameplay.chatMessages end,
                         set = function(_, val) self.db.profile.gameplay.chatMessages = val end,
-                        order = 5.5,
+                        order = 4,
                     },
                     debugMessages = {
                         name = "Debug Messages",
@@ -1321,53 +1529,63 @@ function DRE:SetupOptions()
                         type = "toggle",
                         get = function() return self.db.profile.gameplay.debugMessages end,
                         set = function(_, val) self.db.profile.gameplay.debugMessages = val end,
-                        order = 5.7,
+                        order = 5,
                     },
-                    challengeHeader = {
-                        name = "Challenge System",
-                        type = "header",
-                        order = 5.8,
-                    },
+                    defaultStartingRoll = rollOption("Default Starting Roll", "Starting roll for new duels and group rounds.", 6,
+                        function() return self:GetDefaultStartingRoll() end,
+                        function(value) self:SetDefaultStartingRoll(value) end),
+                },
+            },
+            challenges = {
+                name = "Challenges and wagers",
+                type = "group",
+                order = 2,
+                args = {
                     challengeEnabled = {
                         name = "Enable Challenge Popups",
                         desc = "Show a popup when other players with the addon challenge you to a DeathRoll",
                         type = "toggle",
                         get = function() return self.db.profile.challengeSystem.enabled end,
                         set = function(_, val) self.db.profile.challengeSystem.enabled = val end,
-                        order = 5.81,
+                        order = 1,
                     },
                     sendWhisper = {
-                        name = "Send Challenge Whispers",
-                        desc = "Automatically whisper challenge details to your opponent when you start a game. They will see a popup if they have the addon.",
+                        name = self.devDuel and "Send Challenge Invites" or "Send Challenge Whispers",
+                        desc = self.devDuel and "Send a silent invitation to opponents using the updated Forever dev build."
+                            or "Automatically whisper challenge details to your opponent when you start a game. They will see a popup if they have the addon.",
                         type = "toggle",
                         get = function() return self.db.profile.challengeSystem.sendWhisper end,
                         set = function(_, val) self.db.profile.challengeSystem.sendWhisper = val end,
-                        order = 5.82,
+                        order = 2,
                     },
                     trackWagerByTrade = {
                         name = "Track Wager From Completed Trade",
                         desc = "Hide manual wager inputs in the main window and update the wager from the next successful gold trade with your opponent.",
                         type = "toggle",
                         get = function() return self.db.profile.challengeSystem.trackWagerByTrade end,
-                        set = function(_, val) self.db.profile.challengeSystem.trackWagerByTrade = val end,
-                        order = 5.825,
+                        set = function(_, val) self:SetTradeWagerModeEnabled(val) end,
+                        order = 4,
                     },
-                    minRollThreshold = {
-                        name = "Minimum Roll for Popups",
-                        desc = "Only show challenge popups for rolls above this threshold (prevents spam from low rolls)",
-                        type = "range",
-                        min = 2,
-                        max = 10000,
-                        step = 1,
-                        bigStep = 100,
-                        get = function() return self.db.profile.challengeSystem.minRollThreshold end,
-                        set = function(_, val) self.db.profile.challengeSystem.minRollThreshold = val end,
-                        order = 5.83,
-                    },
-                    interfaceHeader = {
-                        name = "Interface Settings",
-                        type = "header",
-                        order = 6,
+                    minRollThreshold = rollOption("Minimum Roll for Popups",
+                        "Show incoming challenge popups when the starting roll is at least this number.", 3,
+                        function() return self.db.profile.challengeSystem.minRollThreshold end,
+                        function(value) self.db.profile.challengeSystem.minRollThreshold = value end),
+                },
+            },
+            interface = {
+                name = "Interface",
+                type = "group",
+                order = 3,
+                args = {
+                    groupAppearance = {
+                        name = "Group appearance",
+                        type = "select",
+                        values = self.groupAppearances,
+                        sorting = self.groupAppearanceOrder,
+                        hidden = not self.devDuel,
+                        get = function() return self:GetGroupAppearance() end,
+                        set = function(_, value) self:SetGroupAppearance(value) end,
+                        order = 1,
                     },
                     scale = {
                         name = "UI Scale",
@@ -1393,7 +1611,7 @@ function DRE:SetupOptions()
                     },
                     resetSize = {
                         name = "Reset Window Size",
-                        desc = "Reset the DeathRoll window to default size (400x311)",
+                        desc = "Reset the DeathRoll window to its default size",
                         type = "execute",
                         func = function() self:ResetWindowSize() end,
                         order = 8.5,
@@ -1409,13 +1627,23 @@ function DRE:SetupOptions()
                         end,
                         order = 9,
                     },
-                    dataHeader = {
-                        name = "Data Management",
-                        type = "header",
+                    lock = {
+                        name = "Lock Minimap Icon",
+                        desc = "Keep the minimap icon in its current position.",
+                        type = "toggle",
+                        get = function() return self.db.profile.minimap.lock end,
+                        set = function(_, value) self:SetMinimapLocked(value) end,
                         order = 10,
                     },
+                },
+            },
+            data = {
+                name = "History and data",
+                type = "group",
+                order = 5,
+                args = {
                     stats = {
-                        name = "Show Statistics",
+                        name = "Print statistics to chat",
                         desc = "Display current statistics in chat",
                         type = "execute",
                         func = function() 
@@ -1431,7 +1659,7 @@ function DRE:SetupOptions()
                         order = 11,
                     },
                     cleanOldData = {
-                        name = "Clean Old Data",
+                        name = "Clean old records",
                         desc = "Remove game records older than 30 days",
                         type = "execute",
                         func = function() 
@@ -1446,7 +1674,7 @@ function DRE:SetupOptions()
                         func = function() 
                             self:ShowDialog("DEATHROLL_RESET_CONFIRM")
                         end,
-                        order = 13,
+                        order = 16,
                     },
                     exportData = {
                         name = "Export Data",
@@ -1454,7 +1682,7 @@ function DRE:SetupOptions()
                         type = "execute",
                         func = function()
                             local exportString = self:ExportData()
-                            local frame = AceGUI:Create("Frame")
+                            local frame = DRE:CreateWindowWidget("Frame")
                             self:ReleaseWindowOnClose(frame)
                             frame:SetTitle("Export Data")
                             frame:SetLayout("Fill")
@@ -1484,17 +1712,16 @@ function DRE:SetupOptions()
                 },
             },
             statistics = {
-                name = "Fun Statistics",
+                name = "Statistics",
                 type = "group",
-                order = 2,
+                order = 4,
+                get = function(info) return self.db.profile.funStats[info[#info]] end,
+                set = function(info, value)
+                    self:SetStatPreference(info[#info], value)
+                end,
                 args = {
-                    header = {
-                        name = "Choose which fun statistics to display",
-                        type = "header",
-                        order = 0,
-                    },
                     description = {
-                        name = "Select which interesting statistics you want to see in the Statistics tab. These provide fun insights into your DeathRoll gaming habits!",
+                        name = "Choose which player, gold, and streak statistics appear on the Statistics tab.",
                         type = "description",
                         order = 1,
                     },
@@ -1507,56 +1734,42 @@ function DRE:SetupOptions()
                         name = "Most Played With",
                         desc = "Show which player you've played the most games against",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showMostPlayedWith end,
-                        set = function(_, val) self.db.profile.funStats.showMostPlayedWith = val end,
                         order = 3,
                     },
                     showMostWinsAgainst = {
                         name = "Most Wins Against",
                         desc = "Show which player you've beaten the most times",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showMostWinsAgainst end,
-                        set = function(_, val) self.db.profile.funStats.showMostWinsAgainst = val end,
                         order = 4,
                     },
                     showMostLossesAgainst = {
                         name = "Most Losses Against",
                         desc = "Show which player has beaten you the most times",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showMostLossesAgainst end,
-                        set = function(_, val) self.db.profile.funStats.showMostLossesAgainst = val end,
                         order = 5,
                     },
                     showNemesis = {
                         name = "Your Nemesis",
                         desc = "Show the player with the highest win rate against you (minimum 3 games)",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showNemesis end,
-                        set = function(_, val) self.db.profile.funStats.showNemesis = val end,
                         order = 6,
                     },
                     showVictim = {
                         name = "Your Victim",
                         desc = "Show the player with the lowest win rate against you (minimum 3 games)",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showVictim end,
-                        set = function(_, val) self.db.profile.funStats.showVictim = val end,
                         order = 7,
                     },
                     showFrenemy = {
                         name = "Frenemy",
                         desc = "Show your most even matchup near 50/50 (minimum 5 games)",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showFrenemy end,
-                        set = function(_, val) self.db.profile.funStats.showFrenemy = val end,
                         order = 8,
                     },
                     showLikelyCheater = {
                         name = "Most Likely to Cheat",
                         desc = "Show who has the most flagged invalid roll-range attempts",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showLikelyCheater end,
-                        set = function(_, val) self.db.profile.funStats.showLikelyCheater = val end,
                         order = 8.5,
                     },
                     separator2 = {
@@ -1568,64 +1781,48 @@ function DRE:SetupOptions()
                         name = "Biggest Gold Mine",
                         desc = "Show which player you've won the most gold from",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showMostMoneyWonFrom end,
-                        set = function(_, val) self.db.profile.funStats.showMostMoneyWonFrom = val end,
                         order = 10,
                     },
                     showMostMoneyLostTo = {
                         name = "Biggest Money Sink",
                         desc = "Show which player you've lost the most gold to",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showMostMoneyLostTo end,
-                        set = function(_, val) self.db.profile.funStats.showMostMoneyLostTo = val end,
                         order = 11,
                     },
                     showBestMatchup = {
                         name = "Best Matchup",
                         desc = "Show the opponent with the best net gold per game (minimum 3 games)",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showBestMatchup end,
-                        set = function(_, val) self.db.profile.funStats.showBestMatchup = val end,
                         order = 12,
                     },
                     showWorstMatchup = {
                         name = "Worst Matchup",
                         desc = "Show the opponent with the worst net gold per game (minimum 3 games)",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showWorstMatchup end,
-                        set = function(_, val) self.db.profile.funStats.showWorstMatchup = val end,
                         order = 13,
                     },
                     showBiggestWin = {
                         name = "Biggest Single Win",
                         desc = "Show your largest single game victory",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showBiggestWin end,
-                        set = function(_, val) self.db.profile.funStats.showBiggestWin = val end,
                         order = 14,
                     },
                     showBiggestLoss = {
                         name = "Biggest Single Loss",
                         desc = "Show your largest single game defeat",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showBiggestLoss end,
-                        set = function(_, val) self.db.profile.funStats.showBiggestLoss = val end,
                         order = 15,
                     },
                     showHighRoller = {
                         name = "High Roller",
                         desc = "Show the player you've had the highest average wager with",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showHighRoller end,
-                        set = function(_, val) self.db.profile.funStats.showHighRoller = val end,
                         order = 16,
                     },
                     showCheapskate = {
                         name = "Cheapskate",
                         desc = "Show the player you've had the lowest average wager with",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showCheapskate end,
-                        set = function(_, val) self.db.profile.funStats.showCheapskate = val end,
                         order = 17,
                     },
                     separator3 = {
@@ -1637,32 +1834,24 @@ function DRE:SetupOptions()
                         name = "Lucky Player",
                         desc = "Show who overperforms your 50/50 baseline the most (minimum 3 games)",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showLuckyPlayer end,
-                        set = function(_, val) self.db.profile.funStats.showLuckyPlayer = val end,
                         order = 19,
                     },
                     showUnluckyPlayer = {
                         name = "Unlucky Player",
                         desc = "Show who underperforms your 50/50 baseline the most (minimum 3 games)",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showUnluckyPlayer end,
-                        set = function(_, val) self.db.profile.funStats.showUnluckyPlayer = val end,
                         order = 20,
                     },
                     showDaredevil = {
                         name = "Daredevil Opponent",
                         desc = "Show which player prefers the highest starting rolls",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showDaredevil end,
-                        set = function(_, val) self.db.profile.funStats.showDaredevil = val end,
                         order = 21,
                     },
                     showConservative = {
                         name = "Conservative Opponent",
                         desc = "Show which player prefers the lowest starting rolls",
                         type = "toggle",
-                        get = function() return self.db.profile.funStats.showConservative end,
-                        set = function(_, val) self.db.profile.funStats.showConservative = val end,
                         order = 22,
                     },
                 },
@@ -1670,10 +1859,38 @@ function DRE:SetupOptions()
         },
     }
     
+    if self.devDuel then
+        local stats = options.args.statistics.args
+        stats.description.name = "Choose which 1v1, Group, and opponent history statistics appear."
+        stats.showLuckyPlayer, stats.showUnluckyPlayer = nil, nil
+        stats.separator3.name = "Opening Rolls"
+        stats.showFrenemy.name = "Closest Rival"
+        stats.historyHeader = {type = "header", name = "Opponent History", order = 23}
+        stats.showLikelyCheater.name = "Wrong-range Rolls"
+        stats.showLikelyCheater.desc = "Show the wrong-range roll count in each opponent’s history."
+        stats.showLikelyCheater.order = 24
+        stats.groupHeader = {type = "header", name = "Group Statistics", order = 25}
+        for index, option in ipairs(self.groupStatOptions) do
+            stats[option.key] = {type = "toggle", name = option.label, order = 25 + index}
+        end
+    end
+    -- AceConfig reads width on individual controls. Give each one its own row.
+    for _, page in pairs(options.args) do
+        for _, control in pairs(page.args) do
+            control.width = "full"
+        end
+    end
     AceConfig:RegisterOptionsTable("DeathRollEnhancer", options)
     -- Current AceConfig integrates with Settings; older clients still use /dr config.
     if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
-        self.optionsFrame = AceConfigDialog:AddToBlizOptions("DeathRollEnhancer", "DeathRoll Enhancer")
+        if Settings.GetCategory and Settings.RegisterCanvasLayoutSubcategory then
+            self.optionsFrame = AceConfigDialog:AddToBlizOptions("DeathRollEnhancer", self.displayName, nil, "gameplay")
+            for _, key in ipairs({"challenges", "interface", "statistics", "data"}) do
+                AceConfigDialog:AddToBlizOptions("DeathRollEnhancer", options.args[key].name, self.displayName, key)
+            end
+        else
+            self.optionsFrame = AceConfigDialog:AddToBlizOptions("DeathRollEnhancer", self.displayName)
+        end
     end
 end
 
@@ -1687,7 +1904,7 @@ function DRE:ShowHistory(playerName)
 end
 
 function DRE:OpenOptions()
-    AceConfigDialog:Open("DeathRollEnhancer")
+    self:ShowMainWindow("settings")
 end
 
 function DRE:UpdateUIScale()
@@ -1714,8 +1931,8 @@ function DRE:ResetWindowPosition()
     if self.UI and self.UI.mainWindow and self.UI.mainWindow.frame then
         self.UI.mainWindow.frame:ClearAllPoints()
         self.UI.mainWindow.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-        self.UI.mainWindow:SetWidth(400)
-        self.UI.mainWindow:SetHeight(311)
+        self.UI.mainWindow:SetWidth(self.tableWidth or 400)
+        self.UI.mainWindow:SetHeight(self.tableHeight or 311)
     end
     
     self:Print("Window position and size reset to defaults")
@@ -1730,11 +1947,11 @@ function DRE:ResetWindowSize()
     
     -- Also resize the currently open window if it exists
     if self.UI and self.UI.mainWindow then
-        self.UI.mainWindow:SetWidth(400)
-        self.UI.mainWindow:SetHeight(311)
+        self.UI.mainWindow:SetWidth(self.tableWidth or 400)
+        self.UI.mainWindow:SetHeight(self.tableHeight or 311)
     end
     
-    self:Print("Window size reset to default (400x311)")
+    self:Print(string.format("Window size reset to default (%dx%d)", self.tableWidth or 400, self.tableHeight or 311))
 end
 
 function DRE:PrintCurrentWindowSize()
@@ -1773,8 +1990,8 @@ function DRE:PrintCurrentWindowSize()
             effectiveHeight
         ))
     else
-        local fallbackWidth = savedWidth or 400
-        local fallbackHeight = savedHeight or 311
+        local fallbackWidth = savedWidth or self.tableWidth or 400
+        local fallbackHeight = savedHeight or self.tableHeight or 311
 
         self:Print(string.format(
             "Window is not open. Saved size: %.0f x %.0f (scale %.2f)",
@@ -1787,7 +2004,7 @@ function DRE:PrintCurrentWindowSize()
     if savedWidth or savedHeight then
         self:Print(string.format(
             "Saved AceGUI size: %.0f x %.0f",
-            savedWidth or 400,
+            savedWidth or self.tableWidth or 400,
             savedHeight or 300
         ))
     end
@@ -1860,11 +2077,13 @@ end
 function DRE:TRADE_CLOSED(event)
     if self.tradeTracking then
         self.tradeTracking.closedAt = time()
+        if self.RefreshDuel then self:RefreshDuel() end
     end
 end
 
 function DRE:TRADE_REQUEST_CANCEL(event)
     self.tradeTracking = nil
+    if self.RefreshDuel then self:RefreshDuel() end
 end
 
 function DRE:UI_INFO_MESSAGE(event, messageType, message)
@@ -1876,6 +2095,7 @@ function DRE:UI_INFO_MESSAGE(event, messageType, message)
 
     self:DebugPrint("Successful trade detected")
     self:HandleTrackedTradeCompletion()
+    if self.RefreshDuel then self:RefreshDuel() end
 end
 
 -- Player-authored text must never drive dice results or suspicion records.
@@ -1938,6 +2158,9 @@ function DRE:StoreRecentRoll(playerName, roll, maxRoll)
     end
 
     table.insert(self.recentRolls, rollData)
+    if self.devDuel and self.acceptedChallenge then
+        rememberOpeningRoll(self.acceptedChallenge, rollData)
+    end
 
     -- Limit the number of stored rolls (with bounds checking to prevent infinite loops)
     local maxRolls = self.maxRecentRolls or 10
@@ -1997,6 +2220,8 @@ function DRE:RecordSuspiciousRoll(playerName, roll, maxRoll, expectedMaxRoll)
     existing.lastSeen = time()
 
     self.db.profile.suspiciousRolls[playerName] = existing
+
+    if self.devDuel and self.UI.currentTab == "history" then self:UpdateStatsDisplay() end
 
     self:DebugPrint(string.format(
         "Tracked suspicious roll for %s: roll=%d max=%d expectedMax=%d count=%d",
@@ -2174,11 +2399,14 @@ end
 
 -- Handle detected roll from any event source
 function DRE:HandleDetectedRoll(playerName, roll, maxRoll)
+    if self:IsGroupGuest() then return end -- Only the joined host adjudicates server rolls.
     if self:IsGroupRoundActive() then
         self:HandleGroupRoll(playerName, roll, maxRoll)
         return -- group rolls must never become 1v1 challenge candidates
     end
     playerName = self:NormalizePlayerName(playerName)
+    if self.outgoingChallenge or (self.pendingChallenge and self.pendingChallenge.waitForAccept
+        and self:IsSamePlayer(playerName, self.pendingChallenge.sender)) then return end
     if not playerName or not self:IsBoundedInteger(maxRoll, 1, self.MAX_ROLL)
         or not self:IsBoundedInteger(roll, 1, maxRoll) then return end
     self:DebugPrint("HandleDetectedRoll called: player=" .. (playerName or "nil") .. ", roll=" .. (roll or "nil") .. ", maxRoll=" .. (maxRoll or "nil"))
@@ -2348,20 +2576,18 @@ function DRE:CHAT_MSG_WHISPER(event, message, playerName, languageName, channelN
     playerName = self:NormalizePlayerName(playerName)
     if not playerName then return end
     -- Handle DeathRoll challenge messages
+    if self.devDuel and (message:match("^DEATHROLL_CHALLENGE:") or message == "DEATHROLL_ACCEPT" or message == "DEATHROLL_DECLINE") then return end
     if message:match("^DEATHROLL_CHALLENGE:") then
         self:HandleChallengeWhisper(message, playerName)
         return
     end
 
-    -- Handle DeathRoll challenge acceptance
-    if message == "DEATHROLL_ACCEPT" then
-        self:Print(playerName .. " accepted your DeathRoll challenge!")
-        return
-    end
-
-    -- Handle DeathRoll challenge decline
-    if message == "DEATHROLL_DECLINE" then
-        self:Print(playerName .. " declined your DeathRoll challenge.")
+    if message == "DEATHROLL_ACCEPT" or message == "DEATHROLL_DECLINE" then
+        local game = self.gameState
+        if game and game.whisperReplyUntil and GetTime() < game.whisperReplyUntil and self:IsSamePlayer(playerName, game.target) then
+            game.whisperReplyUntil = nil
+            self:Print(playerName .. (message == "DEATHROLL_ACCEPT" and " accepted your DeathRoll challenge!" or " declined your DeathRoll challenge."))
+        end
         return
     end
 
@@ -2401,6 +2627,7 @@ function DRE:FindRecentTargetRoll(targetName)
 end
 
 function DRE:UpdateChallengeButtonText()
+    if self.RefreshDuel then self:RefreshDuel(); return end
     if self:IsGroupRoundActive() then return end
     -- Validate UI exists and is ready
     if not self.UI then
@@ -2584,7 +2811,7 @@ function DRE:DebugPrint(message)
 end
 
 -- Main function to start a DeathRoll challenge (called from UI)
-function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade)
+function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade, terms)
     -- Check for active game first to prevent concurrent games
     if self:HasActiveGame() then
         self:Print("A game is already in progress! Finish it or use /dr cancel.")
@@ -2601,7 +2828,8 @@ function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade)
         self:Print("Starting self-duel! You'll play against yourself.")
 
         -- Start the actual game immediately for self-dueling
-        if not self:StartActualGame(target, roll, wager, nil, trackWagerByTrade) then return false end
+        if not self:StartActualGame(target, roll, wager, nil, trackWagerByTrade, terms) then return false end
+        self:PlayTurnSound()
 
         -- Update UI state to rolling
         if self.UpdateGameUIState then
@@ -2610,20 +2838,27 @@ function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade)
         return true
     end
 
-    if not self:StartActualGame(target, roll, wager, roll, trackWagerByTrade) then return false end
+    if not self:StartActualGame(target, roll, wager, roll, trackWagerByTrade, terms) then return false end
     self:PerformRoll()
     return true
 end
 
 
 -- Show dialog to edit recent game records
-function DRE:ShowEditGameDialog()
+function DRE:ShowEditGameDialog(gameId)
     -- Close existing dialog if open
     if self.editGameFrame then
         self.editGameFrame:Hide()
     end
     
-    local recentGames = self:GetRecentGamesForEditing(15)
+    local recentGames
+    if gameId then
+        local player, index, game = self:FindGameRecordById(gameId)
+        recentGames = game and {{playerName = player, gameIndex = index, gameId = gameId,
+            game = game, timestamp = game.timestamp}} or {}
+    else
+        recentGames = self:GetRecentGamesForEditing(15)
+    end
     
     if #recentGames == 0 then
         self:Print("No recent game records found to edit!")
@@ -2631,11 +2866,20 @@ function DRE:ShowEditGameDialog()
     end
     
     -- Create frame
-    local frame = AceGUI:Create("Frame")
+    local frame = DRE:CreateWindowWidget("Frame")
     frame:SetTitle("Edit Game Record")
     frame:SetLayout("Flow")
     frame:SetWidth(500)
     frame:SetHeight(400)
+    local body = frame
+    if self.devDuel then
+        frame:SetLayout("Fill")
+        body = AceGUI:Create("ScrollFrame")
+        body:SetLayout("Flow")
+        body:SetFullWidth(true)
+        body:SetFullHeight(true)
+        frame:AddChild(body)
+    end
     
     -- Store reference for refreshing
     self.editGameFrame = frame
@@ -2687,17 +2931,18 @@ function DRE:ShowEditGameDialog()
     end
     
     -- Game selection dropdown
-    local gameDropdown = AceGUI:Create("Dropdown")
+    local gameDropdown = self:CreateWindowWidget("Dropdown")
     gameDropdown:SetLabel("Select Game to Edit:")
     gameDropdown:SetList(gameList)
     gameDropdown:SetWidth(450)
-    frame:AddChild(gameDropdown)
+    if self.devDuel then gameDropdown:SetFullWidth(true) end
+    body:AddChild(gameDropdown)
     
     -- Container for editing UI (will be created dynamically)
     local selectedGameGroup = AceGUI:Create("SimpleGroup")
     selectedGameGroup:SetLayout("Flow")
     selectedGameGroup:SetFullWidth(true)
-    frame:AddChild(selectedGameGroup)
+    body:AddChild(selectedGameGroup)
     
     -- Function to create editing UI for selected game
     local function createEditUI(gameData)
@@ -2707,6 +2952,11 @@ function DRE:ShowEditGameDialog()
         
         local game = gameData.game
         local playerName = gameData.playerName
+        local original = {
+            result = self:NormalizeGameResult(game.result),
+            wager = tonumber(game.goldAmount) or 0,
+            roll = tonumber(game.initialRoll) or 0,
+        }
         
         -- Game info header
         local infoLabel = AceGUI:Create("Label")
@@ -2742,50 +2992,59 @@ function DRE:ShowEditGameDialog()
             selectedGameGroup:AddChild(suspiciousDetailsLabel)
         end
 
-        local suspiciousCountInput = AceGUI:Create("EditBox")
+        local function sizeEditorControl(widget, width, fraction)
+            if self.devDuel then widget:SetRelativeWidth(fraction) else widget:SetWidth(width) end
+        end
+        local suspiciousCountInput = DRE:CreateWindowWidget("EditBox")
         suspiciousCountInput:SetLabel("Player Suspicion Count:")
         suspiciousCountInput:SetText(tostring(overallSuspiciousCount or 0))
-        suspiciousCountInput:SetWidth(140)
+        sizeEditorControl(suspiciousCountInput, 140, 0.5)
         selectedGameGroup:AddChild(suspiciousCountInput)
         
         -- Result dropdown
-        local resultDropdown = AceGUI:Create("Dropdown")
-        resultDropdown:SetLabel("Result:")
+        local resultDropdown
+        if self.devDuel then
+            resultDropdown = self:CreateTableDropdownField(selectedGameGroup, "Result:", 0.5)
+        else
+            resultDropdown = AceGUI:Create("Dropdown")
+            resultDropdown:SetLabel("Result:")
+            resultDropdown:SetWidth(150)
+            selectedGameGroup:AddChild(resultDropdown)
+        end
         resultDropdown:SetList({win = "Won", lost = "Lost"})
-        resultDropdown:SetValue(game.result == "Won" and "win" or "lost")
-        resultDropdown:SetWidth(150)
-        selectedGameGroup:AddChild(resultDropdown)
+        local resultKeys = {Won = "win", Lost = "lost"}
+        resultDropdown:SetValue(resultKeys[original.result])
         
         -- Gold input
-        local goldInput = AceGUI:Create("EditBox")
+        local goldInput = DRE:CreateWindowWidget("EditBox")
         goldInput:SetLabel("Gold:")
-        local currentGold = game.goldAmount or 0
+        local currentGold = original.wager
         local gold = math.floor(currentGold / 10000)
         goldInput:SetText(tostring(gold))
-        goldInput:SetWidth(80)
+        sizeEditorControl(goldInput, 80, 0.25)
         selectedGameGroup:AddChild(goldInput)
         
         -- Silver input  
-        local silverInput = AceGUI:Create("EditBox")
+        local silverInput = DRE:CreateWindowWidget("EditBox")
         silverInput:SetLabel("Silver:")
         local silver = math.floor((currentGold % 10000) / 100)
         silverInput:SetText(tostring(silver))
-        silverInput:SetWidth(80)
+        sizeEditorControl(silverInput, 80, 0.25)
         selectedGameGroup:AddChild(silverInput)
         
         -- Copper input
-        local copperInput = AceGUI:Create("EditBox")
+        local copperInput = DRE:CreateWindowWidget("EditBox")
         copperInput:SetLabel("Copper:")
         local copper = currentGold % 100
         copperInput:SetText(tostring(copper))
-        copperInput:SetWidth(80)
+        sizeEditorControl(copperInput, 80, 0.25)
         selectedGameGroup:AddChild(copperInput)
         
         -- Starting roll input
-        local rollInput = AceGUI:Create("EditBox")
+        local rollInput = DRE:CreateWindowWidget("EditBox")
         rollInput:SetLabel("Starting Roll:")
-        rollInput:SetText(tostring(game.initialRoll or 0))
-        rollInput:SetWidth(100)
+        rollInput:SetText(tostring(original.roll))
+        sizeEditorControl(rollInput, 100, 0.25)
         selectedGameGroup:AddChild(rollInput)
         
         -- Button container for save and delete buttons
@@ -2794,9 +3053,9 @@ function DRE:ShowEditGameDialog()
         buttonGroup:SetFullWidth(true)
         selectedGameGroup:AddChild(buttonGroup)
 
-        local setSuspicionButton = AceGUI:Create("Button")
+        local setSuspicionButton = DRE:CreateWindowWidget("Button")
         setSuspicionButton:SetText("Save Suspicion Count")
-        setSuspicionButton:SetWidth(170)
+        sizeEditorControl(setSuspicionButton, 170, 0.5)
         setSuspicionButton:SetCallback("OnClick", function()
             local requestedCount = tonumber(suspiciousCountInput:GetText())
             if not requestedCount then
@@ -2817,9 +3076,9 @@ function DRE:ShowEditGameDialog()
         end)
         buttonGroup:AddChild(setSuspicionButton)
 
-        local clearSuspicionButton = AceGUI:Create("Button")
+        local clearSuspicionButton = DRE:CreateWindowWidget("Button")
         clearSuspicionButton:SetText("Clear Suspicion Entry")
-        clearSuspicionButton:SetWidth(170)
+        sizeEditorControl(clearSuspicionButton, 170, 0.5)
         clearSuspicionButton:SetCallback("OnClick", function()
             local success, message = self:ClearSuspiciousRollEntry(playerName)
             if success then
@@ -2834,11 +3093,16 @@ function DRE:ShowEditGameDialog()
         buttonGroup:AddChild(clearSuspicionButton)
         
         -- Save button
-        local saveButton = AceGUI:Create("Button")
+        local saveButton = DRE:CreateWindowWidget("Button")
         saveButton:SetText("Save Changes")
-        saveButton:SetWidth(150)
+        sizeEditorControl(saveButton, 150, 0.5)
         saveButton:SetCallback("OnClick", function()
-            local newResult = resultDropdown:GetValue() == "win" and "Won" or "Lost"
+            local selected = resultDropdown:GetValue()
+            if selected ~= "win" and selected ~= "lost" then
+                self:Print("Choose Won or Lost before saving.")
+                return
+            end
+            local newResult = selected == "win" and "Won" or "Lost"
             local function readWholeNumber(input)
                 local text = self:Trim(input:GetText())
                 -- Empty fields explicitly mean zero; malformed text must never erase data.
@@ -2871,7 +3135,7 @@ function DRE:ShowEditGameDialog()
 
             local newGoldAmount = gold * 10000 + silver * 100 + copper
 
-            local success, message = self:EditGameRecordById(gameData.gameId, newResult, newGoldAmount, newInitialRoll)
+            local success, message = self:EditGameRecordById(gameData.gameId, newResult, newGoldAmount, newInitialRoll, original)
 
             if success then
                 self:Print(message)
@@ -2887,9 +3151,9 @@ function DRE:ShowEditGameDialog()
         buttonGroup:AddChild(saveButton)
         
         -- Delete button
-        local deleteButton = AceGUI:Create("Button")
+        local deleteButton = DRE:CreateWindowWidget("Button")
         deleteButton:SetText("Delete Game")
-        deleteButton:SetWidth(150)
+        sizeEditorControl(deleteButton, 150, 0.5)
         deleteButton:SetCallback("OnClick", function()
             -- Show confirmation dialog with parameters
             self:ShowDialog("DEATHROLL_DELETE_GAME_CONFIRM", nil, nil, gameData.gameId)
@@ -2927,13 +3191,26 @@ DRE.Dialogs["DEATHROLL_CHALLENGE_POPUP"] = {
     button1 = "Accept",
     button2 = "Decline",
     OnAccept = function(dialog)
+        if dialog.data == previewChallenge then
+            DRE:ShowMainWindow("deathroll")
+            DRE:Print("Challenge preview accepted.")
+            return
+        end
         DRE:AcceptChallenge(dialog.data)
     end,
     OnCancel = function(dialog, data, reason)
         local challenge = data or (dialog and dialog.data)
         if not challenge then return end
+        if challenge == previewChallenge then
+            if reason == "clicked" then DRE:Print("Challenge preview declined.") end
+            return
+        end
         if not dialog or reason == "timeout" or reason == "override" then
-            if DRE.pendingChallenge == challenge then DRE.pendingChallenge = nil end
+            if DRE.pendingChallenge == challenge then
+                DRE.pendingChallenge = nil
+                DRE:ClearRecentRollsForPlayer(challenge.sender)
+                if DRE.devDuel then DRE:RefreshDuel() end
+            end
         else
             DRE:DeclineChallenge(challenge)
         end
@@ -2989,12 +3266,13 @@ DRE.Dialogs["DEATHROLL_DELETE_GAME_CONFIRM"] = {
 }
 
 -- Start the actual DeathRoll game
-function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWagerByTrade)
+function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWagerByTrade, terms)
     target = self:NormalizePlayerName(target)
     local valid, reason = self:ValidateGameInputs(target, initialRoll, wager or 0)
     if not valid then self:Print(reason); return false end
     if not self:IsBoundedInteger(currentRoll or initialRoll, 1, initialRoll) then return false end
     if self:HasActiveGame() or self.disabled then return false end
+    if terms and (not self.devDuel or not self.duelModes[terms.mode or "classic"]) then return false end
     local myName = DRE:GetUnitPlayerName("player")
     local isSelfDuel = (target == myName)
 
@@ -3009,13 +3287,29 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWager
         wager = wager or 0,
         trackWagerByTrade = trackWagerByTrade == true,
         playerTurn = true,
-        rollCount = isSelfDuel and 0 or 0, -- Initialize roll counter for all games
+        rollCount = 0,
         suspiciousRollCount = 0,
         suspiciousRollSamples = {}
     }
+    if self.devDuel then
+        local game = self.gameState
+        game.mode = terms and terms.mode or "classic"
+        if terms and terms.inviteId and game.mode ~= "classic" then game.playerTurn = false end
+        game.matchId = terms and (terms.inviteId or terms.id) or "manual"
+        game.double = terms and terms.double
+        game.proposedDouble = game.double and not terms.inviteId
+        if game.mode == "twoLives" or game.mode == "highRoller" then
+            local initial = game.mode == "twoLives" and 2 or 0
+            game.score = {player = initial, opponent = initial}
+        end
+    end
 
+    if self.emoteSyncEnabled and not isSelfDuel then
+        self.gameState.emoteRound = self:NewEmoteRound(target, initialRoll)
+    end
     self.acceptedChallenge = nil
     if self.UI then
+        self.UI.duelResult = nil
         self.UI.currentTarget = target
         self.UI.currentWager = wager or 0
         self.UI.isGameActive = true
@@ -3037,7 +3331,9 @@ function DRE:StartActualGame(target, initialRoll, wager, currentRoll, trackWager
     self:ChatPrint("DeathRoll game started with " .. target .. "!")
     
     -- If currentRoll is different from initialRoll, it means opponent already rolled
-    if currentRoll and currentRoll ~= initialRoll then
+    if not self.gameState.playerTurn then
+        self:ChatPrint(target .. " opens with a roll of 1-" .. initialRoll)
+    elseif currentRoll and currentRoll ~= initialRoll then
         self:ChatPrint("Current roll range: 1-" .. self.gameState.currentRoll)
         self:ChatPrint("Your turn! Roll 1-" .. self.gameState.currentRoll)
     else
@@ -3057,6 +3353,11 @@ end
 
 -- Local recovery only: cancellation never records an outcome or a pending payment.
 function DRE:CancelCurrentGame()
+    if self.outgoingChallenge then
+        self:WithdrawDuelInvite()
+        self:Print("Invitation cancelled.")
+        return true
+    end
     if self:IsGroupRoundActive() then return self:CancelGroupRound() end
     local game = self.gameState
     if not (game and game.isActive) then
@@ -3092,6 +3393,7 @@ end
 function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
     local playerName = DRE:GetUnitPlayerName("player")
     local won = (result == "WIN")
+    local emoteRound = self.gameState and self.gameState.emoteRound
     local opponent = (options and options.opponent) or (self.gameState and self.gameState.target) or "Unknown"
     local shouldTrackTrade = false
     local recordedPlayerName = nil
@@ -3108,6 +3410,22 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
                 suspiciousRollCount = suspiciousRollCount,
                 suspiciousRollDetails = table.concat(self.gameState.suspiciousRollSamples or {}, ", ")
             }
+        end
+        if self.devDuel then
+            gameMetadata = gameMetadata or {}
+            gameMetadata.mode = self.gameState.mode
+            gameMetadata.matchId = self.gameState.matchId
+            gameMetadata.lastFace = self.gameState.lastFace
+            gameMetadata.offeredDouble = self.gameState.proposedDouble or nil
+            gameMetadata.firstLifeLost = self.gameState.firstLifeLost
+            if self.gameState.mode == "highRoller" then
+                gameMetadata.tiebreaks = self.gameState.tiebreaks or 0
+                gameMetadata.tiebreakWins = self.gameState.tiebreakWins or 0
+            end
+            if self.gameState.mode ~= "classic" then
+                gameMetadata.duelRolls = self.gameState.duelRolls
+                gameMetadata.score = self.gameState.score
+            end
         end
     end
 
@@ -3157,15 +3475,23 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
         recordedAt, recordedId = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0, gameMetadata)
     end
 
-    if shouldTrackTrade and recordedId and recordedPlayerName ~= playerName then
+    local trackPayment = shouldTrackTrade and recordedId and recordedPlayerName ~= playerName
+    local ownerGUID = trackPayment and self:GetTradeOwnerGUID()
+    if ownerGUID then
         self:PrunePendingTradeWagers()
         table.insert(self.db.profile.pendingTradeWagers, {
-            playerName = recordedPlayerName, result = recordedResult,
+            ownerGUID = ownerGUID, playerName = recordedPlayerName, result = recordedResult,
             recordedAt = recordedAt, gameId = recordedId,
         })
         self:Print("Waiting for a completed gold trade with " .. recordedPlayerName .. " to record the wager.")
+    elseif trackPayment then
+        self:Print("Character identity unavailable. Use /dr edit to record this payment.")
     end
 
+    if self.RememberDuelResult and recordedId then
+        self:RememberDuelResult(recordedId, recordedPlayerName, recordedResult, wager, recordedAt,
+            not not ownerGUID, self.gameState and self.gameState.duelRolls, self.gameState)
+    end
     -- Clean up game state
     self.gameState = nil
     
@@ -3185,11 +3511,11 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
             end
         end
         
-        self.UI.inputRoll = 100
+        self.UI.inputRoll = self:GetDefaultStartingRoll()
         self.UI.inputWager = 0
         -- Clear roll and wager input fields
         if self.UI.rollEdit then
-            self.UI.rollEdit:SetText("")
+            self.UI.rollEdit:SetText(tostring(self.UI.inputRoll))
         end
         if self.UI.goldEdit then
             self.UI.goldEdit:SetText("")
@@ -3214,17 +3540,34 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
     if self.UpdateStatsDisplay then
         self:UpdateStatsDisplay()
     end
-    if self.db and self.db.profile.gameplay.autoEmote then
-        self:PerformResultEmote(won)
+    local autoEmote = self.db and self.db.profile.gameplay.autoEmote
+    local hero = self.devDuel and self.UI and self.UI.tableHero
+    local resultView = self.devDuel and self.UI.duelResult
+    if emoteRound and resultView and resultView.gameId == recordedId then
+        resultView.emoteRound = emoteRound
+        emoteRound.finishedAt = GetTime()
+    end
+    if autoEmote or hero then
+        local emote = won and self:GetRandomHappyEmote() or self:GetRandomSadEmote()
+        if autoEmote and self:PerformResultEmote(won, emote) and emoteRound then
+            self:SharePerformedEmote(emoteRound, emote)
+        end
+        if hero and resultView and resultView.gameId == recordedId then
+            local otherEmote = won and self:GetRandomSadEmote() or self:GetRandomHappyEmote()
+            hero:PlayOutcome(resultView, emote, otherEmote)
+        end
     end
 end
 
 -- Cosmetic reactions must never interrupt saving or cleaning up a finished game.
-function DRE:PerformResultEmote(won)
+function DRE:PerformResultEmote(won, emote)
     local perform = C_ChatInfo and C_ChatInfo.PerformEmote or DoEmote
     if not perform then return false end
-    local emote = won and self:GetRandomHappyEmote() or self:GetRandomSadEmote()
-    return pcall(perform, emote)
+    emote = emote or (won and self:GetRandomHappyEmote() or self:GetRandomSadEmote())
+    local ok, played = pcall(perform, emote)
+    if not ok or not self:IsAccessibleValue(played) then return false end
+    if C_ChatInfo and C_ChatInfo.PerformEmote then return played == true end
+    return played ~= false -- legacy DoEmote can return nothing on success
 end
 
 -- Handle ongoing game rolls
@@ -3319,6 +3662,9 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
         end
     end
     
+    if self.devDuel and self.gameState.mode and self.gameState.mode ~= "classic" then
+        return self:AdvanceDuelMode(self.gameState, playerName, roll, maxRoll, isSelfDuel)
+    end
     -- Only process rolls from the player if it's a regular duel or self-duel
     if isMyRoll then
         if isSelfDuel then
@@ -3350,6 +3696,7 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
                 -- Continue game
                 self.gameState.currentRoll = roll
                 self.gameState.playerTurn = not self.gameState.playerTurn
+                if self.gameState.playerTurn then self:PlayTurnSound() end
                 
                 local nextTurnText = (self.gameState.rollCount % 2) == 1 and
                     "Your opponent-self's turn! Roll 1-" .. self.gameState.currentRoll or
@@ -3395,6 +3742,7 @@ function DRE:HandleGameRoll(playerName, roll, maxRoll)
             -- Continue game, our turn
             self.gameState.currentRoll = roll
             self.gameState.playerTurn = true
+            self:PlayTurnSound()
             self:ChatPrint("Your turn! Roll 1-" .. self.gameState.currentRoll)
             
             -- Update UI state to rolling
@@ -3655,6 +4003,7 @@ function DRE:UpdateGameUIState(state)
     
     -- Update UI state
     self.UI.gameState = state
+    if self.RefreshDuel then self:RefreshDuel(); return end
     if self.UI.cancelGameButton then
         self.UI.cancelGameButton:SetDisabled(not ((self.gameState and self.gameState.isActive) or self:IsGroupRoundActive()))
     end

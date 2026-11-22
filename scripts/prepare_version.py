@@ -47,4 +47,4 @@ if __name__ == '__main__':
     except (ValueError, OSError) as error:
         parser.exit(1, f'{error}\n')
     print(f'Prepared {args.version}. Complete the changelog, run tests, then commit and push to main.')
-    print('The GitHub workflow creates the tag and release after verification passes.')
+    print('When ready to publish, follow RELEASE_PROCESS.md to check CurseForge and push the release tag once.')

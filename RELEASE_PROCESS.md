@@ -1,72 +1,31 @@
-# DeathRoll Enhancer - Release Process
+# DeathRoll Enhancer release process
 
-## GitHub releases
+A maintainer publishes a version by pushing one tag, `v<VERSION>`, on a verified commit from `main`. CurseForge builds its file from that tag through the repository webhook. GitHub Actions tests the same revision and attaches an installable ZIP to the GitHub release. Local ZIPs are for testing. Branch pushes, pull requests and manual workflow runs run verification only on GitHub.
 
-Run `bash update-version.sh <new-version>` or `./update-version.ps1 <new-version>` with Python 3 installed. The shared helper updates `VERSION`, the runtime fallback, README title/badge, and a new first changelog section. Fill in that section before publishing. Commit and push to `main`. The release workflow runs the Lua regression/package tests, builds the installable ZIP, then creates `v<VERSION>` and a GitHub release with the ZIP attached. It uses GitHub's repository token; no external upload credential is needed. Pull requests run verification without publishing. A manual workflow dispatch can retry an interrupted release; an existing release is never overwritten.
+## Before pushing a tag
 
-Download the attached `DeathRollEnhancer-<VERSION>.zip`, not GitHub's source archives. The source archives do not have the required installation folder or substituted version tokens.
+1. Prepare the version with `./update-version.ps1 <new-version>` or `bash update-version.sh <new-version>`. Complete the new section in `CHANGELOG.md`, merge into `main`, and wait for the verification job to pass on the exact commit you intend to tag. Record the in-game smoke test results or outstanding checks in the release notes.
+2. Check the remote tag with `git ls-remote --tags origin refs/tags/v<VERSION>`, substituting the value from `VERSION`. Check the project's **Files** and **Builds** in the author dashboard for the same version, including pending files, earlier uploads with custom display names and queued builds. If the version already has a file, keep its file ID and skip the tag push and upload. If a tag or build already exists, follow its progress using the recovery steps below. [CurseForge author files](https://authors.curseforge.com/#/projects/954561/files)
+3. For a new release, confirm that the GitHub push webhook for CurseForge project `954561` is active and that CurseForge packaging is set to tagged commits only. The webhook credential belongs in GitHub webhook settings. The packager uses `.pkgmeta` and substitutes `@project-version@` in the addon. [CurseForge automatic packaging](https://support.curseforge.com/support/solutions/articles/9000197281)
 
-## Optional: CurseForge Automatic Packaging
+## Publish once
 
-This repo is configured for CurseForge packager via:
+1. Create `v<VERSION>` on the verified commit and push just that tag. For example, substitute the actual tag and commit in `git tag <tag> <verified-main-commit>` and `git push origin refs/tags/<tag>`. The tag push immediately triggers CurseForge packaging, independently of GitHub's release job. Use an `alpha` or `beta` suffix for the corresponding CurseForge channel.
+2. Wait for the CurseForge build and file approval. Open the generated file in the author dashboard and record its file ID. For a title such as **v3.0.0 – Forever Celebration**, edit **Display name** on that file and save. A second ZIP upload creates a separate file.
+3. Check the public **Files** list for exactly one entry for the version and channel. Open it and verify its title, file ID and supported game versions. Separately check that the GitHub release has the installable `DeathRollEnhancer-<VERSION>.zip` attached. [Public CurseForge files](https://www.curseforge.com/wow/addons/deathroll-enhancer/files/all)
 
-- `.pkgmeta` in repo root
-- `@project-version@` replacement tokens in:
-  - `Core.lua`
-  - `DeathRollEnhancer.toc`
+## If publication is delayed or fails
 
-### One-time setup
+Check the GitHub webhook delivery, CurseForge **Builds**, and the author **Files** list before retrying. An HTTP 200 acknowledges the webhook. A queued build or a file awaiting moderation can take time to appear publicly. If the public page or dashboard is inaccessible, pause publication until you can verify the version.
 
-1. Generate a CurseForge API token (CurseForge Author Dashboard).
-2. Add a GitHub webhook on this repository:
-   - URL:
-     `https://www.curseforge.com/api/projects/{projectID}/package?token={token}`
-   - Content type: `application/json`
-   - Trigger: `Just the push event`
-3. Save webhook.
+For a failed webhook delivery, confirm that no build or file exists for the tag, repair the webhook, then redeliver the original event once. For a failed GitHub release job, re-run the failed job on the original tag run. Keep the original tag in place. Both recovery paths use the original revision. Leave an existing CurseForge file in place and edit its metadata for title or description corrections.
 
-Notes:
+## Local package for testing
 
-- Keep the token in webhook settings only, never in git.
-- Replace `{projectID}` with your CurseForge project ID.
-
-### Release flow (beta/release/alpha)
-
-1. Update docs/changelog as needed.
-2. Commit and push to `main`.
-3. Tag the release and push the tag:
-   - Example:
-     `git tag v2.3.3`
-     `git push origin v2.3.3`
-4. CurseForge will package automatically.
-
-Tag behavior:
-
-- Tags containing `alpha` => Alpha file (for example `v2.3.4-alpha.1`)
-- Tags containing `beta` => Beta file (for example `v2.3.4-beta.1`)
-- Other tags => Release file
-- Untagged pushed commits package as Alpha if your CurseForge project is set to package all commits.
-
-## Manual fallback (if webhook is unavailable)
-
-Use the local package command below. It includes the embedded libraries and applies the release title to both Forever manifests.
-
-## Quick checklist
-
-- [ ] Changelog updated
-- [ ] Commit pushed
-- [ ] Tag created and pushed
-- [ ] CurseForge package created with expected release channel
-- [ ] Installed and smoke-tested in game
-
-## Verified local package
-
-Run the tests in `TESTING.md`, then use the dependency-aware builder:
+Run the tests in [TESTING.md](TESTING.md), then build the installable ZIP:
 
 ```sh
 python3 scripts/build_release.py --version "$(cat VERSION)" --output "dist/DeathRollEnhancer-$(cat VERSION).zip"
 ```
 
-For two-player Forever testing, install the same release ZIP on both clients. The Forever and Camelot manifests enable the table UI, its artwork, and silent invitations with shared wager terms.
-
-It validates every TOC/XML dependency, includes pinned libraries and licenses, replaces version tokens, and writes one installable `DeathRollEnhancer` directory. When copying manually, include `embeds.xml` and the complete `Libs/` directory before the runtime modules. Record the target-client smoke-test status in release notes. GitHub publication does not confirm CurseForge publication; that still depends on the separately configured webhook.
+The builder validates TOC and XML dependencies, bundles the pinned libraries and licenses, and writes a single `DeathRollEnhancer` directory. For two-player Forever testing, install the same ZIP on both clients.

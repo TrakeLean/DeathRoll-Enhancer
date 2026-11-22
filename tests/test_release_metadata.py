@@ -82,18 +82,31 @@ class ReleaseMetadataTests(unittest.TestCase):
         result = subprocess.run([sys.executable, '-c', script], cwd=self.root, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
 
-    @unittest.skipIf(os.name == 'nt', 'GitHub Actions runs the publication step in Linux bash')
-    def test_workflow_marks_only_prerelease_versions(self):
+    def test_github_publication_requires_a_new_version_tag_push(self):
         workflow = (ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        self.assertIn("    tags: ['v*']", workflow.split('  pull_request:', 1)[0])
+        release = workflow.split('  release:\n', 1)[1]
+        self.assertIn("    if: github.event_name == 'push' && github.event.created && "
+                      "github.ref_type == 'tag' && startsWith(github.ref_name, 'v')\n", release)
+
+    @unittest.skipIf(os.name == 'nt', 'GitHub Actions runs the publication step in Linux bash')
+    def test_workflow_validates_and_uses_the_existing_tag(self):
+        workflow = (ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        guard = workflow.split('Check the pushed tag against VERSION\n', 1)[1].splitlines()[0].strip().removeprefix('run: ')
         step = workflow[workflow.rindex('          version=$(cat VERSION)'):]
         # Capture arguments without authenticating or contacting GitHub.
-        shell = 'set -eu\ngh() { printf "%s\\n" "$@"; }\n' + textwrap.dedent(step)
+        shell = 'set -eu\ngh() { printf "%s\\n" "$@"; }\n' + guard + '\n' + textwrap.dedent(step)
         for version in ('2.4.2', '2.4.3-beta.1'):
             with self.subTest(version=version):
                 (self.root / 'VERSION').write_text(version, encoding='ascii')
                 result = subprocess.run(['bash', '-c', shell], cwd=self.root, check=True,
                                         capture_output=True, text=True,
-                                        env={**os.environ, 'GITHUB_REPOSITORY': 'local/test', 'GITHUB_SHA': 'test'})
+                                        env={**os.environ, 'GITHUB_REPOSITORY': 'local/test', 'GITHUB_REF_NAME': 'v' + version})
                 args = result.stdout.splitlines()
                 self.assertIn('v' + version, args)
+                self.assertIn('--verify-tag', args)
                 self.assertEqual('--prerelease' in args, '-' in version)
+        mismatch = subprocess.run(['bash', '-c', shell], cwd=self.root, capture_output=True, text=True,
+                                  env={**os.environ, 'GITHUB_REPOSITORY': 'local/test', 'GITHUB_REF_NAME': 'v1.0.0'})
+        self.assertNotEqual(mismatch.returncode, 0)
+        self.assertEqual(mismatch.stdout, '')

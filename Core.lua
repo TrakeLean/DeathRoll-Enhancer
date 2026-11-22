@@ -2825,7 +2825,7 @@ function DRE:StartDeathRoll(target, roll, wager, trackWagerByTrade, terms)
 
     -- Check for self-dueling
     if target == playerName then
-        self:Print("Starting self-duel! You'll play against yourself.")
+        self:Print("Starting a practice duel. The result won't count toward your history or stats.")
 
         -- Start the actual game immediately for self-dueling
         if not self:StartActualGame(target, roll, wager, nil, trackWagerByTrade, terms) then return false end
@@ -3458,12 +3458,10 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
         end
         recordedPlayerName = target
         recordedResult = forcedRecordedResult
-        recordedAt, recordedId = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0, gameMetadata)
     elseif loser and loser ~= playerName then
         -- We won against the loser
         recordedPlayerName = loser
         recordedResult = "Won"
-        recordedAt, recordedId = self:AddGameToHistory(loser, recordedResult, wager or 0, initialRoll or 0, gameMetadata)
     elseif loser == playerName then
         -- We lost to the target
         local target = self.gameState and self.gameState.target or "Unknown"
@@ -3472,7 +3470,11 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
         end
         recordedPlayerName = target
         recordedResult = "Lost"
-        recordedAt, recordedId = self:AddGameToHistory(target, recordedResult, wager or 0, initialRoll or 0, gameMetadata)
+    end
+
+    local practice = self:IsSamePlayer(recordedPlayerName, playerName)
+    if recordedPlayerName and not practice then
+        recordedAt, recordedId = self:AddGameToHistory(recordedPlayerName, recordedResult, wager or 0, initialRoll or 0, gameMetadata)
     end
 
     local trackPayment = shouldTrackTrade and recordedId and recordedPlayerName ~= playerName
@@ -3488,7 +3490,7 @@ function DRE:HandleGameEnd(loser, result, wager, initialRoll, options)
         self:Print("Character identity unavailable. Use /dr edit to record this payment.")
     end
 
-    if self.RememberDuelResult and recordedId then
+    if self.RememberDuelResult and (recordedId or practice) then
         self:RememberDuelResult(recordedId, recordedPlayerName, recordedResult, wager, recordedAt,
             not not ownerGUID, self.gameState and self.gameState.duelRolls, self.gameState)
     end

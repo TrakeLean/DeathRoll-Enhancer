@@ -223,7 +223,8 @@ class AddonRegressionTests(unittest.TestCase):
             DRE:CHAT_MSG_SYSTEM('CHAT_MSG_SYSTEM','Me rolls 2 (1-2)')
             assert(DRE.gameState.rollCount==2)
             DRE:CHAT_MSG_SYSTEM('CHAT_MSG_SYSTEM','Me rolls 1 (1-2)')
-            assert(DRE.db.profile.history.Me.losses==1)
+            assert(not DRE.gameState and not DRE.db.profile.history.Me)
+            assert(DRE.db.profile.goldTracking.currentStreak==0)
         ''')
 
     def test_localized_and_positional_roll_formats(self):

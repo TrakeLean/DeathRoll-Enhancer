@@ -132,7 +132,7 @@ class ForeverDuelTests(unittest.TestCase):
             end
         """)
 
-    def test_variant_practice_uses_seats_and_settles_one_match(self):
+    def test_variant_practice_uses_seats_without_recording_matches(self):
         self.check("""
             units.target = units.player
             fire('PLAYER_TARGET_CHANGED')
@@ -185,9 +185,9 @@ class ForeverDuelTests(unittest.TestCase):
                 assert(right.pips[i].alpha == 1)
             end
             assert(DRE.UI.duelResult.result == 'Lost' and DRE.UI.duelResult.score.opponent == 2)
-            assert(DRE.db.profile.history['Me Smith'].gamesPlayed == 3)
+            assert(not next(DRE.db.profile.history) and not DRE.UI.duelResult.gameId)
             local high = DRE:GetDuelModeStats('highRoller')
-            assert(high.points == 0 and high.tiebreaks == 1 and high.tiebreakWins == 0)
+            assert(high.points == 0 and high.tiebreaks == 0 and high.tiebreakWins == 0)
             action()
             start('highRoller')
             for i = 1, 2 do
@@ -196,13 +196,32 @@ class ForeverDuelTests(unittest.TestCase):
             roll('Me Smith',15,100); roll('Me Smith',4,100)
             roll('Me Smith',8,100); roll('Me Smith',5,100)
             high = DRE:GetDuelModeStats('highRoller')
-            assert(high.points == 2 and high.tiebreaks == 2 and high.tiebreakWins == 1)
+            assert(DRE.UI.duelResult.result == 'Won' and high.points == 0 and high.tiebreaks == 0)
             action()
             start('twoLives')
             roll('Me Smith',1,100); roll('Me Smith',1,100)
             roll('Me Smith',9,100); roll('Me Smith',1,9)
             local lives = DRE:GetDuelModeStats('twoLives')
-            assert(lives.comebacks == 1 and lives.flawless == 0)
+            assert(lives.comebacks == 0 and lives.flawless == 0 and not next(DRE.db.profile.history))
+        """)
+
+    def test_wagered_practice_rematch_keeps_gold_and_streaks(self):
+        self.check("""
+            DRE:AddGameToHistory('Alice Jones', 'Won', 700, 100)
+            units.target = units.player
+            fire('PLAYER_TARGET_CHANGED')
+            DRE:SetTradeWagerModeEnabled(false)
+            DRE.UI.goldEdit:SetText('2')
+            action()
+            roll('Me Smith',1,100)
+            DRE:RefreshDuelResultFromHistory()
+            click(widgets().double)
+            assert(DRE.gameState and DRE.gameState.double)
+            roll('Me Smith',1,100)
+            local totals = DRE.db.profile.goldTracking
+            assert(totals.totalWon == 700 and totals.totalLost == 0 and totals.currentStreak == 1)
+            assert(DRE.db.profile.history['Alice Jones'].wins == 1 and not DRE.db.profile.history['Me Smith'])
+            assert(#(DRE.db.profile.pendingTradeWagers or {}) == 0)
         """)
 
     def test_invited_variant_openers_follow_the_match_rules(self):

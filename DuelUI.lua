@@ -340,10 +340,11 @@ local function pendingFor(result)
 end
 
 function DRE:RememberDuelResult(id, opponent, result, wager, recordedAt, tracked, rolls, game)
-    if not game then
+    if not game and id then
         local _, _, record = self:FindGameRecordById(id)
-        game = record or {}
+        game = record
     end
+    game = game or {}
     if not rolls and (game.playerFace or game.opponentFace) then rolls = {player = game.playerFace, opponent = game.opponentFace} end
     local score = game.score or (game.playerScore and {player = game.playerScore, opponent = game.opponentScore})
     local item = {gameId = id, playerName = opponent, result = result, wager = wager or 0,
@@ -384,6 +385,7 @@ function DRE:MatchesDoubleOffer(terms, opponent, outcome)
     if not prior or prior.result ~= outcome or not self:IsSamePlayer(opponent, prior.playerName)
         or terms.double ~= prior.matchId or terms.mode ~= prior.mode or terms.roll ~= prior.initialRoll
         or terms.wager ~= rematchStake(prior) then return false end
+    if not prior.gameId then return self:IsSamePlayer(opponent, self:GetUnitPlayerName("player")) end
     local name, _, record = self:FindGameRecordById(prior.gameId)
     return self:IsSamePlayer(name, opponent) and record and record.result == outcome
         and record.goldAmount == (prior.paid or prior.wager) and record.initialRoll == prior.initialRoll
@@ -426,7 +428,7 @@ end
 -- A merge can move the displayed game to another history entry. A reset removes it.
 function DRE:RefreshDuelResultFromHistory()
     local result = UI.lastDuelResult
-    if not result then return end
+    if not result or not result.gameId then return end
     local opponent = self:FindGameRecordById(result.gameId)
     if opponent == result.playerName then return end
     if opponent then
